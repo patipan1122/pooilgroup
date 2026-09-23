@@ -2,9 +2,26 @@
 
 // SignerInterface — mobile-first signing flow
 // ────────────────────────────────────────────────────────────────────
-// Renders the document with ONLY this placement highlighted, auto-scrolls
-// to the placement, lets the user open a fullscreen signature pad, and
-// submits the captured PNG to the sign endpoint.
+// Two-step flow (state machine: "preview" | "confirm"):
+//   1. "preview" — full-document read-only preview (SignerDocumentPreview)
+//      showing every signature position on every page, so the signer sees
+//      the whole document's signing plan before committing to anything.
+//      A single "ถัดไป → ยืนยันลายเซ็น" button advances to step 2.
+//   2. "confirm" — decision surface:
+//        - Has a saved signature: one-tap "ใช้ลายเซ็นนี้" (submits via
+//          the useSavedSignature API path, no drawing needed), or
+//          "วาดใหม่" / "ใช้ลายเซ็นอื่นสำหรับครั้งนี้" (both open the same
+//          fullscreen draw pad — copy/intent differs, not code).
+//        - No saved signature: opens the fullscreen draw pad directly.
+//      The draw pad always carries a "บันทึกลายเซ็นนี้ไว้ใช้ครั้งต่อไป"
+//      checkbox — defaulted CHECKED when the signer has no saved signature
+//      yet (first-time save), defaulted UNCHECKED when they already have
+//      one (drawing fresh here is "just for this time" unless they
+//      explicitly opt back in to overwrite it).
+//
+// If `placement.signedAt` is already set (this signer already signed),
+// we skip both steps entirely and render the original single-page "done"
+// view unchanged from before this restructure.
 //
 // react-pdf is loaded via next/dynamic to avoid SSR issues. The signature
 // canvas component (react-signature-canvas) is also dynamic for the same
@@ -19,6 +36,7 @@ import {
   CheckCircle2,
   X,
   RotateCcw,
+  ArrowLeft,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -27,6 +45,10 @@ import {
   SignaturePlacementBox,
   type PlacementRect,
 } from "./signature-placement-box";
+import {
+  SignerDocumentPreview,
+  type SignerPreviewPlacementVm,
+} from "./signer-document-preview";
 import { configurePdfJs } from "@/lib/docuflow/pdfjs-config";
 
 const ReactPdfDocument = dynamic(
@@ -73,6 +95,10 @@ export interface SignerInterfaceProps {
   documentName: string;
   pdfUrl: string;
   placement: SignerPlacementVm;
+  /** ALL placements on the document (not just this one) — for the preview step. */
+  placements: SignerPreviewPlacementVm[];
+  /** Signed-in user's saved signature preview URL, or null if none saved. */
+  savedSignatureUrl: string | null;
   /** Best-effort display name shown in the header. */
   signerDisplayName: string;
 }
@@ -85,13 +111,18 @@ type SignaturePadHandle = {
   getTrimmedCanvas: () => HTMLCanvasElement;
 };
 
+type Step = "preview" | "confirm";
+
 export function SignerInterface({
   documentId,
   documentName,
   pdfUrl,
   placement,
+  placements,
+  savedSignatureUrl,
   signerDisplayName,
 }: SignerInterfaceProps) {
+  const [step, setStep] = useState<Step>("preview");
   const [pageCount, setPageCount] = useState<number | null>(null);
   const [openPad, setOpenPad] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -108,6 +139,7 @@ export function SignerInterface({
     void configurePdfJs();
   }, []);
 
+  // Only relevant for the "done" single-page view below.
   useEffect(() => {
     const el = overlayRef.current;
     if (!el) return;
@@ -121,7 +153,7 @@ export function SignerInterface({
     return () => ro.disconnect();
   }, [pageCount]);
 
-  // Auto-scroll to the page wrap when PDF loads
+  // Auto-scroll to the page wrap when the "done" view's PDF loads
   useEffect(() => {
     if (!pageCount) return;
     const el = pageWrapRef.current;
@@ -139,26 +171,15 @@ export function SignerInterface({
     [placement],
   );
 
-  async function handleSubmit() {
-    if (!padRef.current) {
-      toast.error("กรุณาเซ็นในช่อง");
-      return;
-    }
-    if (padRef.current.isEmpty()) {
-      toast.error("กรุณาเซ็นก่อนส่ง");
-      return;
-    }
+  async function submitAndFinish(payload: Record<string, unknown>) {
     setSubmitting(true);
     try {
-      // Trim whitespace + export PNG (data URL)
-      const canvas = padRef.current.getTrimmedCanvas();
-      const dataUrl = canvas.toDataURL("image/png");
       const res = await fetch(
         `/api/docuflow/${documentId}/signatures/${placement.id}/sign`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ imageDataUrl: dataUrl }),
+          body: JSON.stringify(payload),
         },
       );
       const data = (await res.json()) as {
@@ -184,93 +205,218 @@ export function SignerInterface({
     }
   }
 
+  async function handleSubmitDrawn(saveAsDefault: boolean) {
+    if (!padRef.current) {
+      toast.error("กรุณาเซ็นในช่อง");
+      return;
+    }
+    if (padRef.current.isEmpty()) {
+      toast.error("กรุณาเซ็นก่อนส่ง");
+      return;
+    }
+    // Trim whitespace + export PNG (data URL)
+    const canvas = padRef.current.getTrimmedCanvas();
+    const dataUrl = canvas.toDataURL("image/png");
+    await submitAndFinish({ imageDataUrl: dataUrl, saveAsDefault });
+  }
+
+  async function handleSubmitSaved() {
+    await submitAndFinish({ useSavedSignature: true });
+  }
+
+  /* ============================================================
+     Done — unchanged from before this restructure.
+     ============================================================ */
+  if (done) {
+    return (
+      <div className="space-y-4">
+        <Card>
+          <CardBody className="space-y-2">
+            <p className="text-xs font-bold text-zinc-500">เซ็นเอกสาร</p>
+            <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight font-display line-clamp-2">
+              {documentName}
+            </h1>
+            <p className="text-sm text-zinc-600">
+              <span className="inline-flex items-center gap-1.5 text-green-700 font-medium">
+                <CheckCircle2 className="size-4" /> ลงนามแล้ว ({signerDisplayName})
+              </span>
+            </p>
+          </CardBody>
+        </Card>
+
+        {/* PDF preview with placement highlighted */}
+        <Card>
+          <CardBody className="p-2 sm:p-4">
+            <div
+              ref={pageWrapRef}
+              className="relative mx-auto bg-zinc-50 rounded-xl border border-zinc-200 overflow-hidden"
+              style={{ maxWidth: 720 }}
+            >
+              <ReactPdfDocument
+                file={pdfUrl}
+                onLoadSuccess={({ numPages }: { numPages: number }) =>
+                  setPageCount(numPages)
+                }
+                onLoadError={(err: Error) => {
+                  console.error("PDF load error", err);
+                  toast.error("เปิดไฟล์ PDF ไม่สำเร็จ");
+                }}
+                loading={<PdfSkeleton />}
+              >
+                <div className="relative">
+                  <ReactPdfPage
+                    pageNumber={placement.pageNumber}
+                    width={720}
+                    renderAnnotationLayer={false}
+                    renderTextLayer={false}
+                  />
+                  <div ref={overlayRef} className="absolute inset-0">
+                    <SignaturePlacementBox
+                      id={placement.id}
+                      rect={rect}
+                      label={placement.label}
+                      roleLabel={placement.signerRole}
+                      placementType={placement.placementType ?? "signature"}
+                      autoFillValue={placement.autoFillValue}
+                      signed={done}
+                      selected
+                      containerWidth={overlaySize.width || 720}
+                      containerHeight={overlaySize.height || 0}
+                      readOnly
+                    />
+                  </div>
+                </div>
+              </ReactPdfDocument>
+            </div>
+            <p className="mt-2 text-xs text-zinc-500 text-center">
+              หน้า {placement.pageNumber}
+              {pageCount ? ` / ${pageCount}` : ""}
+            </p>
+          </CardBody>
+        </Card>
+
+        <div className="sticky bottom-3 z-20 px-1">
+          <Button variant="outline" size="xl" fullWidth disabled>
+            <CheckCircle2 className="size-5" />
+            ลงนามเรียบร้อย
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  /* ============================================================
+     Step "preview" — full-document read-only preview.
+     ============================================================ */
+  if (step === "preview") {
+    return (
+      <div className="space-y-4">
+        <Card>
+          <CardBody className="space-y-2">
+            <p className="text-xs font-bold text-zinc-500">เซ็นเอกสาร</p>
+            <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight font-display line-clamp-2">
+              {documentName}
+            </h1>
+            <p className="text-sm text-zinc-600">
+              กรุณาตรวจดูเอกสารทั้งหมดก่อนเซ็น — สวัสดี {signerDisplayName}
+            </p>
+          </CardBody>
+        </Card>
+
+        <SignerDocumentPreview
+          pdfUrl={pdfUrl}
+          placements={placements}
+          currentPlacementId={placement.id}
+        />
+
+        <div className="sticky bottom-3 z-20 px-1">
+          <Button
+            variant="primary"
+            size="xl"
+            fullWidth
+            onClick={() => setStep("confirm")}
+          >
+            ถัดไป → ยืนยันลายเซ็น
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  /* ============================================================
+     Step "confirm" — one-tap saved signature, or draw fresh.
+     ============================================================ */
   return (
     <div className="space-y-4">
       <Card>
         <CardBody className="space-y-2">
-          <p className="text-xs font-bold text-zinc-500">
-            เซ็นเอกสาร
-          </p>
+          <button
+            type="button"
+            onClick={() => setStep("preview")}
+            className="inline-flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-700"
+          >
+            <ArrowLeft className="size-3.5" />
+            กลับไปดูเอกสาร
+          </button>
+          <p className="text-xs font-bold text-zinc-500">ยืนยันลายเซ็น</p>
           <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight font-display line-clamp-2">
             {documentName}
           </h1>
           <p className="text-sm text-zinc-600">
-            {done ? (
-              <span className="inline-flex items-center gap-1.5 text-green-700 font-medium">
-                <CheckCircle2 className="size-4" /> ลงนามแล้ว ({signerDisplayName})
-              </span>
-            ) : (
-              <>กรุณาเซ็นในช่องที่ระบุไว้บนหน้าเอกสาร — สวัสดี {signerDisplayName}</>
-            )}
+            เลือกวิธีเซ็น — สวัสดี {signerDisplayName}
           </p>
         </CardBody>
       </Card>
 
-      {/* PDF preview with placement highlighted */}
-      <Card>
-        <CardBody className="p-2 sm:p-4">
-          <div
-            ref={pageWrapRef}
-            className="relative mx-auto bg-zinc-50 rounded-xl border border-zinc-200 overflow-hidden"
-            style={{ maxWidth: 720 }}
-          >
-            <ReactPdfDocument
-              file={pdfUrl}
-              onLoadSuccess={({ numPages }: { numPages: number }) =>
-                setPageCount(numPages)
-              }
-              onLoadError={(err: Error) => {
-                console.error("PDF load error", err);
-                toast.error("เปิดไฟล์ PDF ไม่สำเร็จ");
-              }}
-              loading={<PdfSkeleton />}
-            >
-              <div className="relative">
-                <ReactPdfPage
-                  pageNumber={placement.pageNumber}
-                  width={720}
-                  renderAnnotationLayer={false}
-                  renderTextLayer={false}
-                />
-                <div ref={overlayRef} className="absolute inset-0">
-                  <SignaturePlacementBox
-                    id={placement.id}
-                    rect={rect}
-                    label={placement.label}
-                    roleLabel={placement.signerRole}
-                    placementType={placement.placementType ?? "signature"}
-                    autoFillValue={placement.autoFillValue}
-                    signed={done}
-                    selected
-                    containerWidth={overlaySize.width || 720}
-                    containerHeight={overlaySize.height || 0}
-                    readOnly
-                  />
-                </div>
+      {savedSignatureUrl ? (
+        <Card>
+          <CardBody className="space-y-4">
+            <p className="text-sm font-semibold text-zinc-800">
+              ลายเซ็นที่บันทึกไว้ของคุณ
+            </p>
+            <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 flex items-center justify-center min-h-[120px]">
+              {/* eslint-disable-next-line @next/next/no-img-element -- short-lived signed R2 URL, no next/image remote-pattern config needed */}
+              <img
+                src={savedSignatureUrl}
+                alt="ลายเซ็นที่บันทึกไว้"
+                className="max-h-28 max-w-full object-contain"
+              />
+            </div>
+            <div className="space-y-2">
+              <Button
+                variant="primary"
+                size="xl"
+                fullWidth
+                loading={submitting}
+                onClick={handleSubmitSaved}
+              >
+                <CheckCircle2 className="size-5" />
+                ใช้ลายเซ็นนี้
+              </Button>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="outline"
+                  size="lg"
+                  disabled={submitting}
+                  onClick={() => setOpenPad(true)}
+                >
+                  <PenLine className="size-4" />
+                  วาดใหม่
+                </Button>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  disabled={submitting}
+                  onClick={() => setOpenPad(true)}
+                >
+                  ใช้ลายเซ็นอื่น
+                </Button>
               </div>
-            </ReactPdfDocument>
-          </div>
-          <p className="mt-2 text-xs text-zinc-500 text-center">
-            หน้า {placement.pageNumber}
-            {pageCount ? ` / ${pageCount}` : ""}
-          </p>
-        </CardBody>
-      </Card>
-
-      {/* Action button — sticky on mobile */}
-      <div className="sticky bottom-3 z-20 px-1">
-        {done ? (
-          <Button
-            variant="outline"
-            size="xl"
-            fullWidth
-            onClick={() => setOpenPad(false)}
-            disabled
-          >
-            <CheckCircle2 className="size-5" />
-            ลงนามเรียบร้อย
-          </Button>
-        ) : (
+            </div>
+          </CardBody>
+        </Card>
+      ) : (
+        <div className="sticky bottom-3 z-20 px-1">
           <Button
             variant="primary"
             size="xl"
@@ -280,16 +426,21 @@ export function SignerInterface({
             <PenLine className="size-5" />
             แตะเพื่อเซ็น
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Fullscreen signature pad */}
-      {openPad && !done && (
+      {openPad && (
         <SignatureFullscreenPad
           padRef={padRef}
           submitting={submitting}
+          // Default-checked only for a signer who has never saved one
+          // before; defaults unchecked (but still opt-in-able) when a
+          // saved signature already exists, so drawing fresh here doesn't
+          // silently overwrite it.
+          initialSaveAsDefault={!savedSignatureUrl}
           onClose={() => setOpenPad(false)}
-          onSubmit={handleSubmit}
+          onSubmit={handleSubmitDrawn}
         />
       )}
     </div>
@@ -303,18 +454,21 @@ export function SignerInterface({
 interface FullscreenPadProps {
   padRef: React.MutableRefObject<SignaturePadHandle | null>;
   submitting: boolean;
+  initialSaveAsDefault: boolean;
   onClose: () => void;
-  onSubmit: () => void;
+  onSubmit: (saveAsDefault: boolean) => void;
 }
 
 function SignatureFullscreenPad({
   padRef,
   submitting,
+  initialSaveAsDefault,
   onClose,
   onSubmit,
 }: FullscreenPadProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
+  const [saveAsDefault, setSaveAsDefault] = useState(initialSaveAsDefault);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -386,25 +540,36 @@ function SignatureFullscreenPad({
           ลายเซ็นของท่าน
         </div>
       </div>
-      <div className="bg-white border-t border-zinc-200 p-3 safe-bottom flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="lg"
-          onClick={onClose}
-          disabled={submitting}
-        >
-          ยกเลิก
-        </Button>
-        <Button
-          variant="primary"
-          size="lg"
-          fullWidth
-          loading={submitting}
-          onClick={onSubmit}
-        >
-          <CheckCircle2 className="size-5" />
-          ส่งลายเซ็น
-        </Button>
+      <div className="bg-white border-t border-zinc-200 p-3 safe-bottom space-y-2.5">
+        <label className="flex items-center gap-2 px-1 text-sm text-zinc-700 select-none">
+          <input
+            type="checkbox"
+            checked={saveAsDefault}
+            onChange={(e) => setSaveAsDefault(e.target.checked)}
+            className="size-4 rounded border-zinc-300 text-[var(--color-brand-600)] focus:ring-[var(--color-brand-500)]"
+          />
+          บันทึกลายเซ็นนี้ไว้ใช้ครั้งต่อไป
+        </label>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="lg"
+            onClick={onClose}
+            disabled={submitting}
+          >
+            ยกเลิก
+          </Button>
+          <Button
+            variant="primary"
+            size="lg"
+            fullWidth
+            loading={submitting}
+            onClick={() => onSubmit(saveAsDefault)}
+          >
+            <CheckCircle2 className="size-5" />
+            ส่งลายเซ็น
+          </Button>
+        </div>
       </div>
     </div>
   );

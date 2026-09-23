@@ -21,8 +21,13 @@ async function checkFirstUser(): Promise<boolean> {
   }
 }
 
-export default async function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string }>;
+}) {
   const isFirstRun = await checkFirstUser();
+  const { next } = await searchParams;
 
   return (
     <div className="w-full max-w-md">
@@ -66,7 +71,7 @@ export default async function LoginPage() {
       )}
 
       <div className="bg-white rounded-3xl border-2 border-zinc-200 shadow-lg p-6 sm:p-8 animate-fade-up delay-150">
-        <LoginForm />
+        <LoginForm next={next} />
       </div>
 
       <p className="text-center text-sm text-zinc-500 mt-7 animate-fade-up delay-200">

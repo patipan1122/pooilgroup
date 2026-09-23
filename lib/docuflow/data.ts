@@ -42,6 +42,11 @@ export interface CanonicalDocument {
   tags: string[];
   /** Most recent active renewal (if any) */
   renewal: CanonicalRenewal | null;
+  /** Google Drive export tracking (Track B Item 11) — null until an admin
+   *  exports this document via the opt-in "ส่งออกไป Google Drive" action. */
+  driveFileId: string | null;
+  driveFileUrl: string | null;
+  driveExportedAt: Date | null;
 }
 
 export interface CanonicalOwnership {
@@ -387,6 +392,9 @@ type DocumentWithRelations = {
     nextRenewalDate: Date | null;
     notes: string | null;
   }>;
+  driveFileId: string | null;
+  driveFileUrl: string | null;
+  driveExportedAt: Date | null;
 };
 
 function toCanonicalDocument(row: DocumentWithRelations): CanonicalDocument {
@@ -405,6 +413,9 @@ function toCanonicalDocument(row: DocumentWithRelations): CanonicalDocument {
     isActive: row.isActive,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    driveFileId: row.driveFileId,
+    driveFileUrl: row.driveFileUrl,
+    driveExportedAt: row.driveExportedAt,
     ownership: row.ownership.map((o) => ({
       id: o.id,
       level: o.level,

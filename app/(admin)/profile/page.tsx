@@ -1,6 +1,13 @@
 import Link from "next/link";
-import { ShieldCheck, ChevronRight, MessageSquare, Smartphone } from "lucide-react";
+import {
+  ShieldCheck,
+  ChevronRight,
+  MessageSquare,
+  Smartphone,
+  PenLine,
+} from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
+import { prisma } from "@/lib/prisma";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ProfileForm } from "./profile-form";
@@ -11,6 +18,14 @@ export default async function ProfilePage() {
   const session = await requireSession();
   const lineLinked = !!session.user.line_user_id;
   const telegramLinked = !!session.user.telegram_user_id;
+
+  // Cheap existence check (no R2 signed-URL round trip needed just to show
+  // the status line) — see lib/docuflow/my-signature.ts for the full read.
+  const signatureUser = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { savedSignatureKey: true },
+  });
+  const hasSavedSignature = !!signatureUser?.savedSignatureKey;
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-2xl mx-auto">
@@ -47,6 +62,26 @@ export default async function ProfilePage() {
             </span>
             <span className="block text-xs text-zinc-500">
               ดู Login จากที่ไหนบ้าง · ออกจากระบบที่ไม่ใช่ของคุณ
+            </span>
+          </span>
+        </span>
+        <ChevronRight className="size-5 text-zinc-400" />
+      </Link>
+
+      <Link
+        href="/profile/signature"
+        className="mt-4 flex items-center justify-between gap-3 rounded-2xl border-2 border-zinc-200 bg-white px-4 py-3.5 hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/40 transition-colors animate-fade-up delay-200"
+      >
+        <span className="flex items-center gap-3">
+          <span className="size-10 rounded-xl bg-[var(--color-brand-50)] border border-[var(--color-brand-200)] flex items-center justify-center text-[var(--color-brand-700)]">
+            <PenLine className="size-5" />
+          </span>
+          <span>
+            <span className="block font-semibold text-sm">
+              ลายเซ็นของฉัน
+            </span>
+            <span className="block text-xs text-zinc-500">
+              {hasSavedSignature ? "บันทึกไว้แล้ว" : "ยังไม่ได้บันทึก"} · ใช้เซ็นเอกสารได้ทุกครั้งโดยไม่ต้องวาดใหม่
             </span>
           </span>
         </span>

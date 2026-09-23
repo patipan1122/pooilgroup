@@ -10,8 +10,21 @@ import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
 import { browserClient } from "@/lib/db/client";
 
-export function LoginForm() {
+// Same-origin relative-path guard — mirrors safeRelPath() in
+// app/auth/line-start/route.ts so both entry points reject the same shapes
+// (bare "/" ok, "//evil.com" rejected as protocol-relative, absolute URLs
+// rejected since they don't start with "/").
+function isSafeNextPath(p: string | null | undefined): p is string {
+  return !!p && p.startsWith("/") && !p.startsWith("//");
+}
+
+interface LoginFormProps {
+  next?: string;
+}
+
+export function LoginForm({ next }: LoginFormProps) {
   const router = useRouter();
+  const safeNext = isSafeNextPath(next) ? next : "/";
   const [pending, startTransition] = useTransition();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -80,7 +93,7 @@ export function LoginForm() {
 
       toast.success("เข้าสู่ระบบสำเร็จ");
       router.refresh();
-      router.push("/");
+      router.push(safeNext);
     });
   }
 
@@ -157,10 +170,29 @@ export function LoginForm() {
         {pending ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
       </Button>
 
+      <div className="relative py-1">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-zinc-200" />
+        </div>
+        <div className="relative flex justify-center text-xs">
+          <span className="bg-white px-2 text-zinc-400">หรือ</span>
+        </div>
+      </div>
+
+      <a
+        href={`/auth/line-start?next=${encodeURIComponent(safeNext)}&module=default`}
+        className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-zinc-200 bg-white py-2.5 text-sm font-bold text-zinc-700 transition-colors hover:bg-zinc-50"
+      >
+        <span
+          aria-hidden
+          className="flex size-5 shrink-0 items-center justify-center rounded-md bg-[#06C755] text-[10px] font-extrabold text-white"
+        >
+          L
+        </span>
+        เข้าสู่ระบบด้วย LINE
+      </a>
+
       <div className="pt-2 text-center space-y-2">
-        <p className="text-xs text-zinc-400">
-          การ Login ทาง LIFF (LINE) ใช้ที่ Rich Menu บนแอป LINE
-        </p>
         <p className="text-xs text-zinc-500">
           ยังไม่มีบัญชี?{" "}
           <a

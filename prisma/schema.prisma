@@ -205,6 +205,10 @@ model User {
   // cron deactivates the account. NULL = permanent until manual deactivation.
   // Spec: ดีเทลv1/CORE_SYSTEM.md §2.6 Temporary Access.
   tempAccessExpiresAt DateTime? @map("temp_access_expires_at") @db.Timestamptz(6)
+  // DocuFlow "ลายเซ็นของฉัน" — one saved signature image reused across signing events
+  // instead of drawing fresh every time. NULL = no saved signature yet.
+  savedSignatureKey       String?   @map("saved_signature_key")
+  savedSignatureUpdatedAt DateTime? @map("saved_signature_updated_at") @db.Timestamptz(6)
   createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -225,6 +229,7 @@ model User {
   telegramSubs              TelegramSubscription[]
   telegramTokens            TelegramPairingToken[]
   uploadedDocuments         Document[]                    @relation("DocumentUploader")
+  driveExportedDocuments    Document[]                    @relation("DocumentDriveExporter")
   responsibleRenewals       DocumentRenewal[]             @relation("RenewalResponsible")
   personDocuments           PersonDocument[]
   signaturePlacements       DocumentSignaturePlacement[]  @relation("SignaturePlacementSigner")
@@ -1023,6 +1028,13 @@ model Document {
   /// column above, which is NOT being removed. Added 2026-09-23, DocuFlow redesign Track A Item 3.
   documentTypeId  String?  @map("document_type_id") @db.Uuid
 
+  /// Google Drive export tracking — opt-in, per-document "Export to Drive" button (one-way).
+  /// Nullable/additive. Added 2026-09-23, DocuFlow redesign Track B Item 11 (schema only).
+  driveFileId       String?   @map("drive_file_id")
+  driveFileUrl      String?   @map("drive_file_url")
+  driveExportedAt   DateTime? @map("drive_exported_at") @db.Timestamptz(6)
+  driveExportedById String?   @map("drive_exported_by_id") @db.Uuid
+
   org                 Organization                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
   uploadedBy          User?                        @relation("DocumentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
   ownership           DocumentOwnership[]
@@ -1034,6 +1046,7 @@ model Document {
   signaturePlacements DocumentSignaturePlacement[]
   analyses            DocumentAnalysis[]
   documentTypeRef     DocumentType?                @relation(fields: [documentTypeId], references: [id], onDelete: SetNull)
+  driveExportedBy     User?                        @relation("DocumentDriveExporter", fields: [driveExportedById], references: [id], onDelete: SetNull)
 
   @@index([orgId, isActive])
   @@index([orgId, uploadedAt])

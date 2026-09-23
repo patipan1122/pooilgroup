@@ -27,6 +27,7 @@ import { prisma } from "@/lib/prisma";
 import { BUSINESS_TYPES } from "@/constants/business-types";
 import { BackButton } from "@/components/ui/back-button";
 import { DeleteDocumentButton } from "@/components/docuflow/delete-document-button";
+import { DriveExportButton } from "@/components/docuflow/drive-export-button";
 import { RiskAnalysisPanel } from "@/components/docuflow/risk-analysis-panel";
 import { RenewalHistorySection } from "@/components/docuflow/renewal-history-section";
 import { ApprovalTimeline } from "@/components/docuflow/approval-timeline";
@@ -425,6 +426,19 @@ export default async function DocumentDetailPage({
                   <Download size={14} />
                   ดาวน์โหลด
                 </DfButton>
+              </div>
+            </DfCard>
+          )}
+
+          {adminTier && (
+            <DfCard padding={18}>
+              <DfEyebrow>Google Drive</DfEyebrow>
+              <div style={{ marginTop: 12 }}>
+                <DriveExportButton
+                  documentId={doc.id}
+                  initialDriveFileId={doc.driveFileId}
+                  initialDriveFileUrl={doc.driveFileUrl}
+                />
               </div>
             </DfCard>
           )}

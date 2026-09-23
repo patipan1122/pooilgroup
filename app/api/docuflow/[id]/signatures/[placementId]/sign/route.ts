@@ -1,14 +1,28 @@
 // POST /api/docuflow/[id]/signatures/[placementId]/sign
 // ────────────────────────────────────────────────────────────────────
-// Signer endpoint. Accepts a signature PNG data URL from the canvas,
-// uploads it to R2, updates the placement (signedAt + signedImageKey),
-// and — if every placement on the document is now signed — kicks off
-// the embed step that produces the final signed PDF.
+// Signer endpoint. Accepts either:
+//   (a) a signature PNG data URL from the canvas (`imageDataUrl`,
+//       optionally `saveAsDefault: true` to also save it as the user's
+//       reusable signature), or
+//   (b) a one-tap request to reuse the caller's already-saved signature
+//       (`useSavedSignature: true`).
+// Either way, uploads the resulting PNG to a FRESH key dedicated to this
+// placement, updates the placement (signedAt + signedImageKey), and — if
+// every placement on the document is now signed — kicks off the embed
+// step that produces the final signed PDF.
 //
 // Auth model:
 //   - placement.signerUserId set → caller must be that user (logged in)
 //   - placement.signerUserId null but signerName set → any signed-in
 //     user with the link can sign (org-scoped). Re-signing is blocked.
+//
+// Immutability note (useSavedSignature path): `signedImageKey` NEVER
+// points directly at the user's `savedSignatureKey` — the saved-signature
+// bytes are copied into a new placement-dedicated key. This keeps every
+// placement's signed artifact immutable even if the user later changes
+// or clears their saved signature; a previously-signed document must
+// never retroactively appear to change. `embedSignatures()` needs zero
+// changes for this — it still just reads `signedImageKey` as before.
 // ────────────────────────────────────────────────────────────────────
 
 import { NextResponse, type NextRequest } from "next/server";
@@ -18,8 +32,9 @@ import { requireSession } from "@/lib/auth/session";
 import { isProgramAdminTier } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit/log";
-import { deleteObject, putObject } from "@/lib/r2/upload";
+import { deleteObject, getObject, putObject } from "@/lib/r2/upload";
 import { embedSignatures } from "@/lib/docuflow/signature";
+import { saveMySignature } from "@/lib/docuflow/my-signature";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +44,9 @@ type RouteContext = {
 
 const IdSchema = zUUID();
 
-const BodySchema = z.object({
+// Existing shape (draw-and-submit), unchanged validation — plus one new
+// optional field.
+const DrawnSignatureSchema = z.object({
   // PNG data URL: "data:image/png;base64,iVBOR..."
   imageDataUrl: z
     .string()
@@ -38,7 +55,16 @@ const BodySchema = z.object({
     .refine((v) => v.startsWith("data:image/png;base64,"), {
       message: "Expected base64 PNG data URL",
     }),
+  // Default-checked in the UI when the signer has no saved signature yet.
+  saveAsDefault: z.boolean().optional(),
 });
+
+// New: one-tap "use my saved signature" path.
+const UseSavedSignatureSchema = z.object({
+  useSavedSignature: z.literal(true),
+});
+
+const BodySchema = z.union([DrawnSignatureSchema, UseSavedSignatureSchema]);
 
 function decodeDataUrl(dataUrl: string): Buffer {
   const base64 = dataUrl.split(",")[1] ?? "";
@@ -129,16 +155,49 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     );
   }
 
-  // Upload PNG to R2
-  const ts = Date.now();
-  const key = buildSignatureKey(orgId, placementId, ts);
-  const buf = decodeDataUrl(parsed.data.imageDataUrl);
+  // Resolve the PNG bytes to store, and whether to also save them as the
+  // user's default signature (only ever true on the drawn-signature path).
+  let buf: Buffer;
+  let saveAsDefault = false;
+
+  if ("useSavedSignature" in parsed.data) {
+    // Client shouldn't offer this button without a saved signature, but
+    // the API must never trust that assumption — re-check the DB.
+    const savedUser = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { savedSignatureKey: true },
+    });
+    if (!savedUser?.savedSignatureKey) {
+      return NextResponse.json(
+        { error: "คุณยังไม่ได้บันทึกลายเซ็นไว้ กรุณาวาดลายเซ็นใหม่" },
+        { status: 400 },
+      );
+    }
+    try {
+      buf = await getObject(savedUser.savedSignatureKey);
+    } catch (err) {
+      console.error("[sign POST] failed to read saved signature", err);
+      return NextResponse.json(
+        { error: "โหลดลายเซ็นที่บันทึกไว้ไม่สำเร็จ ลองใหม่" },
+        { status: 502 },
+      );
+    }
+  } else {
+    buf = decodeDataUrl(parsed.data.imageDataUrl);
+    saveAsDefault = parsed.data.saveAsDefault === true;
+  }
+
   if (buf.length < 64) {
     return NextResponse.json(
       { error: "ลายเซ็นว่างเปล่า กรุณาเซ็นอีกครั้ง" },
       { status: 400 },
     );
   }
+
+  // Upload PNG to R2 — ALWAYS a fresh key dedicated to this placement, even
+  // on the useSavedSignature path (see immutability note at top of file).
+  const ts = Date.now();
+  const key = buildSignatureKey(orgId, placementId, ts);
 
   try {
     await putObject(key, buf, "image/png");
@@ -181,6 +240,25 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       { error: "บันทึกลายเซ็นไม่สำเร็จ ลองใหม่" },
       { status: 500 },
     );
+  }
+
+  // Best-effort convenience save: the signer drew a fresh signature and
+  // checked "save this for next time." Never fails the response — the
+  // placement update above is the source of truth for "did they sign,"
+  // this is secondary.
+  if (saveAsDefault) {
+    try {
+      await saveMySignature({
+        userId: session.user.id,
+        orgId,
+        pngBuffer: buf,
+      });
+    } catch (err) {
+      console.error(
+        "[sign POST] saveAsDefault best-effort save failed",
+        err,
+      );
+    }
   }
 
   // If every placement is signed, build the final signed PDF.

@@ -27,10 +27,12 @@ import {
   Building,
   ChevronRight,
   Lock,
+  HardDrive,
 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { requireProgramAdminTier } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
+import { getDriveConnection } from "@/lib/chairops/storage/drive";
 import {
   DfCard,
   DfEyebrow,
@@ -48,9 +50,10 @@ export default async function DocuFlowSettingsPage() {
   requireProgramAdminTier(session.user.role);
   const orgId = session.user.org_id;
 
-  const [activeCount, inactiveCount] = await Promise.all([
+  const [activeCount, inactiveCount, driveConn] = await Promise.all([
     prisma.documentType.count({ where: { orgId, isActive: true } }),
     prisma.documentType.count({ where: { orgId, isActive: false } }),
+    getDriveConnection(orgId),
   ]);
 
   return (
@@ -155,6 +158,7 @@ export default async function DocuFlowSettingsPage() {
             title="สร้างบริษัท"
             desc="ยังไม่มีในระบบ — ต้องสร้างข้ามโปรแกรม ไม่ใช่ scope ของ DocuFlow"
           />
+          <DriveStatusCard connected={Boolean(driveConn)} rootFolderName={driveConn?.rootFolderName ?? null} />
         </div>
       </DfSection>
     </div>
@@ -304,6 +308,65 @@ function DisabledHubCard({
         </div>
         <p style={{ fontSize: 12, color: "var(--df-muted)", margin: 0, lineHeight: 1.5 }}>
           {desc}
+        </p>
+      </div>
+    </DfCard>
+  );
+}
+
+/**
+ * Read-only status card — no "connect Drive" action here on purpose.
+ * DocuFlow only REUSES the shared Google Drive connection already set up
+ * via ChairOps; it does not build its own OAuth flow. If the connection is
+ * ever missing, that's fixed at its origin (ChairOps), not duplicated here.
+ */
+function DriveStatusCard({
+  connected,
+  rootFolderName,
+}: {
+  connected: boolean;
+  rootFolderName: string | null;
+}) {
+  return (
+    <DfCard
+      padding={18}
+      style={{ display: "flex", gap: 14, alignItems: "flex-start" }}
+    >
+      <span
+        style={{
+          width: 42,
+          height: 42,
+          borderRadius: 11,
+          background: connected ? "var(--df-success-soft)" : "var(--df-bg-warm)",
+          color: connected ? "var(--df-success)" : "var(--df-muted)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+        }}
+      >
+        <HardDrive size={20} />
+      </span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 4,
+          }}
+        >
+          <span style={{ fontSize: 14, fontWeight: 700, color: "var(--df-ink)" }}>
+            Google Drive
+          </span>
+          <DfPill tone={connected ? "success" : "outline"} small>
+            {connected ? "เชื่อมต่อแล้ว" : "ยังไม่ได้เชื่อมต่อ"}
+          </DfPill>
+        </div>
+        <p style={{ fontSize: 12, color: "var(--df-muted)", margin: 0, lineHeight: 1.5 }}>
+          {connected
+            ? `ส่งออกเอกสารไปที่โฟลเดอร์ "${rootFolderName}" (ใช้การเชื่อมต่อเดียวกับ ChairOps)`
+            : "ยังไม่ได้เชื่อมต่อ — เชื่อมต่อได้จากหน้า ChairOps"}
         </p>
       </div>
     </DfCard>

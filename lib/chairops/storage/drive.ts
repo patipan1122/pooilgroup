@@ -234,8 +234,11 @@ async function ensureFolderPath(
   return parent;
 }
 
-/** Multipart upload of raw bytes → returns { id, webViewLink }. */
-async function uploadBytes(
+/** Multipart upload of raw bytes → returns { id, webViewLink }.
+ * Exported (2026-09-23, DocuFlow redesign Track B Item 11) so other modules
+ * can import this instead of copy-pasting the same multipart-builder a
+ * third time — `lib/dc/drive-store.ts` already had to duplicate it once. */
+export async function uploadBytes(
   accessToken: string,
   opts: { parentId: string; name: string; mimeType: string; bytes: Buffer },
 ): Promise<{ id: string; webViewLink: string } | null> {

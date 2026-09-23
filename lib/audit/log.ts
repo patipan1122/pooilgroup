@@ -47,6 +47,11 @@ export type AuditAction =
   | "DOCUFLOW_DOCTYPE_UPDATE"
   | "DOCUFLOW_DOCTYPE_DELETE"
   | "DOCUFLOW_DOCTYPE_IMPORT_CANONICAL"
+  // Google Drive export (DocuFlow redesign Track B Item 11) — opt-in,
+  // admin-triggered one-way snapshot to the org's existing ChairOps Drive
+  // connection. Re-export (overwriting the tracked file-id) reuses the
+  // same action, not a separate one.
+  | "DOCUFLOW_DRIVE_EXPORT"
   | "SETTINGS_UPDATED"
   | "BACKUP_TRIGGERED"
   // RULES §12 — sensitive admin actions that change permission scope or
