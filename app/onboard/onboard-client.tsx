@@ -771,7 +771,7 @@ export function OnboardClient() {
     req("position", "ตำแหน่ง");
     req("startDate", "วันที่เริ่มงาน");
     if (form.salary.trim() === "" || Number(form.salary) <= 0)
-      e.salary = "กรอกเงินเดือนที่ตกลงไว้";
+      e.salary = "กรอกค่าแรงต่อวันที่ตกลงไว้";
 
     // §2
     if (!form.titlePrefix) e.titlePrefix = "เลือกคำนำหน้า";
@@ -1080,7 +1080,7 @@ export function OnboardClient() {
           </FieldShell>
           <FieldShell
             id="salary"
-            label="เงินเดือน/ค่าตอบแทนที่ตกลงไว้ (บาท)"
+            label="ค่าแรงต่อวัน ที่ตกลงไว้ (บาท/วัน)"
             required
             help="HR จะตรวจสอบอีกครั้ง"
             error={errors.salary}

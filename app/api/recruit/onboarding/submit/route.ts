@@ -108,7 +108,7 @@ const SubmitSchema = z.object({
   branch: z.string().min(1, "กรอกสาขา/สถานที่ทำงาน").max(200), // free text per the source form
   positionApplied: z.string().min(1, "กรอกตำแหน่งงาน").max(200),
   desiredStartDate: DateString,
-  desiredSalary: z.number().positive("เงินเดือนต้องมากกว่า 0").max(9_999_999),
+  desiredSalary: z.number().positive("ค่าแรงต่อวันต้องมากกว่า 0").max(9_999_999),
 
   // ส่วนที่ 2 — ข้อมูลส่วนตัว
   titlePrefix: z.string().min(1, "เลือกคำนำหน้า").max(20),

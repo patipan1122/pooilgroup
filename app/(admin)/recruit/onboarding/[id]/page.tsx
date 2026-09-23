@@ -232,7 +232,7 @@ export default async function OnboardingSubmissionPage({
               <b>ก่อนกดอนุมัติ:</b> โทรยืนยันตัวตนด้วย
               <b>เบอร์ที่ใช้คุยกันตอนสัมภาษณ์จริง</b> ไม่ใช่เบอร์ {sub.phone} ที่พิมพ์มาในฟอร์มนี้ ·
               ระบบไม่มีการเชื่อมกับใบสมัครงานโดยเจตนา จึง<b>ไม่มีอะไรยืนยันอัตโนมัติ</b>ว่าคนนี้คือคนที่เราตกลงรับ
-              · เทียบ ตำแหน่ง/สาขา/เงินเดือน กับที่ตกลงไว้ด้วย
+              · เทียบ ตำแหน่ง/สาขา/ค่าแรงต่อวัน กับที่ตกลงไว้ด้วย
             </p>
           </div>
         )}
@@ -348,7 +348,7 @@ export default async function OnboardingSubmissionPage({
                     `${asText(answers.branchText) || "—"} (พิมพ์เอง · ยังจับคู่สาขาในระบบไม่ได้)`,
                 ],
                 ["วันที่พร้อมเริ่มงาน", fmtDateTh(sub.desiredStartDate)],
-                ["เงินเดือนที่ต้องการ", formatBaht(sub.desiredSalary.toString())],
+                ["ค่าแรงต่อวันที่ตกลงไว้", `${formatBaht(sub.desiredSalary.toString())} / วัน`],
               ]}
             />
           </Block>
