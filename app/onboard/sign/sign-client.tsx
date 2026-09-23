@@ -46,6 +46,7 @@ import {
 } from "lucide-react";
 import {
   RecruitApplicationDocument,
+  onboardingReceiptKey,
   type ApplicationDocData,
 } from "@/components/recruit/application-document";
 import {
@@ -667,6 +668,38 @@ export function SignClient({
   const [referenceConsent, setReferenceConsent] = useState(false);
   const referenceConsentOk = !needsReferenceConsent || referenceConsent;
 
+  /**
+   * ย่อรูปเซลฟี่เป็น data URL เล็ก ๆ สำหรับ "สำเนาใบสมัคร" ที่หน้า success อ่าน
+   *
+   * previewUrl ของเซลฟี่เป็น blob: URL ซึ่ง **ตายทันทีที่เปลี่ยนหน้า** — ถ้าเก็บ
+   * ตัวนั้นลง sessionStorage ตรง ๆ หน้า success จะได้รูปเสีย. แปลงเป็น data URL
+   * และย่อเหลือด้านละ ≤360px ก่อน เพราะ sessionStorage มีเพดานราว 5MB และ
+   * base64 ทำให้ใหญ่ขึ้นอีก ~33%.
+   */
+  const selfieDataUrlForReceipt = useCallback(async (blob: Blob): Promise<string | null> => {
+    try {
+      const bitmap = await createImageBitmap(blob);
+      const max = 360;
+      const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+      const w = Math.max(1, Math.round(bitmap.width * scale));
+      const h = Math.max(1, Math.round(bitmap.height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return null;
+      ctx.drawImage(bitmap, 0, 0, w, h);
+      bitmap.close();
+      return canvas.toDataURL("image/jpeg", 0.75);
+    } catch {
+      return null;
+    }
+  }, []);
+
+  /* ----------------------------------------------------------- เซลฟี่ยืนยันตัว */
+  // ประกาศไว้เหนือ useMemo ของใบสมัคร เพราะใบสมัครเอา previewUrl ไปแปะมุมขวาบน
+  const [selfie, setSelfie] = useState<SelfieState | null>(null);
+
   /* --------------------------------------------------- ใบสมัครฉบับกระดาษ */
   // แปลงข้อมูลที่กรอกไว้ → รูปแบบเอกสาร A4. ใช้วันที่ที่ server จัดรูปแบบมาแล้ว
   // (contract.startDateText) ถ้ามี เพื่อให้ใบสมัครกับสัญญาพูดวันเดียวกันเป๊ะ
@@ -765,8 +798,10 @@ export function SignClient({
         (doc) => ONBOARDING_DOC_TYPE_LABELS_TH[doc.docType] ?? doc.docType,
       ),
       signatureDataUrl: signaturePreview,
+      // รูปเซลฟี่ที่เพิ่งถ่าย → มุมขวาบนของใบสมัคร (เหมือนช่องติดรูปในใบสมัครกระดาษ)
+      selfieDataUrl: selfie?.previewUrl ?? null,
     };
-  }, [form, contract, payload, signaturePreview]);
+  }, [form, contract, payload, signaturePreview, selfie]);
 
   /* ------------------------------------------------------------------- ลายเซ็น */
   const padRef = useRef<SignatureCanvas | null>(null);
@@ -829,7 +864,6 @@ export function SignClient({
   }, [clearPad]);
 
   /* --------------------------------------------------------------------- เซลฟี่ */
-  const [selfie, setSelfie] = useState<SelfieState | null>(null);
   const selfieUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -1006,7 +1040,22 @@ export function SignClient({
         throw new Error("ระบบตอบกลับไม่ครบ · กรุณาติดต่อฝ่ายบุคคลเพื่อตรวจสอบ");
       }
 
-      // ส่งสำเร็จแล้ว ล้าง handoff ทิ้ง กันกด back แล้วส่งซ้ำ
+      // ส่งสำเร็จแล้ว ล้าง handoff ทิ้ง กันกด back แล้วส่งซ้ำ — แต่ก่อนล้าง
+      // เก็บ "สำเนาไว้ดูอย่างเดียว" ของใบสมัครไว้คนละคีย์ เพื่อให้หน้า success
+      // กดดูใบสมัครของตัวเองได้ (CEO 2026-09-23) โดยที่ข้อมูลสำหรับ "ส่ง" หายไป
+      // แล้วจริง ๆ → กด back ก็ส่งซ้ำไม่ได้เหมือนเดิม
+      try {
+        // blob: URL ของเซลฟี่ใช้ข้ามหน้าไม่ได้ → แปลงเป็น data URL ย่อก่อนเก็บ
+        const selfieForReceipt = selfie
+          ? await selfieDataUrlForReceipt(selfie.blob)
+          : null;
+        window.sessionStorage.setItem(
+          onboardingReceiptKey(json.reference),
+          JSON.stringify({ ...applicationDocData, selfieDataUrl: selfieForReceipt }),
+        );
+      } catch {
+        /* เต็ม/โหมดไม่ระบุตัวตน — แค่ดูใบสมัครย้อนหลังไม่ได้ ไม่กระทบการส่ง */
+      }
       try {
         window.sessionStorage.removeItem(onboardingHandoffKey(payload.sessionId));
         window.sessionStorage.removeItem(ONBOARDING_HANDOFF_POINTER_KEY);
@@ -1752,6 +1801,9 @@ function ApplicationPreviewModal({
       </div>
 
       <div className="flex-1 overflow-y-auto overscroll-contain p-3 sm:p-6">
+              <p className="sm:hidden mx-auto w-full max-w-[820px] mb-2 text-[11px] text-white/80 text-center">
+                เลื่อนซ้าย-ขวาเพื่อดูทั้งใบ · กดปุ่มพิมพ์เพื่อดูเต็มหน้า A4
+              </p>
         <div className="mx-auto w-full max-w-[820px] bg-white rounded-xl shadow-lg overflow-hidden">
           <RecruitApplicationDocument data={data} printId="recruit-application-doc" />
         </div>

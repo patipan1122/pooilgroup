@@ -620,3 +620,400 @@ input:-webkit-autofill:focus {
     display: block !important;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Recruit Onboarding · "ใบสมัครงาน" ฉบับกระดาษ  (rcdoc-)
+   ใช้โดย components/recruit/application-document.tsx
+
+   ⚠️ ทำไม CSS ถึงต้องอยู่ที่นี่ ไม่ใช่ <style jsx> ในคอมโพเนนต์:
+   styled-jsx ใส่ scope hash ให้เฉพาะ JSX ที่เขียนอยู่ใน "ฟังก์ชันเดียวกัน"
+   กับ <style jsx> — พอแตก markup เป็นคอมโพเนนต์ย่อย (Cell/Row/Section)
+   คลาสในคอมโพเนนต์ย่อยจะไม่ได้สไตล์เลย ใบสมัครที่ปริ้นเลยออกมาเป็นข้อความ
+   เปล่า ๆ ป้ายกำกับติดกับค่าที่กรอก (CEO 2026-09-23: "ยังกับ code")
+   → global class ล้วน · ทุกคลาสขึ้นต้น rcdoc- กันชนกับที่อื่น
+
+   โทนเดียวกับสัญญาเช่า RentSpace (rsdoc): พื้นขาว · ตัวอักษร #111 ·
+   เส้นบาง · มุมมน 8px · หัวเอกสารกลางหน้า · print-color-adjust: exact
+   ต่างกันตรงที่ใบนี้เป็น "แบบฟอร์มมีขอบ" — ทุกช่องกรอกเป็นกล่องมีเส้นคั่น
+   และค่าที่คนกรอกใช้ฟอนต์ Anuphan ตัวหนา เข้มกว่าป้ายกำกับที่ฟอร์มพิมพ์ไว้
+   ───────────────────────────────────────────────────────────────────────── */
+.rcdoc {
+  --rcdoc-ink: #111;
+  --rcdoc-rule: #d7d7dc; /* เส้นคั่นในตาราง */
+  --rcdoc-edge: #b2b2b9; /* ขอบนอกของกล่องหมวด */
+  --rcdoc-label: #6f6f78; /* ป้ายกำกับที่ฟอร์มพิมพ์ไว้ */
+  --rcdoc-bar: #f2f2f4; /* แถบหัวหมวด */
+  --rcdoc-blank: #c3c3cb; /* ช่องที่ยังไม่ได้กรอก */
+  --rcdoc-hand: var(--font-thai-display), var(--font-thai), system-ui, sans-serif;
+  background: #fff;
+  color: var(--rcdoc-ink);
+  width: 100%;
+  /* มือถือ: เลื่อนดูทั้งใบตามแนวนอน ดีกว่ายุบโครงตารางทิ้ง (CEO ขอ "ตาราง") */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+/* padding อยู่ชั้นใน ไม่ใช่ที่ตัว scroll container — ไม่งั้นเบราว์เซอร์กิน
+   ขอบขวาทิ้งตอนเลื่อนไปสุด */
+.rcdoc-page {
+  font-family: var(--font-thai), "IBM Plex Sans Thai", system-ui, sans-serif;
+  padding: 24px 26px 26px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* ── หัวกระดาษ: โลโก้ซ้าย · ชื่อเอกสารกลาง · รูปถ่ายมุมขวาบน ───────────── */
+.rcdoc-mast {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.rcdoc-mast-logo img {
+  height: 44px;
+  width: auto;
+  display: block;
+}
+.rcdoc-mast-mid {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  padding-top: 2px;
+}
+.rcdoc-h1 {
+  font-family: var(--rcdoc-hand);
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  line-height: 1.2;
+}
+.rcdoc-h1-en {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--rcdoc-label);
+  letter-spacing: 1.6px;
+  margin-top: 1px;
+}
+.rcdoc-company {
+  font-size: 12px;
+  font-weight: 600;
+  color: #3f3f46;
+  margin-top: 3px;
+}
+.rcdoc-photo-wrap {
+  flex-shrink: 0;
+  width: 78px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.rcdoc-photo {
+  width: 78px;
+  height: 100px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+}
+.rcdoc-photo-empty {
+  border: 1px dashed #b9b9bf;
+  color: #9a9aa2;
+  font-size: 9.5px;
+}
+.rcdoc-photo-sub {
+  font-size: 8.5px;
+}
+.rcdoc-photo-has {
+  border: 1px solid var(--rcdoc-edge);
+}
+.rcdoc-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.rcdoc-photo-cap {
+  font-size: 8.5px;
+  color: var(--rcdoc-label);
+  letter-spacing: 0.3px;
+}
+.rcdoc-mast-rule {
+  border-top: 2px solid var(--rcdoc-ink);
+  margin: 9px 0 12px;
+}
+
+/* ── กล่องหมวด ─────────────────────────────────────────────────────────── */
+.rcdoc-sec {
+  border: 1px solid var(--rcdoc-edge);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.rcdoc-sec-h {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 9px;
+  background: var(--rcdoc-bar);
+  border-bottom: 1px solid var(--rcdoc-edge);
+}
+.rcdoc-sec-no {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  background: var(--rcdoc-ink);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.rcdoc-sec-t {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--rcdoc-ink);
+}
+.rcdoc-sec-en {
+  font-size: 8.5px;
+  font-weight: 600;
+  color: var(--rcdoc-label);
+  letter-spacing: 1px;
+}
+
+/* ── แถว + ช่องกรอก (หัวใจของหน้าตา "แบบฟอร์ม") ────────────────────────── */
+.rcdoc-r {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--rcdoc-rule);
+}
+.rcdoc-sec-b > .rcdoc-r:last-child {
+  border-bottom: 0;
+}
+.rcdoc-c {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 3px 9px 4px;
+  border-right: 1px solid var(--rcdoc-rule);
+  display: flex;
+  flex-direction: column;
+}
+.rcdoc-r > .rcdoc-c:last-child {
+  border-right: 0;
+}
+/* ป้ายกำกับ = ของที่ฟอร์ม "พิมพ์ไว้" → เล็ก จาง ห่างตัวอักษรนิดหน่อย */
+.rcdoc-l {
+  font-size: 9.5px;
+  font-weight: 500;
+  color: var(--rcdoc-label);
+  letter-spacing: 0.3px;
+  line-height: 1.35;
+}
+/* ค่าที่ "คนกรอก" → ฟอนต์คนละตัว (Anuphan) หนากว่า ใหญ่กว่า เข้มกว่า */
+.rcdoc-v {
+  font-family: var(--rcdoc-hand);
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #0b0b0b;
+  line-height: 1.35;
+  min-height: 18px;
+  overflow-wrap: anywhere;
+}
+.rcdoc-v-blank {
+  font-weight: 400;
+  color: var(--rcdoc-blank);
+}
+
+/* ── ตารางประวัติการทำงาน ──────────────────────────────────────────────── */
+.rcdoc-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.rcdoc-table th {
+  padding: 3px 8px;
+  text-align: left;
+  background: #f7f7f8;
+  border-right: 1px solid var(--rcdoc-rule);
+  border-bottom: 1px solid var(--rcdoc-rule);
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--rcdoc-label);
+  letter-spacing: 0.3px;
+}
+.rcdoc-table td {
+  padding: 4px 8px;
+  vertical-align: top;
+  border-right: 1px solid var(--rcdoc-rule);
+  border-bottom: 1px solid var(--rcdoc-rule);
+  font-family: var(--rcdoc-hand);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #0b0b0b;
+  overflow-wrap: anywhere;
+}
+.rcdoc-table th:last-child,
+.rcdoc-table td:last-child {
+  border-right: 0;
+}
+.rcdoc-w28 {
+  width: 28%;
+}
+.rcdoc-w18 {
+  width: 18%;
+}
+.rcdoc-w14 {
+  width: 14%;
+}
+
+/* ── เอกสารแนบ: ช่องติ๊กแบบฟอร์มกระดาษ ─────────────────────────────────── */
+.rcdoc-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 14px;
+  padding-top: 1px;
+}
+.rcdoc-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.rcdoc-tick {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  border: 1px solid #7b7b84;
+  border-radius: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 700;
+  color: #111;
+}
+.rcdoc-check-t {
+  font-family: var(--rcdoc-hand);
+  font-size: 12px;
+  font-weight: 700;
+  color: #0b0b0b;
+}
+
+/* ── คำรับรอง ──────────────────────────────────────────────────────────── */
+.rcdoc-declare {
+  padding: 7px 10px 8px;
+}
+.rcdoc-declare p {
+  margin: 0 0 4px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: #222;
+  text-align: justify;
+}
+.rcdoc-declare p:last-child {
+  margin-bottom: 0;
+}
+.rcdoc-declare b {
+  font-weight: 700;
+  color: #111;
+}
+
+/* ── ช่องลายเซ็น (อยู่ในกล่องหมวด 9 · คั่นกลางด้วยเส้นเดียวกับช่องกรอก) ─── */
+.rcdoc-sign {
+  padding: 10px 14px 12px;
+  text-align: center;
+}
+.rcdoc-sign-space {
+  height: 42px;
+}
+.rcdoc-sign-img {
+  height: 42px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.rcdoc-sign-img img {
+  max-height: 42px;
+  max-width: 180px;
+}
+.rcdoc-sign-line {
+  border-top: 1px solid #333;
+  margin: 0 8px;
+}
+.rcdoc-sign-role {
+  font-size: 10.5px;
+  color: var(--rcdoc-label);
+  letter-spacing: 0.3px;
+  margin-top: 4px;
+}
+.rcdoc-sign-name {
+  font-family: var(--rcdoc-hand);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #0b0b0b;
+  margin-top: 2px;
+}
+.rcdoc-sign-date {
+  font-size: 10.5px;
+  color: var(--rcdoc-label);
+  margin-top: 2px;
+}
+
+.rcdoc-foot {
+  margin-top: 12px;
+  padding-top: 6px;
+  border-top: 1px dashed #ccc;
+  font-size: 9.5px;
+  color: #9a9aa2;
+  text-align: center;
+}
+
+/* มือถือ (CEO ตรวจงานบน iPhone): คงโครงตารางไว้ทั้งใบแล้วให้เลื่อนแนวนอน
+   แทนการยุบเป็นบรรทัดเดียว — ใช้ screen เพื่อไม่ให้ชนกับตอนสั่งพิมพ์
+   (A4 กว้าง ~718px ซึ่งเข้าเงื่อนไข max-width: 720px พอดี) */
+@media screen and (max-width: 720px) {
+  .rcdoc-page {
+    min-width: 640px;
+    padding: 16px 16px 20px;
+  }
+}
+
+/* พิมพ์: A4 แนวตั้ง · ไม่ตัดกลางหมวด/แถว/ตาราง/ช่องเซ็น · สีพื้นติดกระดาษ */
+@media print {
+  .rcdoc {
+    overflow: visible;
+  }
+  .rcdoc-page {
+    min-width: 0;
+    padding: 0;
+    font-size: 11.5px;
+    line-height: 1.45;
+  }
+  .rcdoc,
+  .rcdoc * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .rcdoc-sec,
+  .rcdoc-r,
+  .rcdoc-table,
+  .rcdoc-table tr,
+  .rcdoc-checks {
+    break-inside: avoid;
+  }
+  .rcdoc-mast,
+  .rcdoc-sec-h {
+    break-after: avoid;
+  }
+  /* ลายเซ็นที่วาดสูงไม่ให้ถูกครอปตอนพิมพ์ */
+  .rcdoc-sign-img {
+    height: auto;
+  }
+  .rcdoc-sign-img img {
+    max-height: 64px;
+  }
+}

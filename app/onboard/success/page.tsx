@@ -8,6 +8,7 @@
 
 import type { Metadata } from "next";
 import { CheckCircle2, Clock3, MessageCircle } from "lucide-react";
+import { OnboardReceiptView } from "./receipt-view";
 
 export const metadata: Metadata = {
   title: "ส่งข้อมูลเรียบร้อย · รอฝ่ายบุคคลตรวจสอบ",
@@ -63,6 +64,9 @@ export default async function OnboardSuccessPage({
             </p>
           </div>
         </div>
+
+        {/* ดูใบสมัครของตัวเอง — ขึ้นเฉพาะเมื่อยังมีสำเนาอยู่ในเครื่อง (เซสชันเดิม) */}
+        <OnboardReceiptView reference={ref ?? ""} />
 
         <p className="text-xs text-zinc-500 mt-6">
           ปิดหน้านี้ได้เลย · หากมีคำถามติดต่อฝ่ายบุคคลที่บริษัท
