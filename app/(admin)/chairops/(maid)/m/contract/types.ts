@@ -21,6 +21,7 @@ export interface ContractDocData {
   endDate: string | null;
   // แนบ
   idCardImageUrl: string | null;
+  selfieImageUrl: string | null;
 }
 
 export interface ContractSignature {
