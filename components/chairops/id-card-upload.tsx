@@ -9,6 +9,23 @@
 import { useRef, useState } from "react";
 import { FileText, Loader2, Upload, X } from "lucide-react";
 
+/** fetch() only throws TypeError for network-level failures (Safari surfaces
+ *  this as the bare, unhelpful message "Load failed") — retry once since
+ *  mobile signal drops are the common cause, but never retry a real HTTP
+ *  error response. */
+function isNetworkError(e: unknown): boolean {
+  return e instanceof TypeError;
+}
+
+async function fetchWithRetry(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch (e) {
+    if (!isNetworkError(e)) throw e;
+    return await fetch(input, init);
+  }
+}
+
 interface Props {
   /** hidden-input name prefix → `${name}ImageUrl` + `${name}FileName` */
   name?: string;
@@ -38,7 +55,7 @@ export function IdCardUpload({
     setError(null);
     setUploading(true);
     try {
-      const presign = await fetch("/api/r2/sign", {
+      const presign = await fetchWithRetry("/api/r2/sign", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -55,7 +72,7 @@ export function IdCardUpload({
         uploadUrl: string;
         publicUrl: string;
       };
-      const put = await fetch(uploadUrl, {
+      const put = await fetchWithRetry(uploadUrl, {
         method: "PUT",
         headers: { "content-type": file.type || "application/octet-stream" },
         body: file,
@@ -65,7 +82,13 @@ export function IdCardUpload({
       setFileName(file.name);
       onChange?.(publicUrl, file.name);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "อัปโหลดไม่สำเร็จ");
+      setError(
+        isNetworkError(err)
+          ? "เน็ตหลุดกลางทางตอนอัปโหลดรูป — เช็คสัญญาณแล้วลองใหม่อีกครั้ง"
+          : err instanceof Error
+            ? err.message
+            : "อัปโหลดไม่สำเร็จ",
+      );
     } finally {
       setUploading(false);
       if (inputRef.current) inputRef.current.value = "";
@@ -126,11 +149,13 @@ export function IdCardUpload({
       {error && (
         <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</p>
       )}
+      {/* ไม่ใส่ capture — ปุ่มนี้สัญญาว่า "ถ่าย / เลือกรูป" ได้ทั้งสองทาง ถ้าใส่
+          capture มือถือ/แอปแชทบางตัว (เช่น LINE in-app browser) จะบังคับเปิด
+          กล้องอย่างเดียว เปิดคลังรูปไม่ได้เลย (CEO report 2026-09-23) */}
       <input
         ref={inputRef}
         type="file"
         accept="image/*,application/pdf"
-        capture="environment"
         onChange={onPick}
         className="hidden"
       />
