@@ -77,6 +77,7 @@ export default async function OfficeMaidContractPage({
     startDate: ymd(contract.startDate),
     endDate: ymd(contract.endDate),
     idCardImageUrl: contract.idCardImageUrl,
+    selfieImageUrl: contract.selfieImageUrl,
   };
 
   const signed =

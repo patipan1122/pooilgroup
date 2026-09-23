@@ -45,6 +45,7 @@ export interface ContractPrefill {
   endDate: string;
   idCardImageUrl: string;
   idCardFileName: string;
+  selfieImageUrl: string;
   companyBankName: string;
   companyAccountNo: string;
   companyAccountName: string;
@@ -134,6 +135,7 @@ export function ContractFlow({ prefill }: { prefill: ContractPrefill }) {
       startDate: f.startDate || null,
       endDate: f.endDate || null,
       idCardImageUrl: f.idCardImageUrl || null,
+      selfieImageUrl: f.selfieImageUrl || null,
     }),
     [f],
   );

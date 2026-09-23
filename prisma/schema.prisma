@@ -3442,6 +3442,11 @@ model ChairopsMaidContract {
   // ── แนบบัตรประชาชน (PDPA-sensitive · private storage) ───────────────────
   idCardImageUrl String?
 
+  // ── เซลฟี่ยืนยันตัวตน (snapshot ณ วันเซ็นสัญญา, CEO 2026-09-23) ─────────
+  // จาก ChairopsUser.selfieImageUrl ที่วันนั้น — ถ่ายซ้ำเพื่อกันสัญญาที่เซ็นแล้ว
+  // เปลี่ยนรูปตามภายหลัง เหมือน idCardImageUrl ด้านบน
+  selfieImageUrl String?
+
   // ── ลายเซ็นออนไลน์ (ผู้รับจ้าง) ────────────────────────────────────────
   signatureImageUrl String? // drawn signature PNG (R2/Drive)
   signedName        String? // typed full name at signing

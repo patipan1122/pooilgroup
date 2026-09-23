@@ -144,6 +144,17 @@ export async function signContract(fd: FormData): Promise<ActionResult<{ id: str
   const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
   const userAgent = hdrs.get("user-agent")?.slice(0, 500) ?? null;
 
+  // Snapshot the maid's CURRENT selfie (captured once at onboarding) onto the
+  // contract at the moment of signing — read server-side, not trusted from
+  // client form data, same reasoning as the company account above (CEO
+  // 2026-09-23: the signed contract's photo must not drift if the profile
+  // selfie is ever re-captured later).
+  const maidProfile = await prisma.chairopsUser.findUnique({
+    where: { id: maidId },
+    select: { selfieImageUrl: true },
+  });
+  const selfieImageUrl = maidProfile?.selfieImageUrl ?? null;
+
   // Bind the signature to the exact terms signed (tamper-evidence · ม.9).
   const contentHash = contractContentHash({
     maidName: fields.maidName,
@@ -162,6 +173,7 @@ export async function signContract(fd: FormData): Promise<ActionResult<{ id: str
     startDate: ymdOf(fields.startDate),
     endDate: ymdOf(fields.endDate),
     idCardImageUrl: fields.idCardImageUrl,
+    selfieImageUrl,
     signatureImageUrl,
     signedName,
   });
@@ -171,6 +183,7 @@ export async function signContract(fd: FormData): Promise<ActionResult<{ id: str
       ...fields,
       ...company,
       status: "SIGNED" as const,
+      selfieImageUrl,
       signatureImageUrl,
       signedName,
       signedAt: new Date(),

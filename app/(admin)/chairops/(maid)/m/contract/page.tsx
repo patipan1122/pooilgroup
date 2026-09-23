@@ -44,6 +44,7 @@ export default async function MaidContractPage({
         homeAddress: true,
         idCardImageUrl: true,
         idCardFileName: true,
+        selfieImageUrl: true,
         bankName: true,
         bankAccountNo: true,
         bankAccountName: true,
@@ -107,6 +108,7 @@ export default async function MaidContractPage({
       startDate: ymd(contract.startDate),
       endDate: ymd(contract.endDate),
       idCardImageUrl: contract.idCardImageUrl,
+      selfieImageUrl: contract.selfieImageUrl,
     };
     return (
       <div className="rs-scope min-h-screen pb-10" style={{ background: "var(--rs-bg-2)" }}>
@@ -141,6 +143,7 @@ export default async function MaidContractPage({
     endDate: ymd(contract?.endDate ?? null),
     idCardImageUrl: contract?.idCardImageUrl ?? user.idCardImageUrl ?? "",
     idCardFileName: user.idCardFileName ?? "",
+    selfieImageUrl: contract?.selfieImageUrl ?? user.selfieImageUrl ?? "",
     companyBankName: contract?.companyBankName ?? company?.bankName ?? "",
     companyAccountNo: contract?.companyAccountNo ?? company?.accountNo ?? "",
     companyAccountName:

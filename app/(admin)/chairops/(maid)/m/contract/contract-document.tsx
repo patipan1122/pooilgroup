@@ -35,9 +35,26 @@ export function ContractDocument({
 }) {
   return (
     <div className="contract-doc mx-auto max-w-[820px] bg-white p-6 text-[13px] leading-relaxed text-zinc-900 sm:p-10">
-      <h1 className="text-center text-lg font-bold">
-        สัญญาจ้างเหมาทำความสะอาดและเก็บเงินนำส่งธนาคาร
-      </h1>
+      <div className="flex items-start justify-between gap-3">
+        <div className="w-20 shrink-0 sm:w-24" aria-hidden />
+        <h1 className="flex-1 text-center text-lg font-bold">
+          สัญญาจ้างเหมาทำความสะอาดและเก็บเงินนำส่งธนาคาร
+        </h1>
+        <div className="flex h-24 w-20 shrink-0 items-center justify-center overflow-hidden rounded-md border border-zinc-300 bg-zinc-50 sm:h-28 sm:w-24">
+          {data.selfieImageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={data.selfieImageUrl}
+              alt="รูปถ่ายผู้รับจ้าง"
+              className="size-full object-cover"
+            />
+          ) : (
+            <span className="px-1 text-center text-[10px] leading-tight text-zinc-400">
+              ติดรูปถ่าย
+            </span>
+          )}
+        </div>
+      </div>
 
       <p className="mt-4">
         <span className="font-semibold">คู่สัญญา</span>
