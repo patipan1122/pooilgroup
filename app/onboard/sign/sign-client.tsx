@@ -37,10 +37,17 @@ import {
   Loader2,
   PenLine,
   RotateCcw,
+  FileText,
+  Printer,
   ScrollText,
   ShieldQuestion,
   Upload,
+  X,
 } from "lucide-react";
+import {
+  RecruitApplicationDocument,
+  type ApplicationDocData,
+} from "@/components/recruit/application-document";
 import {
   onboardingHandoffKey,
   ONBOARDING_HANDOFF_POINTER_KEY,
@@ -49,7 +56,10 @@ import {
   type OnboardingHandoffForm,
   type OnboardingHandoffPayload,
 } from "@/app/onboard/onboard-client";
-import { ONBOARDING_MAX_CAPTURE_SIZE } from "@/lib/recruit/onboarding-types";
+import {
+  ONBOARDING_MAX_CAPTURE_SIZE,
+  ONBOARDING_DOC_TYPE_LABELS_TH,
+} from "@/lib/recruit/onboarding-types";
 
 /* ======================================================= สัญญากับ page.tsx */
 
@@ -597,6 +607,24 @@ export function SignClient({
   const contentRef = useRef<HTMLDivElement | null>(null);
   const [readProgress, setReadProgress] = useState(0);
   const [scrolledToEnd, setScrolledToEnd] = useState(false);
+  const [showApplicationPreview, setShowApplicationPreview] = useState(false);
+  // หมึกลายเซ็นอยู่บนแป้น ไม่ได้เก็บใน state — ตอนเปิดพรีวิวจึงถ่ายภาพจากแป้น
+  // ณ ตอนนั้นทีเดียว (ยังไม่เซ็น = null → ใบสมัครเว้นเส้นให้เซ็นด้วยมือ)
+  const [signaturePreview, setSignaturePreview] = useState<string | null>(null);
+
+  const openApplicationPreview = useCallback(() => {
+    const pad = padRef.current;
+    let dataUrl: string | null = null;
+    if (pad && !pad.isEmpty()) {
+      try {
+        dataUrl = pad.getTrimmedCanvas().toDataURL("image/png");
+      } catch {
+        dataUrl = null;
+      }
+    }
+    setSignaturePreview(dataUrl);
+    setShowApplicationPreview(true);
+  }, []);
 
   const evaluateScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -638,6 +666,107 @@ export function SignClient({
   const needsReferenceConsent = form !== null && !form.consentContactReference;
   const [referenceConsent, setReferenceConsent] = useState(false);
   const referenceConsentOk = !needsReferenceConsent || referenceConsent;
+
+  /* --------------------------------------------------- ใบสมัครฉบับกระดาษ */
+  // แปลงข้อมูลที่กรอกไว้ → รูปแบบเอกสาร A4. ใช้วันที่ที่ server จัดรูปแบบมาแล้ว
+  // (contract.startDateText) ถ้ามี เพื่อให้ใบสมัครกับสัญญาพูดวันเดียวกันเป๊ะ
+  const applicationDocData: ApplicationDocData = useMemo(() => {
+    const addr = (a: typeof form extends null ? never : NonNullable<typeof form>["registeredAddress"]) =>
+      [
+        a.houseNo && `บ้านเลขที่ ${a.houseNo}`,
+        a.moo && `หมู่ ${a.moo}`,
+        a.road && `ถ.${a.road}`,
+        a.subDistrict && `ต./แขวง ${a.subDistrict}`,
+        a.district && `อ./เขต ${a.district}`,
+        a.province && `จ.${a.province}`,
+        a.postalCode,
+      ]
+        .filter(Boolean)
+        .join(" ");
+    const f = form;
+    if (!f) {
+      return {
+        companyName: "",
+        branch: "",
+        position: "",
+        startDateText: "",
+        dailyWageText: "",
+        submittedAtText: "",
+        titlePrefix: "",
+        fullNameTh: "",
+        nickname: "",
+        nationalId: "",
+        birthDateText: "",
+        nationality: "",
+        phone: "",
+        registeredAddress: "",
+        currentAddress: "",
+        emergencyContacts: [],
+        educationLevel: "",
+        hasWorkExperience: false,
+        workHistory: [],
+        bankName: "",
+        bankAccountNo: "",
+        bankAccountName: "",
+        noBankAccountYet: false,
+        attachedDocLabels: [],
+      };
+    }
+    return {
+      companyName: contract?.ok ? contract.companyName : f.companyName,
+      branch: contract?.ok ? contract.branchName : f.branch,
+      position: f.position,
+      startDateText: contract?.ok ? contract.startDateText : f.startDate,
+      dailyWageText: f.salary > 0 ? f.salary.toLocaleString("th-TH") : "",
+      submittedAtText: new Date().toLocaleDateString("th-TH", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      }),
+      titlePrefix: f.titlePrefix,
+      fullNameTh: f.fullNameTh,
+      fullNameEn: f.fullNameEn,
+      nickname: f.nickname,
+      nationalId: f.nationalId,
+      birthDateText: f.birthDate,
+      nationality: f.nationality,
+      militaryStatus: f.militaryStatus,
+      phone: f.phone,
+      lineId: f.lineId,
+      email: f.email,
+      maritalStatus: f.maritalStatus,
+      registeredAddress: addr(f.registeredAddress),
+      currentAddress: f.currentAddressSameAsRegistered
+        ? "เหมือนที่อยู่ตามทะเบียนบ้าน"
+        : addr(f.currentAddress),
+      emergencyContacts: f.emergencyContacts.map((c) => ({
+        name: c.fullName,
+        relation: c.relation,
+        phone: c.phone,
+      })),
+      educationLevel: f.educationLevel,
+      educationInstitute: f.institution,
+      educationYear: f.graduationYearBe ? String(f.graduationYearBe) : "",
+      hasWorkExperience: f.hasWorkExperience,
+      workHistory: f.workHistory.map((w) => ({
+        company: w.employer,
+        position: w.position,
+        period: w.period,
+        salary: w.lastSalary ? w.lastSalary.toLocaleString("th-TH") : "",
+        reasonLeaving: w.reasonForLeaving,
+      })),
+      referenceName: f.reference?.name ?? "",
+      referencePhone: f.reference?.phone ?? "",
+      bankName: f.bankName,
+      bankAccountNo: f.bankAccountNo,
+      bankAccountName: f.bankAccountName,
+      noBankAccountYet: f.noBankAccountYet,
+      attachedDocLabels: (payload?.documents ?? []).map(
+        (doc) => ONBOARDING_DOC_TYPE_LABELS_TH[doc.docType] ?? doc.docType,
+      ),
+      signatureDataUrl: signaturePreview,
+    };
+  }, [form, contract, payload, signaturePreview]);
 
   /* ------------------------------------------------------------------- ลายเซ็น */
   const padRef = useRef<SignatureCanvas | null>(null);
@@ -948,7 +1077,24 @@ export function SignClient({
           <Check className="size-3 text-emerald-600" aria-hidden />
           เอกสารแนบ {payload.documents.length} ไฟล์ · ส่งพร้อมสัญญานี้
         </p>
+        {/* ใบสมัครงานฉบับกระดาษ — พรีวิว/พิมพ์/บันทึกได้ (ต่างจากตัวสัญญาที่ล็อกไว้)
+            CEO 2026-09-23: อยากเห็นหน้าตาใบสมัครก่อนส่ง และปริ้นเก็บเข้าแฟ้มได้ */}
+        <button
+          type="button"
+          onClick={openApplicationPreview}
+          className="mt-2.5 w-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-zinc-300 bg-white px-3 py-2.5 text-[13px] font-bold text-zinc-700 active:bg-zinc-50"
+        >
+          <FileText className="size-4" aria-hidden />
+          ดูใบสมัครงานของฉัน (พิมพ์ / บันทึกได้)
+        </button>
       </section>
+
+      {showApplicationPreview && (
+        <ApplicationPreviewModal
+          data={applicationDocData}
+          onClose={() => setShowApplicationPreview(false)}
+        />
+      )}
 
       {/* (ข) ตัวสัญญา + ด่านอ่าน --------------------------------------------- */}
       <section className={CARD}>
@@ -1542,6 +1688,101 @@ function SelfieCapture({
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ พรีวิวใบสมัคร */
+
+/**
+ * โมดัลเต็มจอแสดง "ใบสมัครงาน" ฉบับกระดาษ พร้อมปุ่มพิมพ์/บันทึกเป็น PDF.
+ *
+ * ต่างจากตัวสัญญาโดยตั้งใจ: สัญญาถูกล็อกไม่ให้ก๊อป/บันทึก/พิมพ์ (CEO สั่ง)
+ * ส่วนใบสมัครเป็นเอกสารของผู้สมัครเอง เปิดให้พิมพ์/เก็บไว้ได้เต็มที่.
+ *
+ * การพิมพ์ใช้ window.print() ของเบราว์เซอร์ + CSS @media print ที่ซ่อนทุกอย่าง
+ * นอกจากตัวเอกสาร — ไม่ต้องพึ่งไลบรารี PDF ใด ๆ (บนมือถือ "พิมพ์" = บันทึก PDF
+ * ได้ในตัวอยู่แล้วทั้ง iOS และ Android).
+ */
+function ApplicationPreviewModal({
+  data,
+  onClose,
+}: {
+  data: ApplicationDocData;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    // กันหน้าเบื้องหลังเลื่อนตามขณะเปิดโมดัล
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      className="onboard-appdoc-modal fixed inset-0 z-50 bg-zinc-900/60 backdrop-blur-sm flex flex-col"
+      role="dialog"
+      aria-modal="true"
+      aria-label="ใบสมัครงาน"
+    >
+      <div className="onboard-appdoc-bar shrink-0 flex items-center justify-between gap-2 px-3 py-2.5 bg-white border-b border-zinc-200">
+        <button
+          type="button"
+          onClick={onClose}
+          className="inline-flex items-center gap-1.5 text-[13px] font-bold text-zinc-700 px-2 py-1.5 -ml-1"
+        >
+          <X className="size-4" aria-hidden />
+          ปิด
+        </button>
+        <button
+          type="button"
+          onClick={() => window.print()}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--color-brand-600)] px-3.5 py-2 text-[13px] font-bold text-white"
+        >
+          <Printer className="size-4" aria-hidden />
+          พิมพ์ / บันทึก PDF
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto overscroll-contain p-3 sm:p-6">
+        <div className="mx-auto w-full max-w-[820px] bg-white rounded-xl shadow-lg overflow-hidden">
+          <RecruitApplicationDocument data={data} printId="recruit-application-doc" />
+        </div>
+      </div>
+
+      <style jsx global>{`
+        @media print {
+          /* พิมพ์เฉพาะตัวเอกสาร — ซ่อนทั้งหน้าเว็บที่เหลือ รวมแถบปุ่มของโมดัลเอง */
+          body > *:not(.onboard-appdoc-modal) {
+            display: none !important;
+          }
+          .onboard-appdoc-modal {
+            position: static !important;
+            background: #fff !important;
+            backdrop-filter: none !important;
+            display: block !important;
+          }
+          .onboard-appdoc-bar {
+            display: none !important;
+          }
+          .onboard-appdoc-modal .shadow-lg {
+            box-shadow: none !important;
+            border-radius: 0 !important;
+            max-width: none !important;
+          }
+          @page {
+            size: A4 portrait;
+            margin: 12mm 10mm;
+          }
+        }
+      `}</style>
     </div>
   );
 }
