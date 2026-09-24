@@ -40,6 +40,7 @@ export interface DocumentTypeRow {
   name: string;
   category: string | null;
   businessType: string | null;
+  companyId: string | null;
   frequency: string | null;
   dangerLevel: string | null;
   regulator: string | null;
@@ -51,6 +52,11 @@ export interface BizTypeOption {
   value: string;
   label: string;
   canonicalCount: number;
+}
+
+export interface CompanyOption {
+  id: string;
+  name: string;
 }
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -77,11 +83,13 @@ const DANGER_LABEL: Record<string, string> = {
 interface Props {
   initialDocumentTypes: DocumentTypeRow[];
   businessTypeOptions: BizTypeOption[];
+  companyOptions: CompanyOption[];
 }
 
 export function DocumentTypeManager({
   initialDocumentTypes,
   businessTypeOptions,
+  companyOptions,
 }: Props) {
   const router = useRouter();
   const [rows, setRows] = useState<DocumentTypeRow[]>(initialDocumentTypes);
@@ -93,6 +101,11 @@ export function DocumentTypeManager({
     const map = new Map(businessTypeOptions.map((b) => [b.value, b.label]));
     return (v: string | null) => (v ? (map.get(v) ?? v) : "ทั้งองค์กร");
   }, [businessTypeOptions]);
+
+  const companyLabel = useMemo(() => {
+    const map = new Map(companyOptions.map((c) => [c.id, c.name]));
+    return (v: string | null) => (v ? (map.get(v) ?? v) : null);
+  }, [companyOptions]);
 
   function openCreate() {
     setEditing(null);
@@ -206,6 +219,7 @@ export function DocumentTypeManager({
               key={row.id}
               row={row}
               businessTypeLabel={businessTypeLabel}
+              companyLabel={companyLabel}
               onEdit={() => openEdit(row)}
               onToggleActive={() => setActive(row, false)}
             />
@@ -230,6 +244,7 @@ export function DocumentTypeManager({
                   key={row.id}
                   row={row}
                   businessTypeLabel={businessTypeLabel}
+                  companyLabel={companyLabel}
                   onEdit={() => openEdit(row)}
                   onToggleActive={() => setActive(row, true)}
                 />
@@ -244,6 +259,7 @@ export function DocumentTypeManager({
         onClose={() => setFormOpen(false)}
         editing={editing}
         businessTypeOptions={businessTypeOptions}
+        companyOptions={companyOptions}
         onSaved={(row) => {
           upsertRow(row);
           setFormOpen(false);
@@ -272,11 +288,13 @@ export function DocumentTypeManager({
 function DocTypeRow({
   row,
   businessTypeLabel,
+  companyLabel,
   onEdit,
   onToggleActive,
 }: {
   row: DocumentTypeRow;
   businessTypeLabel: (v: string | null) => string;
+  companyLabel: (v: string | null) => string | null;
   onEdit: () => void;
   onToggleActive: () => void;
 }) {
@@ -321,6 +339,7 @@ function DocTypeRow({
             }}
           >
             <span>{businessTypeLabel(row.businessType)}</span>
+            {companyLabel(row.companyId) && <span>· 🏢 {companyLabel(row.companyId)}</span>}
             {row.category && <span>· {CATEGORY_LABEL[row.category] ?? row.category}</span>}
             {row.frequency && <span>· ต่ออายุ {row.frequency}</span>}
             {row.regulator && <span>· {row.regulator}</span>}
@@ -369,6 +388,7 @@ const FormSchema = z.object({
   name: z.string().min(1, "ใส่ชื่อประเภทเอกสาร").max(255),
   category: z.string().optional(),
   businessType: z.string().optional(),
+  companyId: z.string().optional(),
   dangerLevel: z.string().optional(),
   frequency: z.string().max(64).optional(),
   regulator: z.string().max(255).optional(),
@@ -381,12 +401,14 @@ function DocumentTypeFormDialog({
   onClose,
   editing,
   businessTypeOptions,
+  companyOptions,
   onSaved,
 }: {
   open: boolean;
   onClose: () => void;
   editing: DocumentTypeRow | null;
   businessTypeOptions: BizTypeOption[];
+  companyOptions: CompanyOption[];
   onSaved: (row: DocumentTypeRow) => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -401,6 +423,7 @@ function DocumentTypeFormDialog({
       name: editing?.name ?? "",
       category: editing?.category ?? "",
       businessType: editing?.businessType ?? "",
+      companyId: editing?.companyId ?? "",
       dangerLevel: editing?.dangerLevel ?? "",
       frequency: editing?.frequency ?? "",
       regulator: editing?.regulator ?? "",
@@ -426,6 +449,7 @@ function DocumentTypeFormDialog({
         name: values.name,
         category: values.category || null,
         businessType: values.businessType || null,
+        companyId: values.companyId || null,
         dangerLevel: values.dangerLevel || null,
         frequency: values.frequency || null,
         regulator: values.regulator || null,
@@ -497,6 +521,22 @@ function DocumentTypeFormDialog({
             {businessTypeOptions.map((b) => (
               <option key={b.value} value={b.value}>
                 {b.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        <Field label="บริษัท" optional htmlFor="dt-company" hint="เว้นว่าง = ใช้ได้ทุกบริษัท">
+          <select
+            id="dt-company"
+            {...register("companyId")}
+            disabled={busy}
+            className="w-full rounded-lg border-2 border-zinc-200 px-3 py-2 text-sm focus:border-[var(--color-brand-500)] focus:outline-none bg-white"
+          >
+            <option value="">— ทุกบริษัท —</option>
+            {companyOptions.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
               </option>
             ))}
           </select>

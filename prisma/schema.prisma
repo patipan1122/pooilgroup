@@ -150,6 +150,7 @@ model Company {
   ledgerBudgets                LedgerBudget[]
   ledgerLineChannels           LedgerLineChannel[]
   ledgerExportBatches          LedgerExportBatch[]
+  documentTypes                DocumentType[]
 
   @@unique([orgId, code])
   @@index([orgId, isActive])
@@ -1080,6 +1081,7 @@ model DocumentType {
   name         String
   category     String?  @map("category") // license | permanent | form | personnel — from canonical-docs.ts DocCategory
   businessType String?  @map("business_type") // optional link to a BusinessTypeKey; null = applies org-wide
+  companyId    String?  @map("company_id") @db.Uuid // optional link to a legal entity (Company); null = applies to every company
   frequency    String?  // ทุกปี / ทุก 2 ปี / ... (DocFrequency label, display-only)
   dangerLevel  String?  @map("danger_level") // critical | high | medium | low
   regulator    String?
@@ -1090,10 +1092,12 @@ model DocumentType {
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  company   Company?     @relation(fields: [companyId], references: [id], onDelete: SetNull)
   documents Document[]
 
   @@unique([orgId, name])
   @@index([orgId, isActive])
+  @@index([orgId, companyId])
   @@map("document_types")
   @@schema("public")
 }

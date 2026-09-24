@@ -25,6 +25,7 @@ const UpdateSchema = z.object({
   name: z.string().min(1).max(255).optional(),
   category: z.string().max(64).nullable().optional(),
   businessType: z.string().max(64).nullable().optional(),
+  companyId: z.string().uuid().nullable().optional(),
   frequency: z.string().max(64).nullable().optional(),
   dangerLevel: z.string().max(32).nullable().optional(),
   regulator: z.string().max(255).nullable().optional(),
@@ -68,6 +69,16 @@ export async function PATCH(
       { error: "ไม่พบประเภทเอกสารนี้" },
       { status: 404 },
     );
+  }
+
+  if (parsed.data.companyId) {
+    const company = await prisma.company.findFirst({
+      where: { id: parsed.data.companyId, orgId },
+      select: { id: true },
+    });
+    if (!company) {
+      return NextResponse.json({ error: "ไม่พบบริษัทนี้" }, { status: 400 });
+    }
   }
 
   try {

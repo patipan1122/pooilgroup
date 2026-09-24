@@ -21,6 +21,7 @@ import {
   Upload as UploadIcon,
   Search,
   X,
+  Plus,
   Building2,
   Store,
   Layers,
@@ -35,6 +36,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Dialog } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils/cn";
 import type { DocumentTypeOption } from "@/lib/docuflow/document-types";
 import type { DocumentGroupRecord } from "@/lib/docuflow/document-groups";
@@ -246,6 +248,17 @@ export function UploadForm({
   const [tagInput, setTagInput] = useState("");
   const fileNameSyncRef = useRef(false);
 
+  // Local copy of `documentTypes` so the "+ สร้างใหม่" quick-create dialog
+  // below can add a brand-new type to the dropdown immediately without a
+  // full page reload — stays in sync if the server prop itself changes
+  // (e.g. after router.refresh()).
+  const [localDocumentTypes, setLocalDocumentTypes] =
+    useState<DocumentTypeOption[]>(documentTypes);
+  const [quickCreateOpen, setQuickCreateOpen] = useState(false);
+  useEffect(() => {
+    setLocalDocumentTypes(documentTypes);
+  }, [documentTypes]);
+
   const {
     register,
     handleSubmit,
@@ -344,7 +357,7 @@ export function UploadForm({
   // makes a long list scannable instead of one flat alphabetical dump.
   const groupedDocumentTypes = useMemo(() => {
     const groups = new Map<string, DocumentTypeOption[]>();
-    for (const dt of documentTypes) {
+    for (const dt of localDocumentTypes) {
       const biz = businessTypes.find((b) => b.value === dt.businessType);
       const groupLabel = biz ? `${biz.emoji} ${biz.label}` : "📁 ทั่วไป";
       const list = groups.get(groupLabel);
@@ -352,7 +365,49 @@ export function UploadForm({
       else groups.set(groupLabel, [dt]);
     }
     return Array.from(groups.entries());
-  }, [documentTypes, businessTypes]);
+  }, [localDocumentTypes, businessTypes]);
+
+  async function handleQuickCreateDocType(input: {
+    name: string;
+    businessType: string;
+    companyId: string;
+  }) {
+    const res = await fetch("/api/docuflow/document-types", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: input.name,
+        businessType: input.businessType || null,
+        companyId: input.companyId || null,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || "สร้างประเภทเอกสารไม่สำเร็จ");
+    }
+    const data = (await res.json()) as {
+      documentType: {
+        id: string;
+        name: string;
+        category: string | null;
+        businessType: string | null;
+        companyId: string | null;
+        frequency: string | null;
+        dangerLevel: string | null;
+        regulator: string | null;
+        description: string | null;
+        canonicalKey: string | null;
+      };
+    };
+    const created: DocumentTypeOption = {
+      ...data.documentType,
+      isCanonical: false,
+    };
+    setLocalDocumentTypes((prev) => [...prev, created]);
+    setValue("documentTypeId", data.documentType.id);
+    setQuickCreateOpen(false);
+    toast.success(`สร้างประเภทเอกสาร "${created.name}" แล้ว`);
+  }
 
   function addScope(s: Scope) {
     setScopes((prev) => {
@@ -1020,27 +1075,22 @@ export function UploadForm({
 
         {files.length > 1 && (
           <div className="mt-3 rounded-xl border-2 border-zinc-200 bg-zinc-50 p-3">
-            <p className="text-xs font-bold text-zinc-700 mb-2">ไฟล์เหล่านี้คือ</p>
-            <div className="flex flex-col gap-2">
-              <label className="flex items-start gap-2.5 cursor-pointer">
+            <div className="flex flex-wrap gap-x-5 gap-y-2">
+              <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="radio"
                   name="uploadMode"
                   checked={uploadMode === "multiple"}
                   onChange={() => setUploadMode("multiple")}
                   disabled={busy}
-                  className="mt-0.5"
                 />
-                <span className="text-sm">
-                  <span className="font-medium text-zinc-800">หลายเอกสาร</span>
-                  <span className="block text-xs text-zinc-500">
-                    แต่ละไฟล์กลายเป็นเอกสารแยกกัน ({files.length} เอกสาร)
-                  </span>
+                <span className="text-sm font-medium text-zinc-800">
+                  หลายเอกสาร ({files.length} ไฟล์)
                 </span>
               </label>
               <label
                 className={cn(
-                  "flex items-start gap-2.5",
+                  "flex items-center gap-2",
                   combineSupported ? "cursor-pointer" : "cursor-not-allowed opacity-50",
                 )}
               >
@@ -1050,18 +1100,17 @@ export function UploadForm({
                   checked={uploadMode === "combined"}
                   onChange={() => setUploadMode("combined")}
                   disabled={busy || !combineSupported}
-                  className="mt-0.5"
                 />
-                <span className="text-sm">
-                  <span className="font-medium text-zinc-800">เอกสารเดียว หลายหน้า/ไฟล์</span>
-                  <span className="block text-xs text-zinc-500">
-                    {combineSupported
-                      ? `รวมทุกไฟล์เป็น PDF เดียว ${files.length} หน้า — เช่น สแกนเป็นรูปหลายใบ`
-                      : "รองรับเฉพาะ PDF และรูปภาพ JPG/PNG เท่านั้น — เอาไฟล์ประเภทอื่นออกก่อน"}
-                  </span>
+                <span className="text-sm font-medium text-zinc-800">
+                  เอกสารเดียว (รวม PDF)
                 </span>
               </label>
             </div>
+            {!combineSupported && (
+              <p className="mt-1.5 text-xs text-zinc-500">
+                รวมได้เฉพาะ PDF/JPG/PNG — เอาไฟล์ประเภทอื่นออกก่อนถึงจะเลือกโหมดนี้ได้
+              </p>
+            )}
           </div>
         )}
       </Field>
@@ -1088,13 +1137,26 @@ export function UploadForm({
         />
       </Field>
 
-      <Field
-        label="ประเภทเอกสาร"
-        optional
-        htmlFor="documentTypeId"
-        hint={documentTypes.length > 0 ? "ช่วยจัดหมวดและค้นหาเอกสารในอนาคต" : undefined}
-      >
-        {documentTypes.length > 0 ? (
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <label
+            htmlFor="documentTypeId"
+            className="flex items-center gap-1 text-sm font-medium text-zinc-800"
+          >
+            ประเภทเอกสาร
+            <span className="text-zinc-500 font-normal">(ไม่บังคับ)</span>
+          </label>
+          <button
+            type="button"
+            onClick={() => setQuickCreateOpen(true)}
+            disabled={busy}
+            className="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-brand-600)] hover:underline disabled:opacity-50"
+          >
+            <Plus className="size-3.5" />
+            สร้างใหม่
+          </button>
+        </div>
+        {localDocumentTypes.length > 0 ? (
           <select
             id="documentTypeId"
             {...register("documentTypeId")}
@@ -1114,16 +1176,18 @@ export function UploadForm({
           </select>
         ) : (
           <div className="rounded-lg border-2 border-dashed border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm text-zinc-500">
-            ยังไม่ได้ตั้งค่าประเภทเอกสาร ·{" "}
-            <Link
-              href="/docuflow/settings/document-types"
-              className="font-medium text-[var(--color-brand-600)] hover:underline"
-            >
-              ไปตั้งค่า
-            </Link>
+            ยังไม่มีประเภทเอกสาร · กด &quot;สร้างใหม่&quot; ด้านบนเพื่อเริ่ม
           </div>
         )}
-      </Field>
+      </div>
+
+      <QuickCreateDocTypeDialog
+        open={quickCreateOpen}
+        onClose={() => setQuickCreateOpen(false)}
+        businessTypes={businessTypes}
+        companies={companies}
+        onCreate={handleQuickCreateDocType}
+      />
 
       <Field
         label="กลุ่มเอกสาร"
@@ -1464,5 +1528,125 @@ function FileStatusBadge({ status }: { status: FileUploadState }) {
       {icon}
       {label}
     </span>
+  );
+}
+
+/* ============================================================
+   QuickCreateDocTypeDialog — "+ สร้างใหม่" next to the ประเภทเอกสาร
+   dropdown. Lets the admin create a brand-new DocumentType without
+   leaving the upload page (CEO feedback 2026-09-24: the old flow linked
+   away to /docuflow/settings/document-types, losing whatever was already
+   filled in on this form). Only name/businessType/companyId — the rest
+   of DocumentType's fields (danger level, regulator, ...) stay in the
+   full settings page, this is deliberately the fast path.
+   ============================================================ */
+
+function QuickCreateDocTypeDialog({
+  open,
+  onClose,
+  businessTypes,
+  companies,
+  onCreate,
+}: {
+  open: boolean;
+  onClose: () => void;
+  businessTypes: BizType[];
+  companies: Company[];
+  onCreate: (input: {
+    name: string;
+    businessType: string;
+    companyId: string;
+  }) => Promise<void>;
+}) {
+  const [name, setName] = useState("");
+  const [businessType, setBusinessType] = useState("");
+  const [companyId, setCompanyId] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  function handleClose() {
+    if (busy) return;
+    setName("");
+    setBusinessType("");
+    setCompanyId("");
+    onClose();
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) {
+      toast.error("ใส่ชื่อประเภทเอกสารก่อน");
+      return;
+    }
+    setBusy(true);
+    try {
+      await onCreate({ name: name.trim(), businessType, companyId });
+      setName("");
+      setBusinessType("");
+      setCompanyId("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "สร้างประเภทเอกสารไม่สำเร็จ");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onClose={handleClose} title="สร้างประเภทเอกสารใหม่">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Field label="ชื่อประเภทเอกสาร" required htmlFor="qc-name">
+          <Input
+            id="qc-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            disabled={busy}
+            autoFocus
+            placeholder="เช่น ใบอนุญาตประกอบกิจการ"
+          />
+        </Field>
+
+        <Field label="ประเภทธุรกิจ" optional htmlFor="qc-biztype" hint="เว้นว่าง = ใช้ได้ทั้งองค์กร">
+          <select
+            id="qc-biztype"
+            value={businessType}
+            onChange={(e) => setBusinessType(e.target.value)}
+            disabled={busy}
+            className="w-full rounded-lg border-2 border-zinc-200 px-3 py-2 text-sm focus:border-[var(--color-brand-500)] focus:outline-none bg-white"
+          >
+            <option value="">— ทั้งองค์กร —</option>
+            {businessTypes.map((b) => (
+              <option key={b.value} value={b.value}>
+                {b.emoji} {b.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        <Field label="บริษัท" optional htmlFor="qc-company" hint="เว้นว่าง = ใช้ได้ทุกบริษัท">
+          <select
+            id="qc-company"
+            value={companyId}
+            onChange={(e) => setCompanyId(e.target.value)}
+            disabled={busy}
+            className="w-full rounded-lg border-2 border-zinc-200 px-3 py-2 text-sm focus:border-[var(--color-brand-500)] focus:outline-none bg-white"
+          >
+            <option value="">— ทุกบริษัท —</option>
+            {companies.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="outline" onClick={handleClose} disabled={busy}>
+            ยกเลิก
+          </Button>
+          <Button type="submit" loading={busy}>
+            สร้างประเภทเอกสาร
+          </Button>
+        </div>
+      </form>
+    </Dialog>
   );
 }

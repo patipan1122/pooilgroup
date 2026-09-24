@@ -27,6 +27,7 @@ import {
 import { requireSession } from "@/lib/auth/session";
 import { requireExecutiveRole } from "@/lib/auth/role-guards";
 import { userIsModuleAdmin } from "@/lib/auth/module-access";
+import { prisma } from "@/lib/prisma";
 import {
   loadDocuments,
   loadDocumentsSharedToBranch,
@@ -37,7 +38,7 @@ import { listDocumentTypes } from "@/lib/docuflow/document-types";
 import type { ExpiryStatus } from "@/lib/docuflow/expiry";
 import { buildDocumentTree } from "@/lib/docuflow/tree";
 import { DocumentCard } from "@/components/docuflow/document-card";
-import { DocumentFilters } from "@/components/docuflow/document-filters";
+import { DocumentFilterSelect } from "@/components/docuflow/document-filter-select";
 import { DocumentViewTabs } from "@/components/docuflow/document-view-tabs";
 import { TreeBrowser } from "@/components/docuflow/tree-browser";
 import {
@@ -136,7 +137,7 @@ export default async function DocumentsListPage({
   const filterDocumentTypeId = sp.documentTypeId || "";
   const sharedOnly = sp.shared === "1";
 
-  const [docs, allTags, docTypes, tree] = await Promise.all([
+  const [docs, allTags, docTypes, tree, companies] = await Promise.all([
     sharedOnly && filterBranchId
       ? loadDocumentsSharedToBranch(orgId, filterBranchId, { limit: 200 })
       : loadDocuments(orgId, {
@@ -153,6 +154,11 @@ export default async function DocumentsListPage({
     loadDocumentTags(orgId),
     listDocumentTypes(orgId),
     view === "tree" ? buildDocumentTree(orgId) : Promise.resolve(null),
+    prisma.company.findMany({
+      where: { orgId, isActive: true },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
   ]);
 
   const preserve: Record<string, string> = {};
@@ -168,6 +174,7 @@ export default async function DocumentsListPage({
 
   const tagChips = allTags.slice(0, 12).map((t) => ({ value: t, label: `#${t}` }));
   const docTypeChips = docTypes.map((dt) => ({ value: dt.id, label: dt.name }));
+  const companyChips = companies.map((c) => ({ value: c.id, label: c.name }));
 
   const scopeLabel = (() => {
     if (sharedOnly && filterBranchId) return "เอกสารใช้ร่วมจากสาขาอื่น";
@@ -234,7 +241,7 @@ export default async function DocumentsListPage({
           ) : view === "tree" ? (
             "เลือกบริษัท/สาขาเพื่อดูเอกสารตามโครงสร้างองค์กร"
           ) : (
-            "ใช้ตัวกรองด้านล่างเพื่อค้นหาเอกสารตามระดับ/สถานะ/แท็ก"
+            "ใช้ตัวกรองด้านล่างเพื่อค้นหาเอกสารตามบริษัท/ระดับ/สถานะ/แท็ก"
           )
         }
         actions={
@@ -381,103 +388,74 @@ export default async function DocumentsListPage({
             }
             className="df-fade-up df-fade-up-100"
           >
-            <DfCard padding={18}>
-              <div style={{ marginBottom: 14 }}>
-                <p
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: "var(--df-muted)",
-                    letterSpacing: "0.05em",
-                    marginBottom: 8,
-                  }}
-                >
-                  ระดับ
-                </p>
-                <DocumentFilters
+            <DfCard padding={16}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
+                  gap: 10,
+                }}
+              >
+                <DocumentFilterSelect
+                  label="บริษัท"
+                  paramKey="companyId"
+                  current={filterCompanyId}
+                  options={companyChips}
+                  preserve={(() => {
+                    const p = { ...preserve };
+                    delete p.companyId;
+                    return p;
+                  })()}
+                />
+                <DocumentFilterSelect
+                  label="ระดับ"
                   paramKey="level"
                   current={filterLevel}
-                  chips={LEVEL_CHIPS}
+                  options={LEVEL_CHIPS}
                   preserve={(() => {
                     const p = { ...preserve };
                     delete p.level;
                     return p;
                   })()}
                 />
-              </div>
-              <div style={{ marginBottom: 14 }}>
-                <p
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: "var(--df-muted)",
-                    letterSpacing: "0.05em",
-                    marginBottom: 8,
-                  }}
-                >
-                  สถานะวันหมดอายุ
-                </p>
-                <DocumentFilters
+                <DocumentFilterSelect
+                  label="สถานะวันหมดอายุ"
                   paramKey="status"
                   current={filterStatus}
-                  chips={EXPIRY_CHIPS}
+                  options={EXPIRY_CHIPS}
                   preserve={(() => {
                     const p = { ...preserve };
                     delete p.status;
                     return p;
                   })()}
                 />
-              </div>
-              {tagChips.length > 0 && (
-                <div>
-                  <p
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 700,
-                      color: "var(--df-muted)",
-                      letterSpacing: "0.05em",
-                      marginBottom: 8,
-                    }}
-                  >
-                    แท็ก
-                  </p>
-                  <DocumentFilters
-                    paramKey="tag"
-                    current={filterTag}
-                    chips={tagChips}
-                    preserve={(() => {
-                      const p = { ...preserve };
-                      delete p.tag;
-                      return p;
-                    })()}
-                  />
-                </div>
-              )}
-              {docTypeChips.length > 0 && (
-                <div style={{ marginTop: 14 }}>
-                  <p
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 700,
-                      color: "var(--df-muted)",
-                      letterSpacing: "0.05em",
-                      marginBottom: 8,
-                    }}
-                  >
-                    ประเภทเอกสาร
-                  </p>
-                  <DocumentFilters
+                {docTypeChips.length > 0 && (
+                  <DocumentFilterSelect
+                    label="ประเภทเอกสาร"
                     paramKey="documentTypeId"
                     current={filterDocumentTypeId}
-                    chips={docTypeChips}
+                    options={docTypeChips}
                     preserve={(() => {
                       const p = { ...preserve };
                       delete p.documentTypeId;
                       return p;
                     })()}
                   />
-                </div>
-              )}
+                )}
+                {tagChips.length > 0 && (
+                  <DocumentFilterSelect
+                    label="แท็ก"
+                    paramKey="tag"
+                    current={filterTag}
+                    options={tagChips}
+                    preserve={(() => {
+                      const p = { ...preserve };
+                      delete p.tag;
+                      return p;
+                    })()}
+                  />
+                )}
+              </div>
             </DfCard>
           </DfSection>
 

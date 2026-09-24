@@ -32,6 +32,7 @@ export interface DocumentTypeRecord {
   name: string;
   category: string | null;
   businessType: string | null;
+  companyId: string | null;
   frequency: string | null;
   dangerLevel: string | null;
   regulator: string | null;
@@ -53,6 +54,7 @@ export interface DocumentTypeOption {
   name: string;
   category: string | null;
   businessType: string | null;
+  companyId: string | null;
   frequency: string | null;
   dangerLevel: string | null;
   regulator: string | null;
@@ -67,6 +69,7 @@ function toDocumentTypeRecord(row: {
   name: string;
   category: string | null;
   businessType: string | null;
+  companyId: string | null;
   frequency: string | null;
   dangerLevel: string | null;
   regulator: string | null;
@@ -133,6 +136,7 @@ export async function listDocumentTypesForBusinessType(
       name: row.name,
       category: row.category,
       businessType: row.businessType,
+      companyId: row.companyId,
       frequency: row.frequency,
       dangerLevel: row.dangerLevel,
       regulator: row.regulator,
@@ -149,6 +153,7 @@ export async function listDocumentTypesForBusinessType(
     name: spec.name,
     category: spec.category,
     businessType,
+    companyId: null,
     frequency: spec.frequency,
     dangerLevel: spec.dangerLevel,
     regulator: spec.regulator,
@@ -181,6 +186,7 @@ export async function listDocumentTypesForUpload(
     name: row.name,
     category: row.category,
     businessType: row.businessType,
+    companyId: row.companyId,
     frequency: row.frequency,
     dangerLevel: row.dangerLevel,
     regulator: row.regulator,
@@ -199,6 +205,7 @@ export interface CreateDocumentTypeInput {
   name: string;
   category?: string | null;
   businessType?: string | null;
+  companyId?: string | null;
   frequency?: string | null;
   dangerLevel?: string | null;
   regulator?: string | null;
@@ -216,6 +223,7 @@ export async function createDocumentType(
       name: input.name,
       category: input.category ?? null,
       businessType: input.businessType ?? null,
+      companyId: input.companyId ?? null,
       frequency: input.frequency ?? null,
       dangerLevel: input.dangerLevel ?? null,
       regulator: input.regulator ?? null,
@@ -250,6 +258,7 @@ export async function updateDocumentType(
       ...(input.businessType !== undefined
         ? { businessType: input.businessType }
         : {}),
+      ...(input.companyId !== undefined ? { companyId: input.companyId } : {}),
       ...(input.frequency !== undefined ? { frequency: input.frequency } : {}),
       ...(input.dangerLevel !== undefined
         ? { dangerLevel: input.dangerLevel }

@@ -14,6 +14,7 @@ import { z } from "zod";
 import { requireSession } from "@/lib/auth/session";
 import { isProgramAdminTier, isExecutiveRole } from "@/lib/auth/role-guards";
 import { audit } from "@/lib/audit/log";
+import { prisma } from "@/lib/prisma";
 import {
   listAllDocumentTypesForAdmin,
   createDocumentType,
@@ -25,6 +26,7 @@ const CreateSchema = z.object({
   name: z.string().min(1, "ใส่ชื่อประเภทเอกสาร").max(255),
   category: z.string().max(64).nullable().optional(),
   businessType: z.string().max(64).nullable().optional(),
+  companyId: z.string().uuid().nullable().optional(),
   frequency: z.string().max(64).nullable().optional(),
   dangerLevel: z.string().max(32).nullable().optional(),
   regulator: z.string().max(255).nullable().optional(),
@@ -67,11 +69,22 @@ export async function POST(req: Request) {
   const orgId = session.user.org_id;
   const data = parsed.data;
 
+  if (data.companyId) {
+    const company = await prisma.company.findFirst({
+      where: { id: data.companyId, orgId },
+      select: { id: true },
+    });
+    if (!company) {
+      return NextResponse.json({ error: "ไม่พบบริษัทนี้" }, { status: 400 });
+    }
+  }
+
   try {
     const created = await createDocumentType(orgId, {
       name: data.name,
       category: data.category ?? null,
       businessType: data.businessType ?? null,
+      companyId: data.companyId ?? null,
       frequency: data.frequency ?? null,
       dangerLevel: data.dangerLevel ?? null,
       regulator: data.regulator ?? null,

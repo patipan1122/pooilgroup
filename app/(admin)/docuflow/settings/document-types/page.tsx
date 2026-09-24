@@ -20,6 +20,7 @@ import {
   getCanonicalDocsForBizType,
 } from "@/lib/docuflow/canonical-docs";
 import { BUSINESS_TYPES } from "@/constants/business-types";
+import { prisma } from "@/lib/prisma";
 import { DfButton, DfEyebrow, DfPageHeader } from "@/components/docuflow/df-ui";
 import { DfTopBanner } from "@/components/docuflow/df-top-banner";
 import { DocumentTypeManager } from "@/components/docuflow/document-type-manager";
@@ -37,7 +38,14 @@ export default async function DocumentTypesSettingsPage() {
   requireProgramAdminTier(session.user.role);
   const orgId = session.user.org_id;
 
-  const documentTypes = await listAllDocumentTypesForAdmin(orgId);
+  const [documentTypes, companies] = await Promise.all([
+    listAllDocumentTypesForAdmin(orgId),
+    prisma.company.findMany({
+      where: { orgId, isActive: true },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
 
   const businessTypeOptions = listSupportedBizTypes().map((bt) => {
     const meta = BUSINESS_TYPES[bt] ?? EXTRA_BIZTYPE_META[bt] ?? { label: bt, emoji: "📦" };
@@ -83,6 +91,7 @@ export default async function DocumentTypesSettingsPage() {
           name: d.name,
           category: d.category,
           businessType: d.businessType,
+          companyId: d.companyId,
           frequency: d.frequency,
           dangerLevel: d.dangerLevel,
           regulator: d.regulator,
@@ -90,6 +99,7 @@ export default async function DocumentTypesSettingsPage() {
           isActive: d.isActive,
         }))}
         businessTypeOptions={businessTypeOptions}
+        companyOptions={companies}
       />
     </div>
   );
