@@ -31,6 +31,7 @@ import {
   History,
   Truck,
   UsersRound,
+  FolderKanban,
 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { requireProgramAdminTier } from "@/lib/auth/role-guards";
@@ -53,9 +54,10 @@ export default async function DocuFlowSettingsPage() {
   requireProgramAdminTier(session.user.role);
   const orgId = session.user.org_id;
 
-  const [activeCount, inactiveCount, driveConn] = await Promise.all([
+  const [activeCount, inactiveCount, activeGroupCount, driveConn] = await Promise.all([
     prisma.documentType.count({ where: { orgId, isActive: true } }),
     prisma.documentType.count({ where: { orgId, isActive: false } }),
+    prisma.documentGroup.count({ where: { orgId, isActive: true } }),
     getDriveConnection(orgId),
   ]);
 
@@ -127,6 +129,14 @@ export default async function DocuFlowSettingsPage() {
             title="ประเภทเอกสาร"
             desc="สร้าง/แก้ไขประเภทเอกสารขององค์กร หรือนำเข้าจากรายการมาตรฐาน"
             badge={activeCount > 0 ? `${activeCount} รายการ` : "ยังไม่มี"}
+          />
+          <SettingsHubCard
+            href="/docuflow/settings/document-groups"
+            icon={<FolderKanban size={20} />}
+            tone="accent"
+            title="กลุ่มเอกสาร"
+            desc="สร้าง/แก้ไขกลุ่มเอกสารอิสระขององค์กร แยกจากประเภทเอกสาร"
+            badge={activeGroupCount > 0 ? `${activeGroupCount} รายการ` : "ยังไม่มี"}
           />
           <SettingsHubCard
             href="/docuflow/checklist"

@@ -13,7 +13,9 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { toast } from "sonner";
+import { PDFDocument } from "pdf-lib";
 import {
   Loader2,
   Upload as UploadIcon,
@@ -35,10 +37,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils/cn";
 import type { DocumentTypeOption } from "@/lib/docuflow/document-types";
-
-/** Prefix marking a <select> value as a canonical (not-yet-a-real-row) option —
- * submits as the legacy free-text `documentType` string instead of `documentTypeId`. */
-const CANONICAL_VALUE_PREFIX = "canonical:";
+import type { DocumentGroupRecord } from "@/lib/docuflow/document-groups";
 
 const DEFAULT_ALERT_DAYS = [90, 30, 7];
 const PROXY_MAX_BYTES = 25 * 1024 * 1024;
@@ -47,7 +46,9 @@ const LAST_USED_KEY_PREFIX = "docuflow-upload-lastused:";
 const FormSchema = z.object({
   name: z.string().min(1, "ใส่ชื่อเอกสาร").max(255),
   documentTypeId: z.string().optional(),
+  documentGroupId: z.string().optional(),
   expiryDate: z.string().optional(),
+  issueDate: z.string().optional(),
   description: z.string().max(2000).optional(),
   responsibleUserId: z.string().optional(),
   notes: z.string().max(2000).optional(),
@@ -84,6 +85,7 @@ interface Props {
   users: UserRow[];
   businessTypes: BizType[];
   documentTypes: DocumentTypeOption[];
+  documentGroups: DocumentGroupRecord[];
   orgId: string;
   /** Prefill from ?businessType=X (e.g. linked from the checklist page). */
   defaultBusinessType?: string;
@@ -112,6 +114,18 @@ interface LastUsedChoice {
   lastScopes?: Scope[];
 }
 
+/** A single-file upload mode is unambiguous; a multi-file selection can
+ * become N separate Documents ("multiple") or 1 combined PDF ("combined"). */
+type UploadMode = "multiple" | "combined";
+
+/** Document created by the last successful submit — rendered in the
+ * post-upload success panel so every new document gets an easy path to its
+ * signature-placement page (Task 5). */
+interface CompletedDoc {
+  id: string;
+  name: string;
+}
+
 const TYPE_EMOJI: Record<string, string> = {
   fuel_station: "⛽",
   lpg_station: "🔵",
@@ -129,12 +143,90 @@ const TYPE_EMOJI: Record<string, string> = {
   gas_fleet: "🛻",
 };
 
+/** Whether a file can be combined into the single-PDF path below — PDF or
+ * JPG/PNG only (checked by MIME type first, extension as a fallback for
+ * files the browser didn't tag with a type). */
+function isCombinableFile(f: File): boolean {
+  const lower = f.name.toLowerCase();
+  const type = f.type.toLowerCase();
+  return (
+    type === "application/pdf" ||
+    type === "image/png" ||
+    type === "image/jpeg" ||
+    type === "image/jpg" ||
+    lower.endsWith(".pdf") ||
+    lower.endsWith(".png") ||
+    lower.endsWith(".jpg") ||
+    lower.endsWith(".jpeg")
+  );
+}
+
+/**
+ * Combine multiple files (PDFs and/or JPG/PNG images) into ONE PDF, entirely
+ * client-side via pdf-lib, one input file per page in the order given:
+ *   - PDF input   → its pages are copied in as-is (`copyPages`)
+ *   - image input → a new page sized to the image is created and the image
+ *     is drawn to fill it (`embedJpg`/`embedPng`)
+ * This powers "เอกสารเดียว หลายหน้า/ไฟล์" mode (Task 4) — the "scanned as
+ * photos" case the CEO described. The resulting File is then handed to the
+ * existing single-file upload path (uploadViaProxy/uploadViaPresigned)
+ * completely unchanged — every new line of logic lives in this pre-upload
+ * transform, the server-side upload code isn't touched at all.
+ */
+async function combineFilesToPdf(
+  inputFiles: File[],
+  documentName: string,
+): Promise<File> {
+  const pdfDoc = await PDFDocument.create();
+
+  for (const f of inputFiles) {
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    const lower = f.name.toLowerCase();
+    const type = f.type.toLowerCase();
+
+    if (type === "application/pdf" || lower.endsWith(".pdf")) {
+      const srcPdf = await PDFDocument.load(bytes);
+      const copiedPages = await pdfDoc.copyPages(srcPdf, srcPdf.getPageIndices());
+      for (const page of copiedPages) pdfDoc.addPage(page);
+    } else if (type === "image/png" || lower.endsWith(".png")) {
+      const img = await pdfDoc.embedPng(bytes);
+      const page = pdfDoc.addPage([img.width, img.height]);
+      page.drawImage(img, { x: 0, y: 0, width: img.width, height: img.height });
+    } else if (
+      type === "image/jpeg" ||
+      type === "image/jpg" ||
+      lower.endsWith(".jpg") ||
+      lower.endsWith(".jpeg")
+    ) {
+      const img = await pdfDoc.embedJpg(bytes);
+      const page = pdfDoc.addPage([img.width, img.height]);
+      page.drawImage(img, { x: 0, y: 0, width: img.width, height: img.height });
+    } else {
+      throw new Error(
+        `ไม่รองรับไฟล์ "${f.name}" ในโหมดเอกสารเดียว — รองรับเฉพาะ PDF และรูปภาพ JPG/PNG`,
+      );
+    }
+  }
+
+  const outBytes = await pdfDoc.save();
+  const safeName =
+    (documentName || "").trim() || "combined-document";
+  // pdf-lib types `.save()`'s return as `Uint8Array<ArrayBufferLike>`, which
+  // TS's DOM lib won't accept as a `BlobPart` (it wants `ArrayBuffer`
+  // specifically, not `SharedArrayBuffer`) — `new Uint8Array(outBytes)`
+  // copies into a fresh, plain-`ArrayBuffer`-backed view to satisfy `File`.
+  return new File([new Uint8Array(outBytes)], `${safeName}.pdf`, {
+    type: "application/pdf",
+  });
+}
+
 export function UploadForm({
   companies,
   branches,
   users,
   businessTypes,
   documentTypes,
+  documentGroups,
   orgId,
   defaultBusinessType,
 }: Props) {
@@ -146,7 +238,12 @@ export function UploadForm({
   const [scopeOpen, setScopeOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [uploading, setUploading] = useState(false);
+  const [combining, setCombining] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [uploadMode, setUploadMode] = useState<UploadMode>("multiple");
+  const [completedDocs, setCompletedDocs] = useState<CompletedDoc[]>([]);
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState("");
   const fileNameSyncRef = useRef(false);
 
   const {
@@ -154,13 +251,16 @@ export function UploadForm({
     handleSubmit,
     watch,
     setValue,
+    reset,
     formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
       name: "",
       documentTypeId: "",
+      documentGroupId: "",
       expiryDate: "",
+      issueDate: "",
       description: "",
       responsibleUserId: "",
       notes: "",
@@ -168,6 +268,26 @@ export function UploadForm({
   });
 
   const expiryWatch = watch("expiryDate");
+
+  // "เอกสารเดียว" mode combines every selected file into one PDF client-side
+  // (pdf-lib) — only PDF + JPG/PNG inputs can be combined that way. If any
+  // selected file can't be (e.g. a .docx), the option is disabled with a
+  // hint instead of failing silently at submit time.
+  const combineSupported = useMemo(
+    () => files.length <= 1 || files.every(isCombinableFile),
+    [files],
+  );
+
+  useEffect(() => {
+    if (!combineSupported && uploadMode === "combined") {
+      setUploadMode("multiple");
+    }
+  }, [combineSupported, uploadMode]);
+
+  // "หลายเอกสาร" (today's default) still auto-names each Document from its
+  // own filename; "เอกสารเดียว" collapses N files into 1 Document, so the
+  // name field behaves like the single-file case (user-editable, used as-is).
+  const isMultiDocMode = files.length > 1 && uploadMode === "multiple";
 
   const allScopes: Scope[] = useMemo(() => {
     const list: Scope[] = [];
@@ -246,6 +366,22 @@ export function UploadForm({
 
   function removeScope(idx: number) {
     setScopes((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  /** Free-text tags — search/filter only (not tied to checklist/type matching).
+   * Split on comma/Enter, trim, dedupe case-insensitively, cap length. */
+  function addTagFromInput() {
+    const raw = tagInput.trim().replace(/^#/, "");
+    if (!raw) return;
+    setTags((prev) => {
+      if (prev.some((t) => t.toLowerCase() === raw.toLowerCase())) return prev;
+      return [...prev, raw.slice(0, 40)];
+    });
+    setTagInput("");
+  }
+
+  function removeTag(tag: string) {
+    setTags((prev) => prev.filter((t) => t !== tag));
   }
 
   function cleanFileName(f: File) {
@@ -337,20 +473,16 @@ export function UploadForm({
     });
   }
 
-  /** Splits the select's composite value: a real DocumentType row submits as
-   * `documentTypeId` (FK); a canonical/not-yet-saved option submits as the
-   * legacy free-text `documentType` string instead — there's no row id to
-   * point a FK at yet. Never sends both. */
+  /** `documentTypes` (listDocumentTypesForUpload) is real DB rows only now —
+   * no canonical/not-yet-saved fallback entries can appear in the picker
+   * anymore, so the select's value is always a real row id. Always submits
+   * as the FK `documentTypeId`; the legacy free-text `documentType` string
+   * is never sent from this form. */
   function resolveDocumentTypeFields(values: FormValues) {
-    const raw = values.documentTypeId || undefined;
-    if (!raw) return { documentTypeId: undefined, documentType: undefined };
-    if (raw.startsWith(CANONICAL_VALUE_PREFIX)) {
-      return {
-        documentTypeId: undefined,
-        documentType: raw.slice(CANONICAL_VALUE_PREFIX.length),
-      };
-    }
-    return { documentTypeId: raw, documentType: undefined };
+    return {
+      documentTypeId: values.documentTypeId || undefined,
+      documentType: undefined,
+    };
   }
 
   function buildRenewal(values: FormValues) {
@@ -365,6 +497,47 @@ export function UploadForm({
     };
   }
 
+  /** Same-browser convenience only (no DB write) — remembers the last-used
+   * document type + storage scope for next time. Only called after at least
+   * one file actually went through, so a total-failure attempt doesn't
+   * overwrite good defaults. */
+  function saveLastUsed(values: FormValues) {
+    try {
+      const toSave: LastUsedChoice = {
+        lastDocumentTypeId: values.documentTypeId || undefined,
+        lastScopes: scopes,
+      };
+      localStorage.setItem(
+        `${LAST_USED_KEY_PREFIX}${orgId}`,
+        JSON.stringify(toSave),
+      );
+    } catch {
+      // localStorage unavailable (private mode, quota) — non-fatal
+    }
+  }
+
+  /** Clears the success panel and every upload-related field so the admin
+   * can upload another batch without leaving the page. */
+  function resetForNextUpload() {
+    setCompletedDocs([]);
+    setFiles([]);
+    setFileStatuses([]);
+    setUploadMode("multiple");
+    setTags([]);
+    setTagInput("");
+    fileNameSyncRef.current = false;
+    reset({
+      name: "",
+      documentTypeId: "",
+      documentGroupId: "",
+      expiryDate: "",
+      issueDate: "",
+      description: "",
+      responsibleUserId: "",
+      notes: "",
+    });
+  }
+
   async function uploadViaProxy(values: FormValues, fileObj: File) {
     const fd = new FormData();
     fd.append("file", fileObj);
@@ -374,8 +547,10 @@ export function UploadForm({
         name: values.name,
         description: values.description || undefined,
         ...resolveDocumentTypeFields(values),
+        documentGroupId: values.documentGroupId || undefined,
+        issueDate: values.issueDate || undefined,
         ownerships: buildOwnerships(),
-        tags: [],
+        tags,
         renewal: buildRenewal(values),
       }),
     );
@@ -403,11 +578,13 @@ export function UploadForm({
         name: values.name,
         description: values.description || undefined,
         ...resolveDocumentTypeFields(values),
+        documentGroupId: values.documentGroupId || undefined,
+        issueDate: values.issueDate || undefined,
         filename: fileObj.name,
         mimeType: fileObj.type || "application/octet-stream",
         fileSize: fileObj.size,
         ownerships: buildOwnerships(),
-        tags: [],
+        tags,
         renewal: buildRenewal(values),
       }),
     });
@@ -455,11 +632,75 @@ export function UploadForm({
       return;
     }
 
+    // "เอกสารเดียว หลายหน้า/ไฟล์" — combine every selected file into ONE PDF
+    // client-side first (pdf-lib), then upload that single combined file
+    // through the exact same single-file path used everywhere else. The
+    // server-side upload endpoints are completely untouched by this mode.
+    if (files.length > 1 && uploadMode === "combined") {
+      setUploading(true);
+      setCombining(true);
+      setFileStatuses(
+        files.map((f) => ({ fileName: f.name, status: "uploading" })),
+      );
+
+      let combinedFile: File;
+      try {
+        combinedFile = await combineFilesToPdf(files, values.name);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "รวมไฟล์ไม่สำเร็จ";
+        console.error("[upload:combine]", e);
+        setCombining(false);
+        setUploading(false);
+        setFileStatuses(
+          files.map((f) => ({ fileName: f.name, status: "error", errorMessage: msg })),
+        );
+        toast.error(msg);
+        return;
+      }
+      setCombining(false);
+
+      if (combinedFile.size > 500 * 1024 * 1024) {
+        setUploading(false);
+        setFileStatuses(
+          files.map((f) => ({
+            fileName: f.name,
+            status: "error",
+            errorMessage: "ไฟล์รวมใหญ่เกิน 500 MB",
+          })),
+        );
+        toast.error("ไฟล์ที่รวมแล้วใหญ่เกิน 500 MB — ลดจำนวน/ขนาดไฟล์แล้วลองใหม่");
+        return;
+      }
+
+      try {
+        const documentId =
+          combinedFile.size <= PROXY_MAX_BYTES
+            ? await uploadViaProxy(values, combinedFile)
+            : await uploadViaPresigned(values, combinedFile);
+        setFileStatuses(
+          files.map((f) => ({ fileName: f.name, status: "done", documentId })),
+        );
+        setUploading(false);
+        saveLastUsed(values);
+        setCompletedDocs([{ id: documentId, name: values.name }]);
+        toast.success(`รวม ${files.length} ไฟล์เป็นเอกสารเดียวและอัปโหลดเสร็จ`);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "อัปโหลดไม่สำเร็จ";
+        console.error("[upload:combined]", e);
+        setFileStatuses(
+          files.map((f) => ({ fileName: f.name, status: "error", errorMessage: msg })),
+        );
+        setUploading(false);
+        toast.error(msg);
+      }
+      return;
+    }
+
     setUploading(true);
     setFileStatuses(files.map((f) => ({ fileName: f.name, status: "pending" })));
 
     let successCount = 0;
-    let lastDocumentId: string | undefined;
+    const createdDocs: CompletedDoc[] = [];
 
     // Loop the existing single-file endpoints per file — each file becomes
     // its own Document row via the same uploadViaProxy/uploadViaPresigned
@@ -481,7 +722,7 @@ export function UploadForm({
             ? await uploadViaProxy(perFileValues, f)
             : await uploadViaPresigned(perFileValues, f);
         successCount++;
-        lastDocumentId = documentId;
+        createdDocs.push({ id: documentId, name: perFileValues.name });
         setFileStatuses((prev) =>
           prev.map((s, idx) =>
             idx === i ? { ...s, status: "done", documentId } : s,
@@ -500,36 +741,19 @@ export function UploadForm({
 
     setUploading(false);
 
-    // Remember last-used choices for next time (same-browser convenience
-    // only — no DB write). Only save if at least one file actually went
-    // through, so a total-failure attempt doesn't overwrite good defaults.
     if (successCount > 0) {
-      try {
-        const toSave: LastUsedChoice = {
-          lastDocumentTypeId: values.documentTypeId || undefined,
-          lastScopes: scopes,
-        };
-        localStorage.setItem(
-          `${LAST_USED_KEY_PREFIX}${orgId}`,
-          JSON.stringify(toSave),
-        );
-      } catch {
-        // localStorage unavailable (private mode, quota) — non-fatal
-      }
+      saveLastUsed(values);
     }
 
+    // Only switch to the success panel on a FULL success — on a partial
+    // failure we deliberately stay on the form so the per-file list (with
+    // its error badges/messages) is still visible; those files that did
+    // succeed still get an inline "ตั้งค่าลายเซ็น" link in that list below.
     if (successCount === files.length) {
+      setCompletedDocs(createdDocs);
       toast.success(
         files.length === 1 ? "อัปโหลดเสร็จ" : `อัปโหลดเสร็จทั้ง ${files.length} ไฟล์`,
       );
-      startTransition(() => {
-        if (files.length === 1 && lastDocumentId) {
-          router.push(`/docuflow/documents/${lastDocumentId}`);
-        } else {
-          router.push(`/docuflow/documents`);
-        }
-        router.refresh();
-      });
     } else if (successCount > 0) {
       toast.error(`สำเร็จ ${successCount}/${files.length} ไฟล์ — ดูรายละเอียดด้านล่าง`);
     } else {
@@ -537,8 +761,75 @@ export function UploadForm({
     }
   }
 
-  const busy = uploading || isPending;
+  const busy = uploading || isPending || combining;
   const hasExpiry = Boolean(expiryWatch);
+
+  // Post-upload success view — replaces the form until the admin either
+  // uploads another batch or moves on. Every newly created document (single,
+  // combined, or each one of a "หลายเอกสาร" batch) gets a direct link to its
+  // signature-placement page here (Task 5) — the signature editor itself
+  // already exists at this route, this view just links to it.
+  if (completedDocs.length > 0) {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-2xl border-2 border-emerald-200 bg-emerald-50/60 p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <CheckCircle2 className="size-5 text-emerald-600 shrink-0" />
+            <p className="text-base font-bold text-zinc-900">
+              {completedDocs.length === 1
+                ? "อัปโหลดเสร็จ"
+                : `อัปโหลดเสร็จ ${completedDocs.length} เอกสาร`}
+            </p>
+          </div>
+          <ul className="space-y-2">
+            {completedDocs.map((d) => (
+              <li
+                key={d.id}
+                className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border-2 border-zinc-200 bg-white px-3 py-2.5"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-zinc-800">
+                    {d.name}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <Link
+                    href={`/docuflow/documents/${d.id}`}
+                    className="text-xs font-medium text-zinc-600 hover:text-zinc-900 hover:underline"
+                  >
+                    ดูเอกสาร
+                  </Link>
+                  <Link
+                    href={`/docuflow/documents/${d.id}/signatures`}
+                    className="inline-flex items-center gap-1 rounded-lg bg-[var(--color-brand-600)] px-2.5 py-1.5 text-xs font-bold text-white hover:bg-[var(--color-brand-700)] transition-colors"
+                  >
+                    ตั้งค่าตำแหน่งลายเซ็น
+                  </Link>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <Button type="button" variant="ghost" onClick={resetForNextUpload}>
+              อัปโหลดเอกสารอื่นต่อ
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              onClick={() => {
+                startTransition(() => {
+                  router.push("/docuflow/documents");
+                  router.refresh();
+                });
+              }}
+            >
+              ไปหน้าเอกสารทั้งหมด
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
@@ -702,6 +993,14 @@ export function UploadForm({
                     </p>
                   </div>
                   <FileStatusBadge status={status?.status ?? "pending"} />
+                  {status?.status === "done" && status.documentId && (
+                    <Link
+                      href={`/docuflow/documents/${status.documentId}/signatures`}
+                      className="text-[11px] font-medium text-[var(--color-brand-600)] hover:underline shrink-0 whitespace-nowrap"
+                    >
+                      ตั้งค่าลายเซ็น
+                    </Link>
+                  )}
                   {(!status || status.status === "pending") && (
                     <button
                       type="button"
@@ -718,6 +1017,53 @@ export function UploadForm({
             })}
           </ul>
         )}
+
+        {files.length > 1 && (
+          <div className="mt-3 rounded-xl border-2 border-zinc-200 bg-zinc-50 p-3">
+            <p className="text-xs font-bold text-zinc-700 mb-2">ไฟล์เหล่านี้คือ</p>
+            <div className="flex flex-col gap-2">
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="radio"
+                  name="uploadMode"
+                  checked={uploadMode === "multiple"}
+                  onChange={() => setUploadMode("multiple")}
+                  disabled={busy}
+                  className="mt-0.5"
+                />
+                <span className="text-sm">
+                  <span className="font-medium text-zinc-800">หลายเอกสาร</span>
+                  <span className="block text-xs text-zinc-500">
+                    แต่ละไฟล์กลายเป็นเอกสารแยกกัน ({files.length} เอกสาร)
+                  </span>
+                </span>
+              </label>
+              <label
+                className={cn(
+                  "flex items-start gap-2.5",
+                  combineSupported ? "cursor-pointer" : "cursor-not-allowed opacity-50",
+                )}
+              >
+                <input
+                  type="radio"
+                  name="uploadMode"
+                  checked={uploadMode === "combined"}
+                  onChange={() => setUploadMode("combined")}
+                  disabled={busy || !combineSupported}
+                  className="mt-0.5"
+                />
+                <span className="text-sm">
+                  <span className="font-medium text-zinc-800">เอกสารเดียว หลายหน้า/ไฟล์</span>
+                  <span className="block text-xs text-zinc-500">
+                    {combineSupported
+                      ? `รวมทุกไฟล์เป็น PDF เดียว ${files.length} หน้า — เช่น สแกนเป็นรูปหลายใบ`
+                      : "รองรับเฉพาะ PDF และรูปภาพ JPG/PNG เท่านั้น — เอาไฟล์ประเภทอื่นออกก่อน"}
+                  </span>
+                </span>
+              </label>
+            </div>
+          </div>
+        )}
       </Field>
 
       <Field
@@ -726,9 +1072,11 @@ export function UploadForm({
         error={errors.name?.message}
         htmlFor="name"
         hint={
-          files.length > 1
+          isMultiDocMode
             ? `หลายไฟล์ — ระบบตั้งชื่อจากไฟล์แต่ละไฟล์อัตโนมัติ (${files.length} ไฟล์)`
-            : "ระบบดึงจากชื่อไฟล์ให้ — แก้ได้"
+            : files.length > 1
+              ? "รวมเป็นเอกสารเดียว — ใช้ชื่อนี้เป็นชื่อเอกสาร"
+              : "ระบบดึงจากชื่อไฟล์ให้ — แก้ได้"
         }
       >
         <Input
@@ -736,7 +1084,7 @@ export function UploadForm({
           {...register("name")}
           invalid={!!errors.name}
           placeholder="เช่น ใบอนุญาตปั๊ม KKN-001"
-          disabled={busy || files.length > 1}
+          disabled={busy || isMultiDocMode}
         />
       </Field>
 
@@ -744,29 +1092,103 @@ export function UploadForm({
         label="ประเภทเอกสาร"
         optional
         htmlFor="documentTypeId"
-        hint="ช่วยจัดหมวดและค้นหาเอกสารในอนาคต"
+        hint={documentTypes.length > 0 ? "ช่วยจัดหมวดและค้นหาเอกสารในอนาคต" : undefined}
+      >
+        {documentTypes.length > 0 ? (
+          <select
+            id="documentTypeId"
+            {...register("documentTypeId")}
+            disabled={busy}
+            className="w-full rounded-lg border-2 border-zinc-200 px-3 py-2 text-sm focus:border-[var(--color-brand-500)] focus:outline-none bg-white"
+          >
+            <option value="">— ไม่ระบุ —</option>
+            {groupedDocumentTypes.map(([groupLabel, opts]) => (
+              <optgroup key={groupLabel} label={groupLabel}>
+                {opts.map((dt) => (
+                  <option key={dt.id ?? dt.name} value={dt.id ?? ""}>
+                    {dt.name}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        ) : (
+          <div className="rounded-lg border-2 border-dashed border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm text-zinc-500">
+            ยังไม่ได้ตั้งค่าประเภทเอกสาร ·{" "}
+            <Link
+              href="/docuflow/settings/document-types"
+              className="font-medium text-[var(--color-brand-600)] hover:underline"
+            >
+              ไปตั้งค่า
+            </Link>
+          </div>
+        )}
+      </Field>
+
+      <Field
+        label="กลุ่มเอกสาร"
+        optional
+        htmlFor="documentGroupId"
+        hint="การจัดกลุ่มอีกมิติหนึ่ง นอกเหนือจากประเภทเอกสาร"
       >
         <select
-          id="documentTypeId"
-          {...register("documentTypeId")}
+          id="documentGroupId"
+          {...register("documentGroupId")}
           disabled={busy}
           className="w-full rounded-lg border-2 border-zinc-200 px-3 py-2 text-sm focus:border-[var(--color-brand-500)] focus:outline-none bg-white"
         >
           <option value="">— ไม่ระบุ —</option>
-          {groupedDocumentTypes.map(([groupLabel, opts]) => (
-            <optgroup key={groupLabel} label={groupLabel}>
-              {opts.map((dt) => (
-                <option
-                  key={dt.id ?? `${CANONICAL_VALUE_PREFIX}${dt.name}`}
-                  value={dt.id ?? `${CANONICAL_VALUE_PREFIX}${dt.name}`}
-                >
-                  {dt.name}
-                  {dt.isCanonical ? " (รายการมาตรฐาน — ยังไม่บันทึก)" : ""}
-                </option>
-              ))}
-            </optgroup>
+          {documentGroups.map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.name}
+            </option>
           ))}
         </select>
+      </Field>
+
+      <Field
+        label="Tag"
+        optional
+        htmlFor="tagInput"
+        hint="ใช้ค้นหา/กรองเอกสารภายหลัง · กด Enter หรือ , เพื่อเพิ่ม"
+      >
+        <div className="space-y-2">
+          {tags.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {tags.map((t) => (
+                <span
+                  key={t}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-[var(--color-brand-50)] border-2 border-[var(--color-brand-200)] text-xs"
+                >
+                  #{t}
+                  <button
+                    type="button"
+                    onClick={() => removeTag(t)}
+                    disabled={busy}
+                    className="text-zinc-400 hover:text-zinc-700"
+                    aria-label={`ลบ tag ${t}`}
+                  >
+                    <X size={12} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <Input
+            id="tagInput"
+            value={tagInput}
+            disabled={busy}
+            placeholder="พิมพ์ tag แล้วกด Enter เช่น ด่วน, ต่ออายุ"
+            onChange={(e) => setTagInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === ",") {
+                e.preventDefault();
+                addTagFromInput();
+              }
+            }}
+            onBlur={addTagFromInput}
+          />
+        </div>
       </Field>
 
       <Field
@@ -836,19 +1258,35 @@ export function UploadForm({
         </div>
       </Field>
 
-      <Field
-        label="วันหมดอายุ"
-        optional
-        htmlFor="expiryDate"
-        hint="ไม่มีก็เว้นได้ · ถ้าใส่ระบบจะเตือน 90/30/7 วันก่อน"
-      >
-        <Input
-          id="expiryDate"
-          type="date"
-          {...register("expiryDate")}
-          disabled={busy}
-        />
-      </Field>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Field
+          label="วันหมดอายุ"
+          optional
+          htmlFor="expiryDate"
+          hint="ไม่มีก็เว้นได้ · ถ้าใส่ระบบจะเตือน 90/30/7 วันก่อน"
+        >
+          <Input
+            id="expiryDate"
+            type="date"
+            {...register("expiryDate")}
+            disabled={busy}
+          />
+        </Field>
+
+        <Field
+          label="วันที่ออกเอกสาร"
+          optional
+          htmlFor="issueDate"
+          hint="ไม่บังคับ · วันที่เอกสารนี้ออกจริง"
+        >
+          <Input
+            id="issueDate"
+            type="date"
+            {...register("issueDate")}
+            disabled={busy}
+          />
+        </Field>
+      </div>
 
       {/* Advanced section — collapsed by default */}
       <div className="border-2 border-zinc-200 rounded-xl overflow-hidden">
@@ -938,6 +1376,13 @@ export function UploadForm({
         )}
       </div>
 
+      {combining && (
+        <div className="flex items-center gap-2 rounded-lg bg-[var(--color-brand-50)] px-3 py-2 text-sm font-medium text-[var(--color-brand-700)]">
+          <Loader2 className="size-4 animate-spin" />
+          กำลังรวมไฟล์เป็น PDF เดียว…
+        </div>
+      )}
+
       <div className="flex items-center gap-2 justify-end pt-2">
         <Button
           type="button"
@@ -951,12 +1396,16 @@ export function UploadForm({
           {busy ? (
             <>
               <Loader2 className="size-4 animate-spin" />
-              กำลังอัปโหลด…
+              {combining ? "กำลังรวมไฟล์…" : "กำลังอัปโหลด…"}
             </>
           ) : (
             <>
               <UploadIcon className="size-4" />
-              {files.length > 1 ? `อัปโหลด ${files.length} ไฟล์` : "อัปโหลดเอกสาร"}
+              {files.length > 1
+                ? uploadMode === "combined"
+                  ? "รวมและอัปโหลดเป็นเอกสารเดียว"
+                  : `อัปโหลด ${files.length} ไฟล์`
+                : "อัปโหลดเอกสาร"}
             </>
           )}
         </Button>

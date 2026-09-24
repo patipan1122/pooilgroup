@@ -70,6 +70,14 @@ const MetadataSchema = z.object({
   /** FK to the org-managed document_types table — additive alongside the legacy
       free-text `documentType` above; both persist independently. */
   documentTypeId: zUUID().optional(),
+  /** FK to the org-managed document_groups table — a second, independent
+      taxonomy dimension alongside documentTypeId. Additive/nullable. */
+  documentGroupId: zUUID().optional(),
+  /** Document issue date — separate from the renewal.expiryDate below. Same
+      loose "non-empty string" validation as expiryDate (parsed via `new
+      Date()` below); the client sends a plain "yyyy-MM-dd" from
+      `<input type="date">`, which `.datetime()` would reject. */
+  issueDate: z.string().min(1).optional(),
   ownerships: z.array(OwnershipSchema).min(1),
   tags: z.array(z.string().min(1).max(64)).default([]),
   renewal: RenewalSchema.optional(),
@@ -140,8 +148,17 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { name, description, documentType, documentTypeId, ownerships, tags, renewal } =
-    parsed.data;
+  const {
+    name,
+    description,
+    documentType,
+    documentTypeId,
+    documentGroupId,
+    issueDate,
+    ownerships,
+    tags,
+    renewal,
+  } = parsed.data;
   const orgId = session.user.org_id;
 
   const documentId = crypto.randomUUID();
@@ -191,6 +208,8 @@ export async function POST(req: NextRequest) {
           description: description ?? null,
           documentType: documentType ?? null,
           documentTypeId: documentTypeId ?? null,
+          documentGroupId: documentGroupId ?? null,
+          issueDate: issueDate ? new Date(issueDate) : null,
           fileKey,
           filePublicUrl: publicUrl,
           mimeType,

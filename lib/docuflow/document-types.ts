@@ -20,7 +20,7 @@
 // ────────────────────────────────────────────────────────────────────
 
 import { prisma } from "@/lib/prisma";
-import { getCanonicalDocsForBizType, listSupportedBizTypes } from "./canonical-docs";
+import { getCanonicalDocsForBizType } from "./canonical-docs";
 
 /* ============================================================
    TYPES
@@ -159,56 +159,35 @@ export async function listDocumentTypesForBusinessType(
 }
 
 /* ============================================================
-   listDocumentTypesForUpload — generic (business-type-agnostic) fallback
-   for the upload form's type-picker, which doesn't know a businessType
-   ahead of time (that's chosen as part of the scope picker, not before).
-   Real rows always win; when an org has ZERO real DocumentType rows at
-   all, merges canonical entries across every supported business type
-   (deduped by name) so the picker is never empty on day one. Read-time
-   only — mirrors listDocumentTypesForBusinessType's contract, just
-   without a single businessType to scope the fallback to.
+   listDocumentTypesForUpload — the upload form's type-picker.
+   Real rows only — NO canonical-catalog fallback. CEO feedback
+   2026-09-24: document types must be what the admin actually
+   configured ("ตั้งชื่อประเภทเอกสารเอง ไม่ใช่โผล่มาทุกเอกสาร"), not an
+   auto-dumped generic list merged across every business type. When
+   an org has zero real DocumentType rows, the picker is simply
+   empty — that's correct, not a bug to paper over.
+
+   NOTE: listDocumentTypesForBusinessType() above (used by the
+   Checklist feature) intentionally keeps its canonical fallback —
+   that one is unrelated to this fix and must stay untouched.
    ============================================================ */
 
 export async function listDocumentTypesForUpload(
   orgId: string,
 ): Promise<DocumentTypeOption[]> {
   const rows = await listDocumentTypes(orgId);
-  if (rows.length > 0) {
-    return rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      category: row.category,
-      businessType: row.businessType,
-      frequency: row.frequency,
-      dangerLevel: row.dangerLevel,
-      regulator: row.regulator,
-      description: row.description,
-      canonicalKey: row.canonicalKey,
-      isCanonical: false,
-    }));
-  }
-
-  const seen = new Set<string>();
-  const merged: DocumentTypeOption[] = [];
-  for (const bizType of listSupportedBizTypes()) {
-    for (const spec of getCanonicalDocsForBizType(bizType)) {
-      if (seen.has(spec.name)) continue;
-      seen.add(spec.name);
-      merged.push({
-        id: null,
-        name: spec.name,
-        category: spec.category,
-        businessType: bizType,
-        frequency: spec.frequency,
-        dangerLevel: spec.dangerLevel,
-        regulator: spec.regulator,
-        description: spec.description,
-        canonicalKey: spec.name,
-        isCanonical: true,
-      });
-    }
-  }
-  return merged;
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    category: row.category,
+    businessType: row.businessType,
+    frequency: row.frequency,
+    dangerLevel: row.dangerLevel,
+    regulator: row.regulator,
+    description: row.description,
+    canonicalKey: row.canonicalKey,
+    isCanonical: false,
+  }));
 }
 
 /* ============================================================

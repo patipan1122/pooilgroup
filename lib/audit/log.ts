@@ -40,6 +40,13 @@ export type AuditAction =
   | "DOCUFLOW_SIGN_PLACEMENT_DELETE"
   | "DOCUFLOW_SIGN_PLACEMENT_RESET"
   | "DOCUFLOW_SIGNATURE_SIGNED"
+  // Admin sets/clears a signature ON BEHALF OF another user (e.g. onboarding,
+  // or the user can't draw their own) — distinct from DOCUFLOW_SIGNATURE_SIGNED
+  // (that's the act of signing a document). Security-sensitive: the target
+  // user's future document signatures come from whatever image is bound
+  // here, so every bind/unbind by an admin is audited (app/api/users/[id]/signature).
+  | "DOCUFLOW_ADMIN_SET_USER_SIGNATURE"
+  | "DOCUFLOW_ADMIN_CLEAR_USER_SIGNATURE"
   | "DOCUFLOW_ANALYZE"
   | "DOCUFLOW_EXTRACT_METADATA"
   | "DOCUFLOW_SEARCH"
@@ -47,6 +54,12 @@ export type AuditAction =
   | "DOCUFLOW_DOCTYPE_UPDATE"
   | "DOCUFLOW_DOCTYPE_DELETE"
   | "DOCUFLOW_DOCTYPE_IMPORT_CANONICAL"
+  // Document groups — SECOND, INDEPENDENT taxonomy dimension alongside
+  // DocumentType (lib/docuflow/document-groups.ts). No import-from-canonical
+  // action here — unlike DocumentType there is no canonical catalog behind it.
+  | "DOCUFLOW_DOCGROUP_CREATE"
+  | "DOCUFLOW_DOCGROUP_UPDATE"
+  | "DOCUFLOW_DOCGROUP_DELETE"
   // Google Drive export (DocuFlow redesign Track B Item 11) — opt-in,
   // admin-triggered one-way snapshot to the org's existing ChairOps Drive
   // connection. Re-export (overwriting the tracked file-id) reuses the

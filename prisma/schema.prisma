@@ -54,7 +54,8 @@ model Organization {
   missingReports               MissingReportReason[]
   documents                    Document[]
   documentTypes                DocumentType[]
-  documentOwnerships           DocumentOwnership[]
+  documentGroups                DocumentGroup[]
+  documentOwnerships            DocumentOwnership[]
   documentTags                 DocumentTag[]
   documentRenewals             DocumentRenewal[]
   documentSharedBranches       DocumentSharedBranch[]
@@ -1028,6 +1029,15 @@ model Document {
   /// column above, which is NOT being removed. Added 2026-09-23, DocuFlow redesign Track A Item 3.
   documentTypeId  String?  @map("document_type_id") @db.Uuid
 
+  /// Second, independent taxonomy dimension alongside documentTypeId — a freely-defined
+  /// grouping concept (NOT the hardcoded browse-page category tiles). Additive/nullable.
+  /// Added 2026-09-24, DocuFlow redesign CEO feedback follow-up.
+  documentGroupId String?  @map("document_group_id") @db.Uuid
+
+  /// Document issue date — separate from the existing expiry-tracking date. Additive/nullable.
+  /// Added 2026-09-24, DocuFlow redesign CEO feedback follow-up.
+  issueDate       DateTime? @map("issue_date") @db.Timestamptz(6)
+
   /// Google Drive export tracking — opt-in, per-document "Export to Drive" button (one-way).
   /// Nullable/additive. Added 2026-09-23, DocuFlow redesign Track B Item 11 (schema only).
   driveFileId       String?   @map("drive_file_id")
@@ -1046,12 +1056,14 @@ model Document {
   signaturePlacements DocumentSignaturePlacement[]
   analyses            DocumentAnalysis[]
   documentTypeRef     DocumentType?                @relation(fields: [documentTypeId], references: [id], onDelete: SetNull)
+  documentGroupRef    DocumentGroup?               @relation(fields: [documentGroupId], references: [id], onDelete: SetNull)
   driveExportedBy     User?                        @relation("DocumentDriveExporter", fields: [driveExportedById], references: [id], onDelete: SetNull)
 
   @@index([orgId, isActive])
   @@index([orgId, uploadedAt])
   @@index([orgId, documentType])
   @@index([orgId, documentTypeId])
+  @@index([orgId, documentGroupId])
   @@map("documents")
   @@schema("public")
 }
@@ -1083,6 +1095,30 @@ model DocumentType {
   @@unique([orgId, name])
   @@index([orgId, isActive])
   @@map("document_types")
+  @@schema("public")
+}
+
+// =============================================================
+// 22c. document_groups — SECOND, INDEPENDENT taxonomy dimension alongside DocumentType.
+// Freely-defined by each org (NOT the hardcoded browse-page category tiles like
+// "เอกสารนิติบุคคล/ภาษี/ประกัน"). No canonical catalog, no static fallback — just
+// org-scoped CRUD. See lib/docuflow/document-groups.ts. Added 2026-09-24.
+// =============================================================
+model DocumentGroup {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  name        String
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  documents Document[]
+
+  @@unique([orgId, name])
+  @@index([orgId, isActive])
+  @@map("document_groups")
   @@schema("public")
 }
 

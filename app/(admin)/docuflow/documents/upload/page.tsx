@@ -10,6 +10,7 @@ import { requireProgramAdminTier } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { BUSINESS_TYPE_LIST } from "@/constants/business-types";
 import { listDocumentTypesForUpload } from "@/lib/docuflow/document-types";
+import { listDocumentGroups } from "@/lib/docuflow/document-groups";
 import { UploadForm } from "@/components/docuflow/upload-form";
 import {
   DfButton,
@@ -32,30 +33,32 @@ export default async function DocumentUploadPage({ searchParams }: PageProps) {
   const orgId = session.user.org_id;
   const { businessType } = await searchParams;
 
-  const [companies, branches, users, documentTypes] = await Promise.all([
-    prisma.company.findMany({
-      where: { orgId, isActive: true },
-      select: { id: true, name: true, code: true },
-      orderBy: { name: "asc" },
-    }),
-    prisma.branch.findMany({
-      where: { orgId, isActive: true },
-      select: {
-        id: true,
-        name: true,
-        code: true,
-        businessType: true,
-        companyId: true,
-      },
-      orderBy: { code: "asc" },
-    }),
-    prisma.user.findMany({
-      where: { orgId, isActive: true },
-      select: { id: true, name: true, role: true },
-      orderBy: { name: "asc" },
-    }),
-    listDocumentTypesForUpload(orgId),
-  ]);
+  const [companies, branches, users, documentTypes, documentGroups] =
+    await Promise.all([
+      prisma.company.findMany({
+        where: { orgId, isActive: true },
+        select: { id: true, name: true, code: true },
+        orderBy: { name: "asc" },
+      }),
+      prisma.branch.findMany({
+        where: { orgId, isActive: true },
+        select: {
+          id: true,
+          name: true,
+          code: true,
+          businessType: true,
+          companyId: true,
+        },
+        orderBy: { code: "asc" },
+      }),
+      prisma.user.findMany({
+        where: { orgId, isActive: true },
+        select: { id: true, name: true, role: true },
+        orderBy: { name: "asc" },
+      }),
+      listDocumentTypesForUpload(orgId),
+      listDocumentGroups(orgId),
+    ]);
 
   const businessTypes = BUSINESS_TYPE_LIST.map((b) => ({
     value: b.type,
@@ -207,6 +210,7 @@ export default async function DocumentUploadPage({ searchParams }: PageProps) {
               users={users}
               businessTypes={businessTypes}
               documentTypes={documentTypes}
+              documentGroups={documentGroups}
               orgId={orgId}
               defaultBusinessType={businessType}
             />

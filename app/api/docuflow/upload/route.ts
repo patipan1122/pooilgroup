@@ -71,6 +71,14 @@ const UploadSchema = z.object({
   /** FK to the org-managed document_types table — additive alongside the legacy
       free-text `documentType` above; both persist independently. */
   documentTypeId: zUUID().optional(),
+  /** FK to the org-managed document_groups table — a second, independent
+      taxonomy dimension alongside documentTypeId. Additive/nullable. */
+  documentGroupId: zUUID().optional(),
+  /** Document issue date — separate from the renewal.expiryDate below. Same
+      loose "non-empty string" validation as expiryDate (parsed via `new
+      Date()` below); the client sends a plain "yyyy-MM-dd" from
+      `<input type="date">`, which `.datetime()` would reject. */
+  issueDate: z.string().min(1).optional(),
   filename: z.string().min(1).max(255),
   mimeType: z.string().min(1).max(255),
   fileSize: z.number().int().positive().max(500 * 1024 * 1024), // 500 MB
@@ -127,6 +135,8 @@ export async function POST(req: NextRequest) {
     description,
     documentType,
     documentTypeId,
+    documentGroupId,
+    issueDate,
     filename,
     mimeType,
     fileSize,
@@ -170,6 +180,8 @@ export async function POST(req: NextRequest) {
           description: description ?? null,
           documentType: documentType ?? null,
           documentTypeId: documentTypeId ?? null,
+          documentGroupId: documentGroupId ?? null,
+          issueDate: issueDate ? new Date(issueDate) : null,
           fileKey,
           filePublicUrl: publicUrl,
           mimeType,

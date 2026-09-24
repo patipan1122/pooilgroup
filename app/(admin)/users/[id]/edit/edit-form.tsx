@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { BranchPicker, type BranchOption } from "@/components/users/branch-picker";
+import { UserSignatureAdminPanel } from "@/components/docuflow/user-signature-admin-panel";
 import { cn } from "@/lib/utils/cn";
 
 const ROLES: { value: string; label: string; desc: string }[] = [
@@ -60,6 +61,9 @@ interface Props {
   isSelf: boolean;
   // เฉพาะ super_admin เท่านั้นที่เลือกบทบาทระดับแอดมินได้ (CEO 2026-06-15)
   canAppointAdmins: boolean;
+  // ลายเซ็นที่ผู้ใช้นี้เคยบันทึกไว้ (null = ยังไม่เคยบันทึก) — ให้แอดมิน
+  // ตั้งค่า/แทนที่ได้จากหน้านี้ ผ่าน UserSignatureAdminPanel ด้านล่าง
+  initialSignatureUrl: string | null;
 }
 
 export function EditUserForm({
@@ -72,6 +76,7 @@ export function EditUserForm({
   initialAdminModules,
   isSelf,
   canAppointAdmins,
+  initialSignatureUrl,
 }: Props) {
   // ซ่อนตัวเลือกบทบาทระดับแอดมินจาก non-super · แต่คงบทบาทปัจจุบันของผู้ใช้ไว้
   // เสมอ เพื่อให้ฟอร์มแสดงค่าที่ถูกต้องและแก้ผู้ใช้ทั่วไปได้ตามปกติ
@@ -188,6 +193,7 @@ export function EditUserForm({
   const showPrograms = role === "program_admin";
 
   return (
+    <>
     <form onSubmit={handleSubmit}>
       <Card className="animate-fade-up delay-100">
         <CardHeader>
@@ -373,5 +379,15 @@ export function EditUserForm({
         </Button>
       </div>
     </form>
+
+    {/* Outside the <form> on purpose — its own save/delete buttons post to
+        a separate API route, not the user-edit submit above. See the
+        header comment in UserSignatureAdminPanel for why. */}
+    <UserSignatureAdminPanel
+      userId={userId}
+      userName={initial.name}
+      currentSignatureUrl={initialSignatureUrl}
+    />
+    </>
   );
 }

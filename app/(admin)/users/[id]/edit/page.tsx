@@ -4,6 +4,7 @@ import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { BackButton } from "@/components/ui/back-button";
 import { adminClient } from "@/lib/db/server";
 import { MODULES } from "@/lib/modules";
+import { getMySignatureUrl } from "@/lib/docuflow/my-signature";
 import { EditUserForm } from "./edit-form";
 
 export const dynamic = "force-dynamic";
@@ -57,6 +58,12 @@ export default async function EditUserPage({ params }: Props) {
     .filter((m) => m.status === "active" && m.slug !== "costctrl")
     .map((m) => ({ slug: m.slug, name: m.name, emoji: m.emoji }));
 
+  // ลายเซ็นที่ผู้ใช้นี้เคยบันทึกไว้ (ถ้ามี) — ให้แอดมินตั้งค่า/แทนที่ได้
+  // จากหน้านี้ (getMySignatureUrl รับ userId ตรง ๆ อยู่แล้ว ใช้ซ้ำได้เลย
+  // ไม่ต้อง fetch ฝั่ง client ตอน mount — เหมือน pattern ของหน้า
+  // /profile/signature ที่ fetch ฝั่ง server แล้วส่ง prop เข้ามา)
+  const initialSignatureUrl = await getMySignatureUrl(id);
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-2xl mx-auto">
       <div className="mb-3">
@@ -87,6 +94,7 @@ export default async function EditUserPage({ params }: Props) {
         initialAdminModules={initialAdminModules}
         isSelf={user.id === session.user.id}
         canAppointAdmins={isSuperAdmin(session.user.role)}
+        initialSignatureUrl={initialSignatureUrl}
       />
     </div>
   );
