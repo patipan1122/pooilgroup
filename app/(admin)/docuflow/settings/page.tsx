@@ -28,6 +28,9 @@ import {
   ChevronRight,
   Lock,
   HardDrive,
+  History,
+  Truck,
+  UsersRound,
 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { requireProgramAdminTier } from "@/lib/auth/role-guards";
@@ -159,6 +162,27 @@ export default async function DocuFlowSettingsPage() {
             desc="ยังไม่มีในระบบ — ต้องสร้างข้ามโปรแกรม ไม่ใช่ scope ของ DocuFlow"
           />
           <DriveStatusCard connected={Boolean(driveConn)} rootFolderName={driveConn?.rootFolderName ?? null} />
+          <SettingsHubCard
+            href="/docuflow/audit"
+            icon={<History size={20} />}
+            tone="ink"
+            title="Audit Log"
+            desc="ประวัติการแก้ไข/ลบเอกสารทั้งหมด ย้อนหลัง"
+          />
+          <SettingsHubCard
+            href="/docuflow/vehicles"
+            icon={<Truck size={20} />}
+            tone="warn"
+            title="ทะเบียนรถ + เอกสาร"
+            desc="ดูเอกสารจัดกลุ่มตามคันรถ (ทะเบียน, พ.ร.บ., ประกัน)"
+          />
+          <SettingsHubCard
+            href="/docuflow/persons"
+            icon={<UsersRound size={20} />}
+            tone="accent"
+            title="พนักงาน + เอกสาร"
+            desc="ดูเอกสารจัดกลุ่มตามพนักงานรายคน"
+          />
         </div>
       </DfSection>
     </div>

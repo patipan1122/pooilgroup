@@ -208,6 +208,10 @@ export default async function ReportsPage() {
         description={`ปี ${now.getFullYear() + 543} · ${docsThisYear} เอกสารใหม่ · ${renewalsThisYear} ต่ออายุ`}
         actions={
           <>
+            <DfButton href="/docuflow/risk" variant="ghost">
+              <TrendingUp size={14} />
+              ความเสี่ยงรวม
+            </DfButton>
             <DfButton variant="ghost">
               <Download size={14} />
               Export PDF

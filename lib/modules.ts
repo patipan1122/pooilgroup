@@ -333,7 +333,15 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
     status: "active",
     basePath: "/docuflow",
     nav: [
-      // ─── 4 หลัก: user feedback "ดูง่าย ใช้ง่าย ไม่กี่นาที" (2026-05-12) ───
+      // ─── LeanUX pass 2026-09-24: 15 → 6 items. เดิมมี "อัปโหลด/ใกล้หมดอายุ/
+      // ค้นหา AI/ค้นหา-กรองขั้นสูง" เป็นเมนูแยก ทั้งที่ทุกอย่างย้ายเข้าไปอยู่ใน
+      // /docuflow/documents แล้ว (ปุ่มอัปโหลด + filter chip "ใกล้หมดอายุ" +
+      // ปุ่ม "ถาม AI" + filter ขั้นสูงในหน้าเดียวกันหมด — DocuFlow redesign
+      // Track A). Checklist/Audit Log/รถ+เอกสาร/พนักงาน+เอกสาร ย้ายเข้าไปเป็น
+      // การ์ดใน /docuflow/settings แทน (ของที่ใช้ไม่บ่อย ไม่ควรแย่งที่ 4 หลัก).
+      // "ความเสี่ยงรวม" รวมเป็นปุ่มในหน้า /docuflow/reports แทนเมนูแยก.
+      // "การแจ้งเตือน" ย้ายเป็นกระดิ่งใน DfTopBanner (มือถือ) แทนเมนูเต็มหน้า —
+      // route ยังทำงานเหมือนเดิมหมด แค่ไม่ใช่ top-level nav แล้ว.
       {
         href: "/docuflow",
         label: "หน้าหลัก",
@@ -347,57 +355,14 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
       },
       {
-        href: "/docuflow/documents/upload",
-        label: "อัปโหลด",
-        icon: Upload,
-        adminOnly: true,
-      },
-      {
-        href: "/docuflow/expiry",
-        label: "ใกล้หมดอายุ",
-        icon: Clock,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
-      },
-      {
-        href: "/docuflow/search",
-        label: "ค้นหา AI",
-        icon: Sparkles,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
-      },
-      // ─── เฉพาะทาง (ใช้บางครั้ง — อยู่ล่าง ไม่รบกวน 4 หลัก) ───
-      {
-        href: "/docuflow/documents",
-        label: "ค้นหา/กรองขั้นสูง",
-        icon: FileTextIcon,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
-      },
-      {
-        href: "/docuflow/checklist",
-        label: "Checklist เอกสารที่ต้องมี",
-        icon: CheckSquare,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
-      },
-      {
-        href: "/docuflow/risk",
-        label: "ความเสี่ยงรวม",
-        icon: AlertTriangle,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
-      },
-      {
         href: "/docuflow/calendar",
         label: "ปฏิทินวันหมดอายุ",
         icon: CalendarRange,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
       },
       {
-        href: "/docuflow/notifications",
-        label: "การแจ้งเตือน",
-        icon: Bell,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
-      },
-      {
         href: "/docuflow/reports",
-        label: "รายงาน & สถิติ",
+        label: "รายงาน & ความเสี่ยง",
         icon: BarChart3,
         adminOnly: true,
       },
@@ -405,24 +370,6 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         href: "/docuflow/workflow",
         label: "Workflow ลายเซ็น",
         icon: Workflow,
-        adminOnly: true,
-      },
-      {
-        href: "/docuflow/audit",
-        label: "Audit Log",
-        icon: History,
-        adminOnly: true,
-      },
-      {
-        href: "/docuflow/vehicles",
-        label: "รถ + เอกสาร",
-        icon: Truck,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
-      },
-      {
-        href: "/docuflow/persons",
-        label: "พนักงาน + เอกสาร",
-        icon: UsersIcon,
         adminOnly: true,
       },
       {
