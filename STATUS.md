@@ -16,7 +16,7 @@ CEO ส่งสกรีนช็อต 4 รูปบ่นว่าเมน�
 
 **เอกสารเต็ม:** [`docs/WORKSHOP_docuflow-redesign.md`](docs/WORKSHOP_docuflow-redesign.md) (สเปก+มติ CEO) · [`docs/BIGFEATURE_docuflow-redesign_TRACKA_PLAN.md`](docs/BIGFEATURE_docuflow-redesign_TRACKA_PLAN.md) · [`docs/BIGFEATURE_docuflow-redesign_TRACKB_PLAN.md`](docs/BIGFEATURE_docuflow-redesign_TRACKB_PLAN.md)
 
-**ขั้นต่อไป:** รอ CEO อนุมัติ push เข้า `setup` + deploy จริง (branch: `worktree-docuflow-redesign`)
+**สถานะล่าสุด:** ✅ **DEPLOYED LIVE** — CEO สั่ง "Push deploy เลย" → รัน `/verify` (tsc+eslint+build+git status+smoke test) ผ่านทุกจุด → push เข้า `setup` (`e6331716`, fast-forward สะอาด ไม่มีคนอื่นแก้ชนกัน) → Vercel deploy อัตโนมัติ → ยืนยันด้วย headless screenshot login จริงบน pooilgroup.com เห็นหน้าตาใหม่ทำงานได้จริง (ส่งรูปให้ CEO แล้ว)
 
 ---
 
