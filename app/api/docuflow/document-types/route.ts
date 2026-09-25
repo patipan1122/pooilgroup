@@ -15,6 +15,7 @@ import { requireSession } from "@/lib/auth/session";
 import { isProgramAdminTier, isExecutiveRole } from "@/lib/auth/role-guards";
 import { audit } from "@/lib/audit/log";
 import { prisma } from "@/lib/prisma";
+import { zUUID } from "@/lib/zod-helpers";
 import {
   listAllDocumentTypesForAdmin,
   createDocumentType,
@@ -26,7 +27,7 @@ const CreateSchema = z.object({
   name: z.string().min(1, "ใส่ชื่อประเภทเอกสาร").max(255),
   category: z.string().max(64).nullable().optional(),
   businessType: z.string().max(64).nullable().optional(),
-  companyId: z.string().uuid().nullable().optional(),
+  companyId: zUUID().nullable().optional(),
   frequency: z.string().max(64).nullable().optional(),
   dangerLevel: z.string().max(32).nullable().optional(),
   regulator: z.string().max(255).nullable().optional(),

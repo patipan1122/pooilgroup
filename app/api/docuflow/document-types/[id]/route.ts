@@ -18,6 +18,7 @@ import {
   softDeleteDocumentType,
 } from "@/lib/docuflow/document-types";
 import { prisma } from "@/lib/prisma";
+import { zUUID } from "@/lib/zod-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,7 @@ const UpdateSchema = z.object({
   name: z.string().min(1).max(255).optional(),
   category: z.string().max(64).nullable().optional(),
   businessType: z.string().max(64).nullable().optional(),
-  companyId: z.string().uuid().nullable().optional(),
+  companyId: zUUID().nullable().optional(),
   frequency: z.string().max(64).nullable().optional(),
   dangerLevel: z.string().max(32).nullable().optional(),
   regulator: z.string().max(255).nullable().optional(),
