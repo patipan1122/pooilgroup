@@ -12,8 +12,10 @@ import {
   BILL_STATUS,
   billDisplayStatus,
 } from "@/lib/rentspace/format";
-import { listBills, getPrimaryProject, listContracts } from "@/lib/rentspace/data";
+import { prisma } from "@/lib/prisma";
+import { listBills, getPrimaryProject, listContracts, meterBoard } from "@/lib/rentspace/data";
 import { BillsActions } from "./_components/bills-actions";
+import type { BillRoom } from "../meters/_components/selective-bill-panel";
 import { BillsTable, MonthPicker, type BillRow } from "./_components/bills-list-client";
 
 export const dynamic = "force-dynamic";
@@ -128,6 +130,34 @@ export default async function BillsPage({
     allBills.filter((b) => b.period === thisPeriod && b.status !== "void").map((b) => b.contractId),
   );
 
+  // ห้องสำหรับกล่อง "ออกบิลหลายห้อง" (เลือกได้) — reuse SelectiveBillPanel ตัวเดียวกับ
+  // หน้าจดมิเตอร์ (มีแล้วจริง แค่ไม่เคยต่อสายมาที่หน้านี้). ยิงเฉพาะตอน canIssue (ปุ่มถึงจะโชว์).
+  let billRooms: BillRoom[] = [];
+  if (project && canIssue) {
+    const [rawUnitsForBilling, billedUnitRows] = await Promise.all([
+      meterBoard(orgId, project.id, thisPeriod),
+      prisma.rentalBill.findMany({
+        where: { orgId, projectId: project.id, period: thisPeriod, status: { not: "void" }, deletedAt: null },
+        select: { unitId: true },
+      }),
+    ]);
+    const billedUnitIds = new Set(billedUnitRows.map((b) => b.unitId));
+    billRooms = rawUnitsForBilling
+      .filter((u) => (u.contracts?.length ?? 0) > 0)
+      .map((u) => {
+        const meters = u.meters as unknown as { kind: string; readings: { currReading?: unknown }[] }[];
+        const elecDone = meters.find((m) => m.kind === "electric")?.readings?.[0]?.currReading != null;
+        const waterDone = meters.find((m) => m.kind === "water")?.readings?.[0]?.currReading != null;
+        return {
+          unitId: u.id,
+          code: u.code,
+          tenant: u.contracts?.[0]?.tenant ? tenantDisplayName(u.contracts[0].tenant) : null,
+          metersDone: elecDone && waterDone,
+          alreadyBilled: billedUnitIds.has(u.id),
+        };
+      });
+  }
+
   function chipHref(next: { status?: string; period?: string }) {
     const params = new URLSearchParams();
     const s = next.status ?? statusFilter;
@@ -165,6 +195,7 @@ export default async function BillsPage({
               tenantName: tenantDisplayName(c.tenant),
               alreadyBilled: billedThisPeriodContractIds.has(c.id),
             }))}
+            billRooms={billRooms}
           />
         ) : null}
       </header>

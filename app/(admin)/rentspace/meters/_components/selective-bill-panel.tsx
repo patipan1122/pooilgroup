@@ -32,10 +32,13 @@ export default function SelectiveBillPanel({
   projectId,
   period,
   rooms,
+  onDone,
 }: {
   projectId: string;
   period: string;
   rooms: BillRoom[];
+  /** เรียกหลังออกบิลสำเร็จ — ใช้ตอนแผงนี้อยู่ใน modal (เช่นหน้าออกบิลหลัก) เพื่อปิด modal อัตโนมัติ */
+  onDone?: () => void;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -122,6 +125,7 @@ export default function SelectiveBillPanel({
         );
         setSel(new Set());
         router.refresh();
+        onDone?.();
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "ออกบิลไม่สำเร็จ");
       }

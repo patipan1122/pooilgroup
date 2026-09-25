@@ -3,9 +3,10 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, FileDown, X, AlertTriangle, Search } from "lucide-react";
+import { Plus, FileDown, ListChecks, X, AlertTriangle, Search } from "lucide-react";
 import { actGenerateMonthlyBills, actCreateBill, actBillingPreview } from "../../_actions";
 import { currentPeriod, periodLabel, formatBaht } from "@/lib/rentspace/format";
+import SelectiveBillPanel, { type BillRoom } from "../../meters/_components/selective-bill-panel";
 
 type ContractOpt = {
   id: string;
@@ -30,13 +31,16 @@ export function BillsActions({
   projectId,
   period,
   contracts,
+  billRooms,
 }: {
   projectId: string;
   period: string;
   contracts: ContractOpt[];
+  billRooms: BillRoom[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [selectiveOpen, setSelectiveOpen] = useState(false);
   const [pending, start] = useTransition();
 
   // ── bulk preview modal state ──
@@ -116,6 +120,46 @@ export function BillsActions({
       <button className="rs-btn min-h-[44px] sm:min-h-0 flex-1 sm:flex-none" onClick={() => setOpen(true)} disabled={contracts.length === 0}>
         <Plus className="h-4 w-4 shrink-0" /> ออกบิล
       </button>
+      <button
+        className="rs-btn rs-btn-ghost min-h-[44px] sm:min-h-0 flex-1 sm:flex-none"
+        onClick={() => setSelectiveOpen(true)}
+        disabled={billRooms.length === 0}
+      >
+        <ListChecks className="h-4 w-4 shrink-0" /> <span className="truncate">เลือกหลายห้อง</span>
+      </button>
+
+      {/* ───────── เลือกหลายห้อง modal — reuse SelectiveBillPanel (มีอยู่แล้วในหน้าจดมิเตอร์) ───────── */}
+      {selectiveOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4"
+          onClick={() => setSelectiveOpen(false)}
+        >
+          <div
+            className="w-full sm:max-w-3xl rounded-b-none sm:rounded-2xl overflow-hidden flex flex-col max-h-[92vh] sm:max-h-[88vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              className="flex items-center justify-between px-5 py-4 border-b bg-white"
+              style={{ borderColor: "var(--rs-border)" }}
+            >
+              <div className="font-bold text-lg" style={{ color: "var(--rs-text)" }}>
+                ออกบิลหลายห้อง · งวด {periodLabel(period)}
+              </div>
+              <button onClick={() => setSelectiveOpen(false)} className="p-1 rounded-lg hover:bg-black/5">
+                <X className="h-5 w-5" style={{ color: "var(--rs-text-2)" }} />
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1 bg-white">
+              <SelectiveBillPanel
+                projectId={projectId}
+                period={period}
+                rooms={billRooms}
+                onDone={() => setSelectiveOpen(false)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ───────── PREVIEW modal — ดูก่อนออกบิลทั้งโครงการ ───────── */}
       {previewOpen && (
