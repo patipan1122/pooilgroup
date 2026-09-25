@@ -13,12 +13,13 @@
 // loginSecretForModule reads a NON-public env and must only run server-side
 // (it returns undefined in the browser — never bundled).
 
-export type LineModule = "ledger" | "clawhub" | "default";
+export type LineModule = "ledger" | "clawhub" | "rentspace" | "default";
 
 /** Pick the module from a path (used by the shared LIFF bootstrap on /liff/*). */
 export function lineModuleFromPath(path: string | null | undefined): LineModule {
   if (path && path.startsWith("/liff/ledger")) return "ledger";
   if (path && path.startsWith("/liff/clawhub")) return "clawhub";
+  if (path && path.startsWith("/liff/rentspace")) return "rentspace";
   return "default";
 }
 
@@ -26,6 +27,7 @@ export function lineModuleFromPath(path: string | null | undefined): LineModule 
 export function asLineModule(v: string | null | undefined): LineModule {
   if (v === "ledger") return "ledger";
   if (v === "clawhub") return "clawhub";
+  if (v === "rentspace") return "rentspace";
   return "default";
 }
 
@@ -36,6 +38,9 @@ export function liffIdForModule(m: LineModule): string | undefined {
   }
   if (m === "clawhub") {
     return process.env.NEXT_PUBLIC_CLAWHUB_LIFF_ID || process.env.NEXT_PUBLIC_LIFF_ID;
+  }
+  if (m === "rentspace") {
+    return process.env.NEXT_PUBLIC_RENTSPACE_LIFF_ID || process.env.NEXT_PUBLIC_LIFF_ID;
   }
   return process.env.NEXT_PUBLIC_LIFF_ID;
 }

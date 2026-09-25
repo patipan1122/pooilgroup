@@ -63,6 +63,22 @@ export function LiffBootstrap({
     ) {
       return;
     }
+    // RentSpace tenant pages own their OWN LIFF lifecycle inside
+    // LiffRentspaceClient (app/liff/rentspace/_client.tsx), verified server-side via
+    // rentspaceVerifyIdToken() — a completely separate link table from Pool users.
+    // Without this early-return, this component's default liff.init() (staff/
+    // ChairOps channel) raced LiffRentspaceClient's own liff.init() (RentSpace's
+    // channel) on the same @line/liff SDK singleton, so the tenant's id_token ended
+    // up issued under the WRONG channel → portal-liff verify never matched
+    // rentalTenant.lineUserId → rich-menu buttons showed "ยังไม่ได้เชื่อมบัญชี" even for
+    // already-linked tenants. Additive early-return: leaves every other module's
+    // behaviour untouched.
+    if (
+      typeof window !== "undefined" &&
+      lineModuleFromPath(window.location.pathname) === "rentspace"
+    ) {
+      return;
+    }
     // Ledger invite/claim is handled INLINE (JoinClient rendered below) — skip the
     // whole line-login flow so nothing races the bind / re-triggers liff.state.
     if (ledgerInvite) return;
