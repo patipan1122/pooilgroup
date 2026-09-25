@@ -1571,8 +1571,7 @@ function QuickCreateDocTypeDialog({
     onClose();
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleSubmit() {
     if (!name.trim()) {
       toast.error("ใส่ชื่อประเภทเอกสารก่อน");
       return;
@@ -1592,12 +1591,26 @@ function QuickCreateDocTypeDialog({
 
   return (
     <Dialog open={open} onClose={handleClose} title="สร้างประเภทเอกสารใหม่">
-      <form onSubmit={handleSubmit} className="space-y-4">
+      {/* Deliberately a <div>, not a <form> — this dialog renders inline inside
+          UploadForm's own outer <form> (the upload form itself), and a nested
+          <form> there is invalid HTML: a submit click silently falls through to
+          the OUTER upload form instead of this dialog's handler (confirmed via
+          live end-to-end testing 2026-09-25 — the button appeared to do nothing
+          and the page reloaded to the top). Enter-to-submit on the name field is
+          wired manually below for the same reason (an <input> inside the outer
+          form defaults to submitting THAT form on Enter). */}
+      <div className="space-y-4">
         <Field label="ชื่อประเภทเอกสาร" required htmlFor="qc-name">
           <Input
             id="qc-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                handleSubmit();
+              }
+            }}
             disabled={busy}
             autoFocus
             placeholder="เช่น ใบอนุญาตประกอบกิจการ"
@@ -1642,11 +1655,11 @@ function QuickCreateDocTypeDialog({
           <Button type="button" variant="outline" onClick={handleClose} disabled={busy}>
             ยกเลิก
           </Button>
-          <Button type="submit" loading={busy}>
+          <Button type="button" onClick={handleSubmit} loading={busy}>
             สร้างประเภทเอกสาร
           </Button>
         </div>
-      </form>
+      </div>
     </Dialog>
   );
 }
