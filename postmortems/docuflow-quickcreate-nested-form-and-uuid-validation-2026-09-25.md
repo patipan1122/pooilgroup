@@ -1,0 +1,57 @@
+# DocuFlow quick-create document-type: nested `<form>` + strict UUID validation
+
+**Summary.** The new "+ สร้างใหม่" quick-create dialog on the DocuFlow upload form (Track D, commit `a11b19da`) shipped with two independent bugs that made it completely non-functional: (1) its submit button did nothing because its `<form>` was illegally nested inside the upload page's own outer `<form>`, and (2) even after that was fixed, submitting with any real company selected always failed server-side validation because `z.string().uuid()` rejects the non-RFC seed UUIDs both real companies in this org actually use. `tsc`, `eslint`, and `next build` stayed green through both bugs — neither is visible to static analysis. Found via a live Playwright click-through against production after the CEO explicitly asked whether the feature was really connected end-to-end. Fixed in commits `d230bc52` and `fcbc94de`, both deployed and re-verified live on `pooilgroup.com`.
+
+## Symptom
+
+**Bug 1:** Clicking "+ สร้างใหม่" next to the "ประเภทเอกสาร" dropdown on `/docuflow/documents/upload` opened the create-type dialog correctly. Filling in name/business type/company and clicking "สร้างประเภทเอกสาร" made the dialog silently close and the page scroll position reset to the top — no toast, no new row, no error visible in the UI. `GET /api/docuflow/document-types` showed the row was never created.
+
+**Bug 2 (after fixing Bug 1):** With the dialog now actually submitting, choosing a company and submitting produced a visible red "Validation failed" banner every time, for every company in the org.
+
+## Root cause
+
+**Bug 1 — nested `<form>`.** `components/docuflow/upload-form.tsx`: `UploadForm`'s entire render is one outer element, `<form onSubmit={handleSubmit(onSubmit)} className="space-y-5">` (line 890, closes line 1477). `QuickCreateDocTypeDialog` is rendered inline inside that same JSX tree (called between those two line numbers), and its own dialog content was `<form onSubmit={handleSubmit} className="space-y-4">` with a `<Button type="submit">`. That inner `<form>` is a DOM descendant of the outer upload `<form>` — nested `<form>` elements are invalid per the HTML spec. In practice, a submit button inside a nested form does not reliably invoke the nested form's own `onSubmit`; the click fell through to the outer upload form's submit handling instead, which does a full client-side handling path unrelated to document-type creation and produces exactly the observed symptom: dialog closes, no create request fires, page state resets.
+
+**Bug 2 — over-strict UUID schema.** `app/api/docuflow/document-types/route.ts` (`CreateSchema`) and `app/api/docuflow/document-types/[id]/route.ts` (`UpdateSchema`) both declared `companyId: z.string().uuid().nullable().optional()`. Zod v4's built-in `.uuid()` validates against `^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$` — it enforces the RFC 4122 version nibble (`1-8`) and variant nibble (`8/9/a/b`), with only the exact all-zero/all-`f` sentinels special-cased. The `companies` table in this database has exactly two active rows: `id = '00000000-0000-0000-0000-0000000000a1'` (Pooil Oil) and `id = '00000000-0000-0000-0000-0000000000a2'` (JP Sync Group) — confirmed by direct query. Both have `0` in the version-nibble position and neither is the special-cased nil UUID, so Zod's `.uuid()` rejects both, unconditionally. There is no real company in this org that could ever pass this check.
+
+## Why it produced the symptom
+
+Bug 1 is upstream of Bug 2 in the user flow — the dialog had to actually reach the network request before Bug 2 could manifest at all, which is why Bug 1 was found and fixed first, and Bug 2 only became visible on the next test pass. Bug 2's failure is a direct 400 response from the API's `CreateSchema.safeParse(body)` returning `{ error: "Validation failed", issues: [...] }`; the client's generic `throw new Error(err.error || ...)` surfaces the literal string "Validation failed" with no further detail, which is why the symptom in the UI gave no hint toward the real cause.
+
+## Fix
+
+**Bug 1 (`d230bc52`):** `QuickCreateDocTypeDialog`'s inner `<form>` → plain `<div>`. The submit `<Button>` changed from `type="submit"` to `type="button" onClick={handleSubmit}` (`handleSubmit` signature changed from `(e: React.FormEvent) => {...}` to a plain `() => {...}`, dropping `e.preventDefault()` since there is no longer a submit event). The name `<Input>` gained an explicit `onKeyDown` handler that calls `e.preventDefault()` and `handleSubmit()` on `Enter` — necessary because a text input with no owning form defaults to submitting the *nearest ancestor* form on Enter, which after this change would otherwise have been the outer upload form again.
+
+**Bug 2 (`fcbc94de`):** Both schemas' `companyId: z.string().uuid()...` → `companyId: zUUID()...`, importing `zUUID` from `@/lib/zod-helpers`. This is not a new helper — it already exists project-wide for exactly this reason (its own file comment: *"Pooilgroup uses these for company seed IDs: Pooil Oil = ...0a1"*) and is already used by sibling DocuFlow routes, e.g. `app/api/docuflow/vehicles/route.ts`, for `companyId`/`branchId`. `zUUID()` checks only the general 8-4-4-4-12 hex shape via `/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/`, with no version/variant constraint — safe because the real validation layer is the DB foreign key plus the org-scoped existence check already added in these routes (`prisma.company.findFirst({ where: { id, orgId } })`), not the request-body format check.
+
+## How it was found
+
+The CEO reviewed the "done" report for Track D and pushed back directly, asking whether the new functionality was actually wired end-to-end and whether data was consistent from source to destination — not accepting `tsc`/`eslint`/`next build` passing plus a static screenshot as sufficient proof. That prompted an actual Playwright script driving the real production site: log in as the sanctioned test account, open the upload page, click "+ สร้างใหม่", fill and submit the dialog, then check the API response for the created row.
+
+- First run: `created row via API` was `null`. Screenshot at that point (`e2e-3-after-create.png`) showed the page scrolled back to the top with the dialog closed — the visible symptom of Bug 1. Reading `upload-form.tsx` confirmed `UploadForm`'s whole return is one `<form>`, and the dialog's own `<form>` was nested inside it.
+- After fixing and redeploying, second run: script threw immediately because the submit button no longer had `type="submit"` (expected, since the fix changed that) — a test-script adjustment, not a new bug.
+- Third run (test script fixed): the click now worked, the dialog stayed open, but a screenshot (`e2e-3-after-create.png`, second version) showed a red "Validation failed" banner. Isolated by writing a two-line standalone Zod script (`z.string().uuid().safeParse("00000000-0000-0000-0000-0000000000a2")`) inside the worktree (needed to run from a directory with `zod` in `node_modules`) — it returned `success: false` with `code: "invalid_format"`, confirming the schema rejection. A `grep` across the codebase for `z.string().uuid()` turned up `lib/chairops/schemas/zod-helpers.ts` and the canonical `lib/zod-helpers.ts`, both documenting this exact Zod v4 + seed-UUID incompatibility with a ready-made fix (`zUUID()`).
+- Confirmed the real companies actually use the non-RFC pattern via a direct read-only query against `companies` (`weekly_health_check_ro` role) before applying the fix, so the fix wasn't guessed — it was matched to the actual data.
+
+## Why it slipped through
+
+CI gap combined with an untested interaction surface: `tsc`, `eslint`, and `next build` cannot detect either bug — one is a DOM-nesting/runtime-click behavior, the other is a request-payload validation failure against real data shapes, and neither has any static signature. The initial "verification" for Track D was a static screenshot of the dialog rendering correctly (which it did) plus the build passing; nothing in that process actually submitted the form with real data against the real API. The project already has a documented, established fix for the UUID class of bug (`lib/zod-helpers.ts`, referenced by a project memory note `[[zod-v4-uuid-strict-rejects-seed]]` and already applied in `vehicles/route.ts`), but the new `document-types` routes were written using the naive `z.string().uuid()` instead, because nothing forced a check against that convention at write time.
+
+## Validation
+
+Deployed both fixes to production (`fcbc94de`, confirmed `● Ready` via `vercel inspect pooilgroup.com`) and re-ran the full live Playwright script end-to-end against `pooilgroup.com`, using the sanctioned test admin account:
+
+- Opened the quick-create dialog, filled name + a real business type (`fuel_station`) + a real company (`JP Sync Group`, `id = ...a2`), submitted.
+- Dialog closed and the upload form's own "ประเภทเอกสาร" `<select>` immediately showed the new type auto-selected — confirms Bug 1's fix (the click now reaches the dialog's own handler).
+- `GET /api/docuflow/document-types` (same authenticated session) returned the new row with `businessType: "fuel_station"`, `companyId: "00000000-0000-0000-0000-0000000000a2"` — confirms Bug 2's fix (the POST no longer 400s on a real company id).
+- Independently, a direct SQL query against the production DB (`weekly_health_check_ro` role, not the app's own API) joining `document_types` to `companies` on the new row's id showed `business_type = 'fuel_station'`, `company_name = 'JP Sync Group'` — cross-checks the API's self-report against ground truth.
+- Navigated to `/docuflow/settings/document-types`: the new row rendered there with the correct business-type emoji/label and `🏢 JP Sync Group`, confirming the same data reads correctly through a second, independent page/query path.
+- Navigated to `/docuflow/documents`: the new type's name appeared as an option in the "ประเภทเอกสาร" filter `<select>`, and selecting the new "บริษัท" filter dropdown's "JP Sync Group" option navigated to `?companyId=00000000-0000-0000-0000-0000000000a2`, confirming the filter wiring added in the same Track D round.
+- Cleaned up via `DELETE /api/docuflow/document-types/:id` (the same endpoint the settings page's own "ปิดใช้งาน" button calls) — returned `200`. Re-checked via both the API and a direct DB query: `isActive` / `is_active` = `false` on both, confirming the soft-delete path also round-trips correctly.
+
+Validated on this one org (`org_id = 00000000-0000-0000-0000-000000000001`, the only org in this deployment) against both of its two real companies (Pooil Oil and JP Sync Group); not tested against a hypothetical third org with a different UUID scheme, since none exists in this system.
+
+## Action items / follow-ups
+
+- None — the fix is sufficient and no class-of-bug follow-up is warranted for this feature. `zUUID()` is already the established project convention; no new tooling is needed.
+- Worth noting for future DocuFlow (or any module) work touching `companyId`/`branchId`/similar FK fields in a new API route: grep for `z.string().uuid()` before writing a new schema, or default to `zUUID()` from `@/lib/zod-helpers` — this is not new information, just a bug that shipped despite the convention already existing.
