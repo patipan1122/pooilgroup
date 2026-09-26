@@ -303,19 +303,25 @@ export async function listTemplates(orgId: string) {
 export async function meterBoard(orgId: string, projectId: string, period: string) {
   const units = await prisma.rentalUnit.findMany({
     where: { orgId, projectId, isActive: true, status: { not: "inactive" } },
-    orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+    orderBy: [{ meterSortOrder: "asc" }, { sortOrder: "asc" }, { code: "asc" }],
     include: {
       meters: { include: { readings: { where: { period }, take: 1 } } },
       contracts: { where: { status: { in: ["active", "expiring", "expired"] } }, take: 1, include: { tenant: true } },
     },
   });
-  // เรียงห้องแบบเลขธรรมชาติ: DB เรียง code เป็น "ตัวอักษร" → A2/10, A2/11 มาก่อน A2/2.
-  // เคารพ sortOrder ที่จัดเองก่อน แล้วค่อยเรียง code แบบ numeric (A2/2 < A2/10).
-  units.sort(
-    (a, b) =>
+  // เรียงห้องตามลำดับที่จัดเองในหน้านี้ก่อน (meterSortOrder — ตามเส้นทางเดินจดจริง)
+  // ห้องที่ยังไม่เคยจัด (null) ตกไปท้ายสุด แล้วค่อยเรียงแบบเดิม: sortOrder ก่อน
+  // แล้วค่อยเรียง code แบบเลขธรรมชาติ (DB เรียง code เป็น "ตัวอักษร" → A2/10, A2/11
+  // มาก่อน A2/2 — ต้อง localeCompare numeric ทับอีกที).
+  units.sort((a, b) => {
+    if (a.meterSortOrder != null && b.meterSortOrder != null) return a.meterSortOrder - b.meterSortOrder;
+    if (a.meterSortOrder != null) return -1;
+    if (b.meterSortOrder != null) return 1;
+    return (
       (a.sortOrder ?? 0) - (b.sortOrder ?? 0) ||
-      a.code.localeCompare(b.code, "en", { numeric: true, sensitivity: "base" }),
-  );
+      a.code.localeCompare(b.code, "en", { numeric: true, sensitivity: "base" })
+    );
+  });
   return units;
 }
 

@@ -501,6 +501,9 @@ export async function actReorderBuildings(projectId: string, orderedIds: string[
     orderedIds
       .filter((id) => valid.has(id))
       .map((id, i) => prisma.rentalBuilding.update({ where: { id }, data: { sortOrder: i + 1 } })),
+    // ค่า default 5000ms ไม่พอสำหรับ transaction ที่มีหลาย update ต่อเนื่องกัน (round-trip
+    // สะสมเกิน 5s ได้ง่ายเมื่อจำนวนอาคาร/ห้องเยอะ) → ยืด timeout กันบันทึกลำดับพังกลางทาง
+    { timeout: 20000 },
   );
   await logAudit(session, "RENTSPACE_UNIT_SAVED", "rental_project", projectId, { reorderedBuildings: orderedIds.length });
   revalidatePath("/rentspace/units");
@@ -524,9 +527,39 @@ export async function actReorderMatrixUnits(projectId: string, orderedIds: strin
     orderedIds
       .filter((id) => valid.has(id))
       .map((id, i) => prisma.rentalUnit.update({ where: { id }, data: { matrixSortOrder: i + 1 } })),
+    // ค่า default 5000ms ไม่พอเมื่อโครงการมีห้องเยอะ (round-trip สะสมต่อ update เกิน 5s ได้ง่าย)
+    // → ยืด timeout กันบันทึกลำดับพังกลางทาง (พบจริงตอนแก้ actReorderMeterUnits — pattern เดียวกัน)
+    { timeout: 20000 },
   );
   await logAudit(session, "RENTSPACE_UNIT_SAVED", "rental_project", projectId, { reorderedMatrixUnits: orderedIds.length });
   revalidatePath("/rentspace/matrix");
+  return { ok: true };
+}
+
+/** ลำดับที่จัดเองในหน้าจดมิเตอร์ (ตามเส้นทางเดินจดจริง) — เขียน meter_sort_order รายห้อง
+ *  (แยกจาก sortOrder ของหน้าห้อง/ยูนิต และ matrixSortOrder ของหน้า Excel matrix) */
+export async function actReorderMeterUnits(projectId: string, orderedIds: string[]) {
+  const session = await gateAdmin();
+  await ownGuard(
+    prisma.rentalProject.findFirst({ where: { id: projectId, orgId: session.user.org_id }, select: { id: true } }),
+    "โครงการ",
+  );
+  // กันเขียนข้ามองค์กร/ข้ามโครงการ: รับเฉพาะห้องที่เป็นของ org+project นี้จริง
+  const rows = await prisma.rentalUnit.findMany({
+    where: { id: { in: orderedIds }, orgId: session.user.org_id, projectId },
+    select: { id: true },
+  });
+  const valid = new Set(rows.map((r) => r.id));
+  await prisma.$transaction(
+    orderedIds
+      .filter((id) => valid.has(id))
+      .map((id, i) => prisma.rentalUnit.update({ where: { id }, data: { meterSortOrder: i + 1 } })),
+    // ค่า default 5000ms ไม่พอสำหรับโครงการที่มีห้องเยอะ (41 ห้อง = 41 update ต่อเนื่องกันใน
+    // transaction เดียว → round-trip สะสมเกิน 5s ได้ง่าย) — เจอจริงตอนทดสอบ (P2028 timeout)
+    { timeout: 20000 },
+  );
+  await logAudit(session, "RENTSPACE_UNIT_SAVED", "rental_project", projectId, { reorderedMeterUnits: orderedIds.length });
+  revalidatePath("/rentspace/meters");
   return { ok: true };
 }
 

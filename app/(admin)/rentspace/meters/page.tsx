@@ -1,5 +1,6 @@
 import { requireSession } from "@/lib/auth/session";
-import { isSuperAdmin } from "@/lib/auth/role-guards";
+import { isSuperAdmin, isAdminTier } from "@/lib/auth/role-guards";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { prisma } from "@/lib/prisma";
 import { getPrimaryProject, meterBoard } from "@/lib/rentspace/data";
 import {
@@ -13,6 +14,7 @@ import {
 import { RsPage, RsHeader, RsKpi, RsEmpty } from "@/components/rentspace/ui";
 import MeterBoard, { type BoardUnit, type BoardSide } from "./_components/meter-board";
 import SelectiveBillPanel, { type BillRoom } from "./_components/selective-bill-panel";
+import MeterOrderPanel, { type MeterOrderRoom } from "./_components/meter-order-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -70,6 +72,10 @@ export default async function MetersPage({
   const orgId = session.user.org_id;
   const sp = await searchParams;
   const period = /^\d{4}-\d{2}$/.test(sp.period ?? "") ? sp.period! : currentPeriod();
+
+  // แอดมิน/แอดมินโปรแกรม RentSpace จัดลำดับห้องหน้านี้เองได้ — สิทธิ์ชุดเดียวกับ
+  // ปุ่ม "จัดลำดับห้อง" ของหน้า Excel matrix (gateAdmin ฝั่ง server action เช็คเงื่อนไขเดียวกัน)
+  const canReorder = isAdminTier(session.user.role) || (await userIsModuleAdmin(session.user, "rentspace"));
 
   const project = await getPrimaryProject(orgId);
 
@@ -205,12 +211,29 @@ export default async function MetersPage({
       alreadyBilled: billedUnitIds.has(u.id),
     }));
 
+  // ห้องทั้งหมด (ไม่กรองเฉพาะห้องมีสัญญาเหมือน billRooms) เรียงตามลำดับที่ meterBoard()
+  // จัดมาแล้ว (meterSortOrder ก่อน) — ให้แผงจัดลำดับเริ่มจากลำดับปัจจุบันเป๊ะ ไม่ใช่ลำดับ default
+  const orderRooms: MeterOrderRoom[] = rawUnits.map((u) => ({
+    id: u.id,
+    code: u.code,
+    name: u.name ?? null,
+    tenant: u.contracts?.[0]?.tenant ? tenantDisplayName(u.contracts[0].tenant) : null,
+  }));
+
   return (
     <RsPage>
       <RsHeader
         title="จดมิเตอร์น้ำ-ไฟ"
         subtitle={`${project.name} · ${periodLabel(period)}`}
       />
+
+      {/* ปุ่ม/แผงจัดลำดับห้อง — เต็มความกว้างหน้า (ไม่ใช่ช่อง action เล็กๆ ในหัว)
+          เพราะตอนเปิดโหมดจัดลำดับ รายการห้องยาวเกินจะใส่ในหัวได้ */}
+      {canReorder && (
+        <div>
+          <MeterOrderPanel projectId={project.id} rooms={orderRooms} />
+        </div>
+      )}
 
       {/* บนมือถือ: โชว์เฉพาะความคืบหน้า (KPI เดียว เต็มแถว) เพื่อให้การ์ดห้องแรก
           โผล่ในช่วงบน ~⅓ ของจอ · ยอดเงินรวมเก็บไว้ฝั่ง desktop */}
