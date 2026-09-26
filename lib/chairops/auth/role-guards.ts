@@ -57,3 +57,15 @@ export function canEditPastDay(actor: ChairopsUser): boolean {
   // edits to data > 1 day old need CEO approval (per QC maker/checker)
   return actor.role === "CEO" || actor.role === "ADMIN";
 }
+
+// CEO 2026-09-25: deleting a wrongly-attached deposit slip needs MANAGER/CEO
+// approval (stricter than the free "attach"/"approve slip" actions, since it
+// removes a piece of financial evidence — same maker/checker shape as write-offs).
+export function canApproveSlipAttachmentDeletion(actor: ChairopsUser): boolean {
+  return RANK[actor.role] >= RANK.MANAGER;
+}
+
+// BR7-style single-approver exception, same rationale as canSelfApproveWriteOff.
+export function canSelfApproveSlipAttachmentDeletion(actor: ChairopsUser): boolean {
+  return actor.role === "ADMIN";
+}

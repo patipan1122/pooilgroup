@@ -3819,10 +3819,30 @@ model ChairopsDepositSlipAttachment {
   uploadedById String
   createdAt    DateTime @default(now())
 
+  // ปุ่ม "✓ อนุมัติ" (CEO 2026-09-25) — office ยืนยันว่าสลิปนี้ถูกต้อง กดได้ทันที
+  // ไม่ต้องรอใคร เบากว่าขั้นตอนลบด้านล่าง.
+  approvedById String?
+  approvedAt   DateTime?
+
+  // ขอลบสลิปที่แนบผิด (CEO 2026-09-25) — maker/checker เหมือน ChairopsWriteOff:
+  // office ขอลบ + ใส่เหตุผลบังคับ → MANAGER/CEO ขึ้นไปอนุมัติ/ปฏิเสธเท่านั้น
+  // (canApproveSlipAttachmentDeletion) ถึงจะลบจริง. ผู้ขอเองอนุมัติเองไม่ได้
+  // (เว้น ADMIN — waive เหมือน canSelfApproveWriteOff). ลบแบบนุ่มนวลเสมอ
+  // (deletedAt) — ไม่ลบรูปจาก R2 จริง กู้คืนได้ถ้าลบผิด.
+  deleteRequestedById String?
+  deleteRequestedAt   DateTime?
+  deleteReason        String?
+  deleteStatus        String? // PENDING | APPROVED | REJECTED · null = ไม่เคยขอลบ
+  deleteApproverById  String?
+  deleteApproverAt    DateTime?
+  deleteApproverNote  String? // เหตุผลตอนปฏิเสธ (บังคับ) · เว้นว่างได้ตอนอนุมัติ
+  deletedAt           DateTime? // soft delete — set เฉพาะตอน deleteStatus=APPROVED
+
   deposit ChairopsCashDeposit @relation(fields: [depositId], references: [id])
 
   @@index([depositId])
   @@index([orgId])
+  @@index([orgId, deleteStatus])
   @@schema("chairops")
 }
 

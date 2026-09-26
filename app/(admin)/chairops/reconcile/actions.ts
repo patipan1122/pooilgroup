@@ -12,7 +12,12 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { writeAudit } from "@/lib/chairops/audit/log";
-import { canWriteOff, canSelfApproveWriteOff } from "@/lib/chairops/auth/role-guards";
+import {
+  canWriteOff,
+  canSelfApproveWriteOff,
+  canApproveSlipAttachmentDeletion,
+  canSelfApproveSlipAttachmentDeletion,
+} from "@/lib/chairops/auth/role-guards";
 import { recomputeDriftForBranch } from "@/lib/chairops/reconcile/drift-engine";
 import { evaluateAndEmitAlerts } from "@/lib/chairops/reconcile/alerts";
 import { pushBranchDepositsToLedger } from "@/lib/chairops/reconcile/ledger-push";
@@ -478,4 +483,243 @@ export async function attachDepositSlip(
   revalidatePath("/chairops/reconcile");
 
   return { ok: true, data: { url } };
+}
+
+// ----- Approve an attached slip (CEO 2026-09-25) -----
+//
+// Quick confirm-correct — office confirms a slip is legit, right where they're
+// already looking at it. No maker/checker (unlike deletion below): approving
+// only affirms the slip, it never removes evidence, so the low-stakes
+// clearDepositReview-style single gate is enough.
+export async function approveSlipAttachment(
+  formData: FormData,
+): Promise<ActionResult<{ approvedAt: string }>> {
+  const session = await requireRole("OFFICE");
+  const attachmentId = zUUID().safeParse(formData.get("attachmentId"));
+  if (!attachmentId.success) return { ok: false, error: "attachmentId ไม่ถูกต้อง" };
+
+  const orgId = session.user.orgId;
+  const att = await prisma.chairopsDepositSlipAttachment.findFirst({
+    where: { id: attachmentId.data, orgId, deletedAt: null },
+    select: { id: true, approvedAt: true, deposit: { select: { branchId: true } } },
+  });
+  if (!att) return { ok: false, error: "ไม่พบสลิปนี้" };
+
+  const now = new Date();
+  if (!att.approvedAt) {
+    await prisma.$transaction(async (tx) => {
+      await tx.chairopsDepositSlipAttachment.updateMany({
+        where: { id: attachmentId.data, orgId, approvedAt: null },
+        data: { approvedById: session.user.id, approvedAt: now },
+      });
+      await writeAudit(
+        {
+          userId: session.user.id,
+          action: "deposit_slip_attachment.approve",
+          entity: "DepositSlipAttachment",
+          entityId: attachmentId.data,
+          newValue: { approvedAt: now.toISOString() },
+        },
+        tx,
+      );
+    });
+  }
+
+  revalidatePath(`/chairops/reconcile/${att.deposit.branchId}`);
+  revalidatePath("/chairops/reconcile");
+  return { ok: true, data: { approvedAt: (att.approvedAt ?? now).toISOString() } };
+}
+
+// ----- Request deletion of an attached slip (CEO 2026-09-25) -----
+//
+// A maid/office sometimes attaches the WRONG slip photo by mistake — deleting
+// it removes a piece of financial evidence, so unlike attach/approve this
+// needs a second person to sign off (maker/checker, same shape as
+// ChairopsWriteOff). Office requests + must give a reason; MANAGER/CEO
+// approves or rejects via the two actions below. Nothing is deleted here yet.
+const requestDeleteSlipSchema = z.object({
+  attachmentId: zUUID(),
+  reason: z.string().min(3, "เหตุผลสั้นเกินไป").max(500),
+});
+
+export async function requestDeleteSlipAttachment(
+  formData: FormData,
+): Promise<ActionResult<{ status: "PENDING" }>> {
+  const session = await requireRole("OFFICE");
+  const parsed = requestDeleteSlipSchema.safeParse({
+    attachmentId: formData.get("attachmentId"),
+    reason: formData.get("reason"),
+  });
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
+
+  const orgId = session.user.orgId;
+  const att = await prisma.chairopsDepositSlipAttachment.findFirst({
+    where: { id: parsed.data.attachmentId, orgId, deletedAt: null },
+    select: { id: true, deleteStatus: true, deposit: { select: { branchId: true } } },
+  });
+  if (!att) return { ok: false, error: "ไม่พบสลิปนี้" };
+  if (att.deleteStatus === "PENDING") {
+    return { ok: false, error: "มีคำขอลบสลิปนี้รออนุมัติอยู่แล้ว" };
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.chairopsDepositSlipAttachment.updateMany({
+      where: { id: parsed.data.attachmentId, orgId, deletedAt: null },
+      data: {
+        deleteRequestedById: session.user.id,
+        deleteRequestedAt: new Date(),
+        deleteReason: parsed.data.reason,
+        deleteStatus: "PENDING",
+        // เคลียร์ผลตัดสินรอบก่อน (ถ้าเคยถูกปฏิเสธมาก่อน) ไม่ให้ค้างข้างๆ คำขอใหม่
+        deleteApproverById: null,
+        deleteApproverAt: null,
+        deleteApproverNote: null,
+      },
+    });
+    await writeAudit(
+      {
+        userId: session.user.id,
+        action: "deposit_slip_attachment.delete_request",
+        entity: "DepositSlipAttachment",
+        entityId: parsed.data.attachmentId,
+        newValue: { reason: parsed.data.reason },
+      },
+      tx,
+    );
+  });
+
+  revalidatePath(`/chairops/reconcile/${att.deposit.branchId}`);
+  revalidatePath("/chairops/reconcile");
+  return { ok: true, data: { status: "PENDING" } };
+}
+
+// ----- Approve deletion of an attached slip (MANAGER/CEO only) -----
+export async function approveDeleteSlipAttachment(
+  formData: FormData,
+): Promise<ActionResult<{ deletedAt: string }>> {
+  const session = await requireRole("OFFICE"); // hierarchy enforced via canApproveSlipAttachmentDeletion below
+  const attachmentId = zUUID().safeParse(formData.get("attachmentId"));
+  if (!attachmentId.success) return { ok: false, error: "attachmentId ไม่ถูกต้อง" };
+
+  const orgId = session.user.orgId;
+  const att = await prisma.chairopsDepositSlipAttachment.findFirst({
+    where: { id: attachmentId.data, orgId },
+    select: {
+      id: true,
+      deleteStatus: true,
+      deleteRequestedById: true,
+      deposit: { select: { branchId: true } },
+    },
+  });
+  if (!att) return { ok: false, error: "ไม่พบสลิปนี้" };
+  if (att.deleteStatus !== "PENDING") return { ok: false, error: "ไม่มีคำขอลบที่รออนุมัติ" };
+
+  if (!canApproveSlipAttachmentDeletion(session.user)) {
+    return {
+      ok: false,
+      error: `role ${session.user.role} อนุมัติการลบสลิปไม่ได้ (ต้อง MANAGER ขึ้นไป)`,
+    };
+  }
+  // maker/checker: ผู้ขอลบห้ามอนุมัติเอง — ยกเว้น ADMIN (waive เหมือน write-off)
+  const isSelfApprove = att.deleteRequestedById === session.user.id;
+  if (isSelfApprove && !canSelfApproveSlipAttachmentDeletion(session.user)) {
+    return { ok: false, error: "ห้ามอนุมัติคำขอลบสลิปที่ตัวเองขอ (maker/checker)" };
+  }
+
+  const now = new Date();
+  let touched = 0;
+  await prisma.$transaction(async (tx) => {
+    const res = await tx.chairopsDepositSlipAttachment.updateMany({
+      where: { id: attachmentId.data, orgId, deleteStatus: "PENDING" },
+      data: {
+        deleteStatus: "APPROVED",
+        deleteApproverById: session.user.id,
+        deleteApproverAt: now,
+        deletedAt: now, // soft delete — R2 object + row both kept for recovery
+      },
+    });
+    touched = res.count;
+    if (touched === 0) return;
+    await writeAudit(
+      {
+        userId: session.user.id,
+        action: "deposit_slip_attachment.delete_approve",
+        entity: "DepositSlipAttachment",
+        entityId: attachmentId.data,
+        oldValue: { deleteStatus: "PENDING" },
+        newValue: { deleteStatus: "APPROVED", selfApproved: isSelfApprove },
+      },
+      tx,
+    );
+  });
+  if (touched === 0) {
+    return { ok: false, error: "รายการนี้ถูกดำเนินการไปแล้ว (อาจมีคนกดพร้อมกัน)" };
+  }
+
+  revalidatePath(`/chairops/reconcile/${att.deposit.branchId}`);
+  revalidatePath("/chairops/reconcile");
+  return { ok: true, data: { deletedAt: now.toISOString() } };
+}
+
+// ----- Reject deletion of an attached slip (MANAGER/CEO only) -----
+const rejectDeleteSlipSchema = z.object({
+  attachmentId: zUUID(),
+  reason: z.string().min(3, "เหตุผลสั้นเกินไป").max(500),
+});
+
+export async function rejectDeleteSlipAttachment(
+  formData: FormData,
+): Promise<ActionResult<{ status: "REJECTED" }>> {
+  const session = await requireRole("OFFICE"); // hierarchy enforced via canApproveSlipAttachmentDeletion below
+  const parsed = rejectDeleteSlipSchema.safeParse({
+    attachmentId: formData.get("attachmentId"),
+    reason: formData.get("reason"),
+  });
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
+
+  const orgId = session.user.orgId;
+  const att = await prisma.chairopsDepositSlipAttachment.findFirst({
+    where: { id: parsed.data.attachmentId, orgId },
+    select: { id: true, deleteStatus: true, deposit: { select: { branchId: true } } },
+  });
+  if (!att) return { ok: false, error: "ไม่พบสลิปนี้" };
+  if (att.deleteStatus !== "PENDING") return { ok: false, error: "ไม่มีคำขอลบที่รออนุมัติ" };
+
+  if (!canApproveSlipAttachmentDeletion(session.user)) {
+    return {
+      ok: false,
+      error: `role ${session.user.role} ตัดสินคำขอนี้ไม่ได้ (ต้อง MANAGER ขึ้นไป)`,
+    };
+  }
+
+  let touched = 0;
+  await prisma.$transaction(async (tx) => {
+    const res = await tx.chairopsDepositSlipAttachment.updateMany({
+      where: { id: parsed.data.attachmentId, orgId, deleteStatus: "PENDING" },
+      data: {
+        deleteStatus: "REJECTED",
+        deleteApproverById: session.user.id,
+        deleteApproverAt: new Date(),
+        deleteApproverNote: parsed.data.reason,
+      },
+    });
+    touched = res.count;
+    if (touched === 0) return;
+    await writeAudit(
+      {
+        userId: session.user.id,
+        action: "deposit_slip_attachment.delete_reject",
+        entity: "DepositSlipAttachment",
+        entityId: parsed.data.attachmentId,
+        oldValue: { deleteStatus: "PENDING" },
+        newValue: { deleteStatus: "REJECTED", reason: parsed.data.reason },
+      },
+      tx,
+    );
+  });
+  if (touched === 0) return { ok: false, error: "รายการนี้ถูกดำเนินการไปแล้ว" };
+
+  revalidatePath(`/chairops/reconcile/${att.deposit.branchId}`);
+  revalidatePath("/chairops/reconcile");
+  return { ok: true, data: { status: "REJECTED" } };
 }

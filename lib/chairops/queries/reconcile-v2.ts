@@ -164,11 +164,23 @@ export interface PeriodSlip {
   flagged: boolean; // requiresReview — สลิปซ้ำ/บัญชีผิด/ผลต่าง≥500 ยังไม่ผ่านตรวจ
   // CEO 2026-09-22: สลิปเสริมที่ office แนบเข้ามาทีหลัง (แม่บ้านลืมแนบ ส่งมาทาง
   // LINE) หรือฝากครั้งเดียวมีมากกว่า 1 สลิปจริง — ไม่กระทบยอด/สถานะตรวจสอบใดๆ.
+  // CEO 2026-09-25: เพิ่มอนุมัติ + ขอลบ (maker/checker) ต่อใบ — เฉพาะที่ยังไม่ถูก
+  // ลบจริง (deletedAt IS NULL) เท่านั้นที่จะโผล่ในลิสต์นี้.
   additionalSlips: Array<{
     id: string;
     url: string;
     note: string | null;
     uploadedAt: string;
+    uploadedByName: string | null;
+    approvedAt: string | null;
+    approvedByName: string | null;
+    deleteStatus: "PENDING" | "APPROVED" | "REJECTED" | null;
+    deleteReason: string | null;
+    deleteRequestedAt: string | null;
+    deleteRequestedByName: string | null;
+    deleteApproverAt: string | null;
+    deleteApproverByName: string | null;
+    deleteApproverNote: string | null;
   }>;
 }
 
@@ -838,13 +850,42 @@ export async function getReconcileLedger(args: {
         slipPhotoUrl: true,
         requiresReview: true,
         additionalSlips: {
-          select: { id: true, url: true, note: true, createdAt: true },
+          // เฉพาะที่ยังไม่ถูกลบจริง (CEO 2026-09-25 delete-request flow) — ลบ
+          // แบบนุ่มนวล แถวยังอยู่ใน DB แต่ต้องหายจากหน้าจอปกติ
+          where: { deletedAt: null },
+          select: {
+            id: true,
+            url: true,
+            note: true,
+            createdAt: true,
+            uploadedById: true,
+            approvedById: true,
+            approvedAt: true,
+            deleteStatus: true,
+            deleteReason: true,
+            deleteRequestedById: true,
+            deleteRequestedAt: true,
+            deleteApproverById: true,
+            deleteApproverAt: true,
+            deleteApproverNote: true,
+          },
           orderBy: { createdAt: "asc" },
         },
       },
       orderBy: { depositedAt: "asc" },
     });
     const ledgerStatusById = await getLedgerStatusMap(orgId, ledgerDeposits.map((d) => d.id));
+    const actorNameById = await getChairopsUserNameMap(
+      orgId,
+      ledgerDeposits.flatMap((d) =>
+        d.additionalSlips.flatMap((s) => [
+          s.uploadedById,
+          s.approvedById,
+          s.deleteRequestedById,
+          s.deleteApproverById,
+        ]),
+      ),
+    );
     const slipsByDate = new Map<string, PeriodSlip[]>();
     for (const d of ledgerDeposits) {
       const day = isoDay(d.depositedAt);
@@ -862,6 +903,20 @@ export async function getReconcileLedger(args: {
           url: s.url,
           note: s.note,
           uploadedAt: formatDateTime(s.createdAt),
+          uploadedByName: actorNameById.get(s.uploadedById) ?? null,
+          approvedAt: s.approvedAt ? formatDateTime(s.approvedAt) : null,
+          approvedByName: s.approvedById ? (actorNameById.get(s.approvedById) ?? null) : null,
+          deleteStatus: (s.deleteStatus as "PENDING" | "APPROVED" | "REJECTED" | null) ?? null,
+          deleteReason: s.deleteReason,
+          deleteRequestedAt: s.deleteRequestedAt ? formatDateTime(s.deleteRequestedAt) : null,
+          deleteRequestedByName: s.deleteRequestedById
+            ? (actorNameById.get(s.deleteRequestedById) ?? null)
+            : null,
+          deleteApproverAt: s.deleteApproverAt ? formatDateTime(s.deleteApproverAt) : null,
+          deleteApproverByName: s.deleteApproverById
+            ? (actorNameById.get(s.deleteApproverById) ?? null)
+            : null,
+          deleteApproverNote: s.deleteApproverNote,
         })),
       });
       slipsByDate.set(day, list);
@@ -912,6 +967,22 @@ async function getLedgerStatusMap(
     out.set(id, state == null ? "not_sent" : state === "matched" ? "sent_matched" : "sent_unmatched");
   }
   return out;
+}
+
+// CEO 2026-09-25: resolve actor id → display name for the slip-attachment
+// approve/delete history popover (who uploaded/approved/requested-delete/
+// decided). Batched + org-scoped, mirrors getLedgerStatusMap's shape.
+async function getChairopsUserNameMap(
+  orgId: string,
+  ids: Array<string | null | undefined>,
+): Promise<Map<string, string>> {
+  const uniqueIds = [...new Set(ids.filter((id): id is string => !!id))];
+  if (uniqueIds.length === 0) return new Map();
+  const users = await prisma.chairopsUser.findMany({
+    where: { id: { in: uniqueIds }, orgId },
+    select: { id: true, displayName: true },
+  });
+  return new Map(users.map((u) => [u.id, u.displayName]));
 }
 
 export interface DayDetailCollection {

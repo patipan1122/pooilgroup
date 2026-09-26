@@ -6,13 +6,25 @@
 // The ledger table itself is a server component, so these are the small
 // client islands it embeds for the two interactive cells.
 
-import { Paperclip, X } from "lucide-react";
+import { Paperclip, X, History, Trash2, Check, Ban } from "lucide-react";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useRef, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { clearDepositReview } from "@/app/(admin)/chairops/(office)/review-queue/actions";
-import { attachDepositSlip } from "@/app/(admin)/chairops/reconcile/actions";
+import {
+  attachDepositSlip,
+  approveSlipAttachment,
+  requestDeleteSlipAttachment,
+  approveDeleteSlipAttachment,
+  rejectDeleteSlipAttachment,
+} from "@/app/(admin)/chairops/reconcile/actions";
+import type { PeriodSlip } from "@/lib/chairops/queries/reconcile-v2";
+
+// Single source of truth for the attachment shape — imported from the query
+// layer instead of redeclared, so approve/delete fields can never drift
+// between the two (see [[feedback-one-rule-two-copies-drifts-2026-09-23]]).
+type SlipAttachment = PeriodSlip["additionalSlips"][number];
 
 function isImageUrl(u: string | null | undefined): u is string {
   return !!u && /^https?:\/\//i.test(u);
@@ -104,29 +116,282 @@ function ConfirmReviewedForm({ depositId }: { depositId: string }) {
   );
 }
 
-/** สลิปเสริมที่แนบไว้แล้ว — ลิงก์เปิดดูรูปในแท็บใหม่ (CEO 2026-09-22). */
-function AdditionalSlipsList({
-  slips,
+/** ปุ่มเล็ก ๆ ใต้รูปสลิปเสริม — ใช้ style เดียวกันทุกปุ่มให้แถวไม่ล้น. */
+function MiniButton({
+  onClick,
+  disabled,
+  tone,
+  children,
+  title,
 }: {
-  slips: Array<{ id: string; url: string; note: string | null; uploadedAt: string }>;
+  onClick: () => void;
+  disabled?: boolean;
+  tone: "neutral" | "emerald" | "rose" | "amber";
+  children: React.ReactNode;
+  title?: string;
 }) {
-  if (slips.length === 0) return null;
+  const toneClass = {
+    neutral: "bg-white/15 hover:bg-white/25 text-white",
+    emerald: "bg-emerald-500 hover:bg-emerald-600 text-white",
+    rose: "bg-rose-500 hover:bg-rose-600 text-white",
+    amber: "bg-amber-500/90 hover:bg-amber-500 text-black",
+  }[tone];
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold disabled:opacity-50 ${toneClass}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** ใส่เหตุผลสั้น ๆ ก่อนส่ง — ใช้ทั้งตอน "ขอลบ" และตอน "ปฏิเสธคำขอลบ" (CEO 2026-09-25). */
+function InlineReasonPrompt({
+  placeholder,
+  submitLabel,
+  submitTone,
+  onCancel,
+  onSubmit,
+}: {
+  placeholder: string;
+  submitLabel: string;
+  submitTone: "rose" | "emerald";
+  onCancel: () => void;
+  onSubmit: (reason: string) => Promise<void>;
+}) {
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="flex w-full flex-col gap-1" onClick={(e) => e.stopPropagation()}>
+      <input
+        autoFocus
+        type="text"
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        placeholder={placeholder}
+        maxLength={500}
+        className="w-full rounded border border-white/20 bg-black/40 px-2 py-1 text-[11px] text-white placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-white/40"
+      />
+      <div className="flex gap-1">
+        <MiniButton
+          tone={submitTone}
+          disabled={busy || reason.trim().length < 3}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await onSubmit(reason.trim());
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {busy ? "กำลังส่ง..." : submitLabel}
+        </MiniButton>
+        <MiniButton tone="neutral" disabled={busy} onClick={onCancel}>
+          ยกเลิก
+        </MiniButton>
+      </div>
+    </div>
+  );
+}
+
+/** ประวัติของสลิปใบนี้ — แนบเมื่อไร/ใคร · อนุมัติเมื่อไร/ใคร · ขอลบ+เหตุผล ·
+ *  ผลตัดสินคำขอลบ. เปิดจากปุ่มไอคอนนาฬิกา (CEO 2026-09-25: "กดดูให้ขึ้นตรงนั้นเลย"
+ *  — ไม่เปิดหน้าใหม่). */
+function SlipHistoryPanel({ slip }: { slip: SlipAttachment }) {
+  return (
+    <div className="w-full rounded bg-black/40 p-2 text-left text-[10px] leading-relaxed text-white/85">
+      <div>📎 แนบโดย {slip.uploadedByName ?? "—"} · {slip.uploadedAt}</div>
+      {slip.approvedAt && (
+        <div>✓ อนุมัติโดย {slip.approvedByName ?? "—"} · {slip.approvedAt}</div>
+      )}
+      {slip.deleteRequestedAt && (
+        <div>
+          🗑️ ขอลบโดย {slip.deleteRequestedByName ?? "—"} · {slip.deleteRequestedAt}
+          {slip.deleteReason && <> — เหตุผล: “{slip.deleteReason}”</>}
+        </div>
+      )}
+      {slip.deleteApproverAt && (
+        <div>
+          {slip.deleteStatus === "APPROVED" ? "✅ อนุมัติลบโดย " : "❌ ปฏิเสธโดย "}
+          {slip.deleteApproverByName ?? "—"} · {slip.deleteApproverAt}
+          {slip.deleteApproverNote && <> — “{slip.deleteApproverNote}”</>}
+        </div>
+      )}
+      {!slip.approvedAt && !slip.deleteRequestedAt && (
+        <div className="text-white/50">ยังไม่มีความเคลื่อนไหวอื่น</div>
+      )}
+    </div>
+  );
+}
+
+/** สลิปเสริมที่แนบไว้แล้ว 1 ใบ — ลิงก์ดูรูป + อนุมัติ + ขอลบ (maker/checker) +
+ *  ประวัติ (CEO 2026-09-22, ขยาย 2026-09-25). ทุกปุ่มทำงานอยู่ในหน้าเดิม ไม่เด้ง
+ *  ไปหน้าอื่น — "กดลบจากช่องตรงนั้นได้เลย" ตามที่ CEO ขอ. */
+function SlipAttachmentRow({ slip, index }: { slip: SlipAttachment; index: number }) {
+  const router = useRouter();
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [mode, setMode] = useState<"idle" | "requestDelete" | "reject">("idle");
+  const [busy, setBusy] = useState(false);
+
+  // FormData ต้อง append จริง — helper กันพิมพ์ผิดซ้ำ
+  function fd(fields: Record<string, string>) {
+    const f = new FormData();
+    for (const [k, v] of Object.entries(fields)) f.append(k, v);
+    return f;
+  }
+
+  async function callAction<T>(
+    action: (fd: FormData) => Promise<{ ok: true; data: T } | { ok: false; error: string }>,
+    fields: Record<string, string>,
+    successMessage: string,
+  ) {
+    setBusy(true);
+    try {
+      const res = await action(fd(fields));
+      if (!res.ok) {
+        toast.error(res.error);
+      } else {
+        toast.success(successMessage);
+        setMode("idle");
+        router.refresh();
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div
-      className="flex flex-wrap items-center justify-center gap-1"
+      className="flex w-full flex-col items-start gap-1 rounded-lg bg-white/10 p-1.5"
       onClick={(e) => e.stopPropagation()}
     >
-      {slips.map((s, i) => (
+      <div className="flex w-full flex-wrap items-center gap-1">
         <a
-          key={s.id}
-          href={s.url}
+          href={slip.url}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1 rounded-full bg-white/15 px-2 py-1 text-[11px] text-white hover:bg-white/25"
-          title={s.note ?? `สลิปเสริม · ${s.uploadedAt}`}
+          title={slip.note ?? `สลิปเสริม · ${slip.uploadedAt}`}
         >
-          <Paperclip size={10} aria-hidden="true" /> สลิปเสริม #{i + 1}
+          <Paperclip size={10} aria-hidden="true" /> สลิปเสริม #{index + 1}
         </a>
+
+        {slip.approvedAt ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/90 px-2 py-1 text-[10px] font-semibold text-white">
+            <Check size={10} aria-hidden="true" /> อนุมัติแล้ว
+          </span>
+        ) : (
+          <MiniButton
+            tone="emerald"
+            disabled={busy}
+            title="ยืนยันว่าสลิปนี้ถูกต้อง"
+            onClick={() =>
+              callAction(approveSlipAttachment, { attachmentId: slip.id }, "อนุมัติสลิปแล้ว")
+            }
+          >
+            <Check size={10} aria-hidden="true" /> อนุมัติ
+          </MiniButton>
+        )}
+
+        {slip.deleteStatus === "PENDING" ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/90 px-2 py-1 text-[10px] font-semibold text-black">
+            ⏳ รออนุมัติลบ
+          </span>
+        ) : (
+          mode === "idle" && (
+            <MiniButton
+              tone="rose"
+              disabled={busy}
+              onClick={() => setMode("requestDelete")}
+              title="แนบผิดใบ? ขอลบสลิปนี้"
+            >
+              <Trash2 size={10} aria-hidden="true" /> ขอลบ
+            </MiniButton>
+          )
+        )}
+
+        <button
+          type="button"
+          onClick={() => setHistoryOpen((v) => !v)}
+          aria-expanded={historyOpen}
+          aria-label="ดูประวัติสลิปนี้"
+          title="ดูประวัติ"
+          className="inline-flex items-center justify-center rounded-full bg-white/10 p-1.5 text-white hover:bg-white/20"
+        >
+          <History size={11} aria-hidden="true" />
+        </button>
+      </div>
+
+      {slip.deleteStatus === "PENDING" && mode === "idle" && (
+        <div className="flex w-full flex-wrap items-center gap-1">
+          <MiniButton
+            tone="emerald"
+            disabled={busy}
+            onClick={() =>
+              callAction(approveDeleteSlipAttachment, { attachmentId: slip.id }, "อนุมัติการลบแล้ว")
+            }
+          >
+            ✅ อนุมัติลบ
+          </MiniButton>
+          <MiniButton tone="rose" disabled={busy} onClick={() => setMode("reject")}>
+            <Ban size={10} aria-hidden="true" /> ปฏิเสธ
+          </MiniButton>
+        </div>
+      )}
+
+      {mode === "requestDelete" && (
+        <InlineReasonPrompt
+          placeholder="เหตุผล เช่น แนบผิดใบ (บังคับ)"
+          submitLabel="ส่งคำขอลบ"
+          submitTone="rose"
+          onCancel={() => setMode("idle")}
+          onSubmit={(reason) =>
+            callAction(
+              requestDeleteSlipAttachment,
+              { attachmentId: slip.id, reason },
+              "ส่งคำขอลบแล้ว รอผู้จัดการ/CEO อนุมัติ",
+            )
+          }
+        />
+      )}
+
+      {mode === "reject" && (
+        <InlineReasonPrompt
+          placeholder="เหตุผลที่ปฏิเสธ (บังคับ)"
+          submitLabel="ยืนยันปฏิเสธ"
+          submitTone="emerald"
+          onCancel={() => setMode("idle")}
+          onSubmit={(reason) =>
+            callAction(
+              rejectDeleteSlipAttachment,
+              { attachmentId: slip.id, reason },
+              "ปฏิเสธคำขอลบแล้ว สลิปยังอยู่เหมือนเดิม",
+            )
+          }
+        />
+      )}
+
+      {historyOpen && <SlipHistoryPanel slip={slip} />}
+    </div>
+  );
+}
+
+/** สลิปเสริมที่แนบไว้แล้ว — ลิงก์เปิดดูรูป + อนุมัติ/ขอลบต่อใบ (CEO 2026-09-22,
+ *  ขยาย 2026-09-25). */
+function AdditionalSlipsList({ slips }: { slips: SlipAttachment[] }) {
+  if (slips.length === 0) return null;
+  return (
+    <div
+      className="flex w-full flex-col items-stretch gap-1"
+      onClick={(e) => e.stopPropagation()}
+    >
+      {slips.map((s, i) => (
+        <SlipAttachmentRow key={s.id} slip={s} index={i} />
       ))}
     </div>
   );
@@ -291,7 +556,7 @@ export function SlipChip({
   /** เมื่อมีค่า → โชว์ปุ่ม "แนบสลิปเพิ่ม" เสมอ + ปุ่ม "ตรวจแล้ว ปกติ" ถ้า flagged. */
   depositId?: string;
   /** สลิปเสริมที่แนบไว้แล้ว (CEO 2026-09-22) — โชว์เป็นลิงก์ใต้รูปหลัก. */
-  additionalSlips?: Array<{ id: string; url: string; note: string | null; uploadedAt: string }>;
+  additionalSlips?: SlipAttachment[];
 }) {
   const [open, setOpen] = useState(false);
 
@@ -373,7 +638,7 @@ export function SlipChipGroup({
     status: "not_sent" | "sent_unmatched" | "sent_matched";
     flagged: boolean;
     caption: string;
-    additionalSlips: Array<{ id: string; url: string; note: string | null; uploadedAt: string }>;
+    additionalSlips: SlipAttachment[];
   }>;
 }) {
   const [open, setOpen] = useState(false);
