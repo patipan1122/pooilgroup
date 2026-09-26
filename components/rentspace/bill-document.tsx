@@ -106,11 +106,11 @@ function MeterDetailBlock({ meters }: { meters: { electric?: MeterDetail; water?
   if (meters.water) rows.push({ icon: <Droplet className="h-3.5 w-3.5" />, label: "ค่าน้ำ", m: meters.water });
   if (rows.length === 0) return null;
   return (
-    <div className="mt-4 rounded-xl px-4 py-3" style={{ background: "var(--rs-bg-2)", border: "1px solid var(--rs-border)" }}>
-      <div className="text-[11px] font-bold uppercase mb-2 tracking-wide" style={{ color: "var(--rs-text-3)" }}>
+    <div className="mt-3 rounded-xl px-4 py-2.5" style={{ background: "var(--rs-bg-2)", border: "1px solid var(--rs-border)" }}>
+      <div className="text-[10.5px] font-bold uppercase mb-1.5 tracking-wide" style={{ color: "var(--rs-text-3)" }}>
         รายละเอียดค่าน้ำ-ไฟ (คำนวณจากมิเตอร์)
       </div>
-      <div className="space-y-1.5">
+      <div className="space-y-1">
         {rows.map((r) => (
           <div key={r.label} className="flex items-center justify-between gap-3 text-[12.5px]" style={{ color: "var(--rs-text-2)" }}>
             <span className="inline-flex items-center gap-1.5 flex-wrap">
@@ -209,7 +209,7 @@ export function BillDocument({
   return (
     <div id={domId} className="rs-bill-doc" style={{ position: "relative" }}>
       {/* accent bar */}
-      <div style={{ height: 5, borderRadius: 3, background: brand, marginBottom: 20 }} />
+      <div style={{ height: 5, borderRadius: 3, background: brand, marginBottom: 14 }} />
 
       {/* header: โลโก้ + หัวเอกสาร */}
       <div className="flex items-start justify-between gap-4">
@@ -237,7 +237,7 @@ export function BillDocument({
         </div>
       </div>
 
-      <div className="my-4" style={{ height: 1, background: line }} />
+      <div className="my-3" style={{ height: 1, background: line }} />
 
       {/* คู่สัญญา: ผู้ออกบิล | เรียกเก็บจาก */}
       <div className="grid grid-cols-2 gap-6">
@@ -289,7 +289,7 @@ export function BillDocument({
 
       {/* แถบข้อมูลบิล */}
       <div
-        className={`grid ${bill.taxInvoiceNo ? "grid-cols-4" : "grid-cols-3"} mt-5 rounded-xl overflow-hidden`}
+        className={`grid ${bill.taxInvoiceNo ? "grid-cols-4" : "grid-cols-3"} mt-4 rounded-xl overflow-hidden`}
         style={{ border: `1px solid ${line}` }}
       >
         {[
@@ -314,7 +314,7 @@ export function BillDocument({
               ]
             : []),
         ].map((c, i) => (
-          <div key={c.k} className="px-3.5 py-2.5" style={{ background: "var(--rs-bg-2)", borderLeft: i ? `1px solid ${line}` : undefined }}>
+          <div key={c.k} className="px-3.5 py-2" style={{ background: "var(--rs-bg-2)", borderLeft: i ? `1px solid ${line}` : undefined }}>
             <div className="text-[10px] font-semibold" style={{ color: "var(--rs-text-3)" }}>
               {c.k}
             </div>
@@ -326,17 +326,17 @@ export function BillDocument({
       </div>
 
       {/* items */}
-      <div className="overflow-x-auto mt-5">
-        <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
+      <div className="overflow-x-auto mt-4">
+        <table className="w-full text-[12.5px]" style={{ borderCollapse: "collapse" }}>
           <thead>
             <tr className="text-left" style={{ color: "#fff" }}>
-              <th className="py-2.5 px-3 font-semibold text-[11.5px]" style={{ background: brand, borderRadius: "8px 0 0 8px" }}>
+              <th className="py-1.5 px-3 font-semibold text-[11px]" style={{ background: brand, borderRadius: "8px 0 0 8px" }}>
                 รายการ
               </th>
-              <th className="py-2.5 px-3 font-semibold text-[11.5px] text-right" style={{ background: brand }}>
+              <th className="py-1.5 px-3 font-semibold text-[11px] text-right" style={{ background: brand }}>
                 จำนวน × ราคา
               </th>
-              <th className="py-2.5 px-3 font-semibold text-[11.5px] text-right" style={{ background: brand, borderRadius: "0 8px 8px 0" }}>
+              <th className="py-1.5 px-3 font-semibold text-[11px] text-right" style={{ background: brand, borderRadius: "0 8px 8px 0" }}>
                 จำนวนเงิน
               </th>
             </tr>
@@ -344,23 +344,23 @@ export function BillDocument({
           <tbody>
             {items.length === 0 ? (
               <tr>
-                <td colSpan={3} className="py-4 text-center text-[13px]" style={{ color: "var(--rs-text-3)" }}>
+                <td colSpan={3} className="py-3 text-center text-[13px]" style={{ color: "var(--rs-text-3)" }}>
                   ไม่มีรายการย่อย
                 </td>
               </tr>
             ) : (
               items.map((it) => (
                 <tr key={it.id} style={{ borderBottom: `1px solid ${line}` }}>
-                  <td className="py-2.5 px-3 align-top" style={{ color: "var(--rs-text)" }}>
+                  <td className="py-1.5 px-3 align-top" style={{ color: "var(--rs-text)" }}>
                     {it.label}
                     {it.kind && it.kind !== "other" ? (
-                      <span className="text-[11px] ml-1.5" style={{ color: "var(--rs-text-3)" }}>
+                      <span className="text-[10.5px] ml-1.5" style={{ color: "var(--rs-text-3)" }}>
                         {ITEM_KIND_LABELS[it.kind] ?? it.kind}
                       </span>
                     ) : null}
                     {it.vatable ? (
                       <span
-                        className="inline-flex items-center text-[10px] font-bold ml-1.5 px-1.5 py-0.5 rounded"
+                        className="inline-flex items-center text-[9.5px] font-bold ml-1.5 px-1.5 py-0.5 rounded"
                         style={{ background: "var(--rs-brand-50)", color: "var(--rs-brand-700)" }}
                         title="รายการนี้คิดภาษีมูลค่าเพิ่ม"
                       >
@@ -368,11 +368,11 @@ export function BillDocument({
                       </span>
                     ) : null}
                   </td>
-                  <td className="py-2.5 px-3 text-right tabular-nums text-[12.5px] align-top" style={{ color: "var(--rs-text-2)" }}>
+                  <td className="py-1.5 px-3 text-right tabular-nums text-[12px] align-top" style={{ color: "var(--rs-text-2)" }}>
                     {toNum(it.qty)} × {formatBaht(toNum(it.unitPrice))}
                   </td>
                   <td
-                    className="py-2.5 px-3 text-right tabular-nums font-semibold align-top"
+                    className="py-1.5 px-3 text-right tabular-nums font-semibold align-top"
                     style={{ color: toNum(it.amount) < 0 ? "var(--rs-ok)" : "var(--rs-text)" }}
                   >
                     {formatBaht(toNum(it.amount))}
@@ -388,7 +388,7 @@ export function BillDocument({
       {bill.meterReadings && <MeterDetailBlock meters={bill.meterReadings} />}
 
       {/* summary: ตัวอักษร | ยอด */}
-      <div className="flex flex-wrap justify-between gap-6 mt-5 items-start">
+      <div className="flex flex-wrap justify-between gap-6 mt-4 items-start">
         <div className="flex-1" style={{ minWidth: 200 }}>
           <div className="text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: "var(--rs-text-3)" }}>
             จำนวนเงินเป็นตัวอักษร
@@ -402,7 +402,7 @@ export function BillDocument({
           {discountTotal > 0 && <TotalRow label="ส่วนลด" value={`− ${formatBaht(discountTotal)}`} tone="ok" />}
           {vat > 0 && <TotalRow label="ภาษีมูลค่าเพิ่ม (VAT)" value={formatBaht(vat)} />}
           <div
-            className="flex justify-between items-center rounded-xl px-4 py-2.5 my-2"
+            className="flex justify-between items-center rounded-xl px-4 py-2 my-1.5"
             style={{ background: "var(--rs-brand-50)" }}
           >
             <span className="text-[13.5px] font-bold" style={{ color: "var(--rs-brand-700)" }}>
@@ -423,7 +423,7 @@ export function BillDocument({
 
       {/* payment + note */}
       {hasBank(bill.bank) && bill.bank && (
-        <div className="grid mt-6 gap-4" style={{ gridTemplateColumns: bill.bank.paymentNote ? "1.3fr 1fr" : "1fr" }}>
+        <div className="grid mt-4 gap-4" style={{ gridTemplateColumns: bill.bank.paymentNote ? "1.3fr 1fr" : "1fr" }}>
           <div className="rounded-xl px-4 py-3" style={{ border: `1px solid ${line}` }}>
             <div className="flex items-center gap-2 mb-2">
               <Landmark className="h-4 w-4" style={{ color: brand }} />
@@ -478,7 +478,7 @@ export function BillDocument({
 export const BILL_DOC_STYLE = `
   .rs-bill-doc { position: relative; }
   @media print {
-    @page { size: A4; margin: 14mm; }
+    @page { size: A4; margin: 11mm; }
     .rs-bill-doc { box-shadow: none !important; }
   }
 `;
