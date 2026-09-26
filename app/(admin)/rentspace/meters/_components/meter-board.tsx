@@ -544,14 +544,14 @@ export default function MeterBoard({
               </th>
               <th className="py-2.5 px-3 font-semibold text-right">
                 <span className="inline-flex items-center gap-1 justify-end">
-                  <Zap className="h-3.5 w-3.5" style={{ color: "var(--rs-pending)" }} /> ไฟ · ครั้งก่อน
+                  <Zap className="h-4 w-4" style={{ color: "var(--rs-electric)" }} /> ไฟ · ครั้งก่อน
                 </span>
               </th>
               <th className="py-2.5 px-3 font-semibold text-right">ไฟ · เลขล่าสุด</th>
               <th className="py-2.5 px-3 font-semibold text-right">หน่วยไฟ</th>
               <th className="py-2.5 px-3 font-semibold text-right">
                 <span className="inline-flex items-center gap-1 justify-end">
-                  <Droplet className="h-3.5 w-3.5" style={{ color: "var(--rs-info)" }} /> น้ำ · ครั้งก่อน
+                  <Droplet className="h-4 w-4" style={{ color: "var(--rs-water)" }} /> น้ำ · ครั้งก่อน
                 </span>
               </th>
               <th className="py-2.5 px-3 font-semibold text-right">น้ำ · เลขล่าสุด</th>
@@ -1167,7 +1167,8 @@ function MobileSide({
   const isElec = kind === "electric";
   const label = isElec ? "ไฟ" : "น้ำ";
   const Icon = isElec ? Zap : Droplet;
-  const iconColor = isElec ? "var(--rs-pending)" : "var(--rs-info)";
+  const iconColor = isElec ? "var(--rs-electric)" : "var(--rs-water)";
+  const sideSoftBg = isElec ? "var(--rs-electric-soft)" : "var(--rs-water-soft)";
   const currNum = parseReading(side.curr);
   const showRolloverWarn = !side.isReset && side.prev != null && currNum != null && currNum > 0 && currNum < side.prev;
   const showBaseline = side.needsBaseline && !side.saved && !locked; // ห้องใหม่ → กรอกเลขตั้งต้น
@@ -1175,12 +1176,17 @@ function MobileSide({
   return (
     <div
       className="mt-3 rounded-xl p-3"
-      style={{ background: "var(--rs-bg-2)", border: "1px solid var(--rs-border)" }}
+      style={{ background: "var(--rs-bg-2)", border: "1px solid var(--rs-border)", borderLeft: `4px solid ${iconColor}` }}
     >
       {/* header row: label + prev reading */}
       <div className="flex items-center justify-between gap-2">
-        <span className="inline-flex items-center gap-1.5 font-semibold text-[14px]" style={{ color: "var(--rs-text)" }}>
-          <Icon className="h-4 w-4" style={{ color: iconColor }} aria-hidden="true" />
+        <span className="inline-flex items-center gap-2 font-semibold text-[14px]" style={{ color: "var(--rs-text)" }}>
+          <span
+            className="inline-flex items-center justify-center rounded-full shrink-0"
+            style={{ width: 30, height: 30, background: sideSoftBg }}
+          >
+            <Icon className="h-[18px] w-[18px]" style={{ color: iconColor }} aria-hidden="true" />
+          </span>
           {label}
         </span>
         {showBaseline ? (
