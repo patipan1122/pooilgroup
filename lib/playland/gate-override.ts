@@ -78,13 +78,26 @@ export async function manualGateOverride(input: {
     wristbandId = w?.id ?? null;
   }
 
-  // Resolve gate device (entry/exit). Default: first active device at branch.
-  const device = await prisma.playlandDevice.findFirst({
-    where: input.deviceId
-      ? { id: input.deviceId, orgId: session.user.org_id, branchId: input.branchId }
-      : { orgId: session.user.org_id, branchId: input.branchId, status: { not: "DISABLED" } },
-    orderBy: { createdAt: "asc" },
-  });
+  // Resolve gate device (entry/exit). Default: prefer a REAL (non-mock) device
+  // at the branch — a leftover demo/mock device must never silently absorb an
+  // emergency-open command (mock's emergencyOpen is a no-op that returns
+  // success) and have this get reported/audited as "gate opened" when nothing
+  // happened on real hardware. [[playland-auditbigteam-track-a-5-p0-2026-09-29]]
+  const device = input.deviceId
+    ? await prisma.playlandDevice.findFirst({
+        where: { id: input.deviceId, orgId: session.user.org_id, branchId: input.branchId },
+      })
+    : (await prisma.playlandDevice.findFirst({
+        // real vendor AND an actual LAN address configured — an "acs-auto" row
+        // with baseUrl still null (e.g. a never-paired placeholder) is just as
+        // unable to open a real gate as the mock device is.
+        where: { orgId: session.user.org_id, branchId: input.branchId, status: { not: "DISABLED" }, vendor: { not: "mock" }, baseUrl: { not: null } },
+        orderBy: { createdAt: "asc" },
+      })) ??
+      (await prisma.playlandDevice.findFirst({
+        where: { orgId: session.user.org_id, branchId: input.branchId, status: { not: "DISABLED" } },
+        orderBy: { createdAt: "asc" },
+      }));
 
   // Audit FIRST (so the override is recorded even if the gate command fails)
   const audit = await prisma.playlandAuditLog.create({

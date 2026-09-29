@@ -8,7 +8,14 @@
 // Decision rules:
 //   • Wristband must exist in same orgId as device
 //   • status === ACTIVE → ✅ open  (already inside · re-scan = re-open exit)
-//   • status === ISSUED → ✅ open  (first entry · activate via gate flow later)
+//   • status === ISSUED → ❌ deny  (printed but NOT YET PAID/activated — see
+//     wristband.ts's activateWristband, which requires a staff-selected
+//     package + payment method before granting equivalent access. Opening the
+//     gate here would let a guest in for free before that step ever runs.
+//     [[playland-auditbigteam-track-a-5-p0-2026-09-29]] — this was previously
+//     `true`, written speculatively ahead of a vendor conversation about an
+//     unconfirmed QR-capable device; flip back to `true` only once QR-scan is
+//     wired to actually run the payment/package-selection step first.)
 //   • status === RETURNED / LOST → ❌ deny
 
 import { prisma } from "@/lib/prisma";
@@ -45,8 +52,10 @@ export async function handleQRScan(input: {
     outcome = { openGate: false, reason: "wristband_not_found", wristbandId: null, sessionId: null };
   } else if (w.branchId !== input.branchId) {
     outcome = { openGate: false, reason: "wrong_branch", wristbandId: w.id, sessionId: null };
-  } else if (w.status === "ACTIVE" || w.status === "ISSUED") {
-    outcome = { openGate: true, reason: w.status === "ACTIVE" ? "active_re_entry" : "issued_first_entry", wristbandId: w.id, sessionId: w.sessionId };
+  } else if (w.status === "ACTIVE") {
+    outcome = { openGate: true, reason: "active_re_entry", wristbandId: w.id, sessionId: w.sessionId };
+  } else if (w.status === "ISSUED") {
+    outcome = { openGate: false, reason: "issued_not_yet_activated_see_staff", wristbandId: w.id, sessionId: null };
   } else if (w.status === "LOST") {
     outcome = { openGate: false, reason: "wristband_lost", wristbandId: w.id, sessionId: null };
   } else if (w.status === "RETURNED") {

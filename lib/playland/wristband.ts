@@ -215,6 +215,16 @@ export async function activateWristband(input: {
   if (!w.memberId) return err("wristband ยังไม่ได้ผูกสมาชิก");
   if (!(await verifyBranchAssignment(w.branchId, session.user.org_id, session.user.id, session.user.role))) return err("คุณไม่ได้รับมอบหมายให้ทำงานสาขานี้");
 
+  // Prevent double-charge: same guard checkInSession already has — a member
+  // who already has an ACTIVE/PAUSED session must close it first, not get a
+  // second paid session opened via the wristband-activate path.
+  // [[playland-auditbigteam-track-a-5-p0-2026-09-29]]
+  const existingSession = await prisma.playlandSession.findFirst({
+    where: { orgId: session.user.org_id, memberId: w.memberId, status: { in: ["ACTIVE", "PAUSED"] } },
+    select: { id: true, status: true },
+  });
+  if (existingSession) return err(`สมาชิกนี้มี session ${existingSession.status} อยู่แล้ว · ปิด session เดิมก่อน`);
+
   let shiftId: string;
   try {
     shiftId = await requireOpenShift(session.user.org_id, w.branchId, session.user.id);

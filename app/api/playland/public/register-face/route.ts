@@ -7,6 +7,8 @@ import { newMemberCode } from "@/lib/playland/codes";
 import { getAdapter } from "@/lib/playland/acs/mock-adapter";
 import { decodePhotoDataUrl, isValidThaiPhone } from "@/lib/playland/guards";
 import { checkRate, getClientIp } from "@/lib/playland/rate-limit";
+import { putObject } from "@/lib/r2/upload";
+import crypto from "node:crypto";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -71,35 +73,60 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // Register face via mock adapter (use pre-decoded buf, no re-decode)
+  // Persist the photo to R2 first — real (acs-auto) devices are LAN-only and
+  // get synced asynchronously by the shop-floor agent, so this HTTP request's
+  // buffer won't exist anymore by the time that happens. See
+  // app/api/playland/acs/agent/face-sync/route.ts for the pickup side.
+  const photoKey = `playland/faces/${branch.orgId}/${member.id}/${crypto.randomUUID()}.jpg`;
+  await putObject(photoKey, photoBuf, "image/jpeg");
+  await prisma.playlandMember.update({ where: { id: member.id }, data: { photoR2Path: photoKey } });
+
   const devices = await prisma.playlandDevice.findMany({ where: { branchId: branch.id, status: { not: "DISABLED" } } });
+  // Real hardware's memberId-as-faceId convention always wins over a mock
+  // device's fabricated id — a branch with both (e.g. leftover demo device
+  // sitting alongside real ones) must not let the mock id shadow the real sync.
+  const hasRealDevice = devices.some((d) => d.vendor !== "mock");
   let faceId: string | null = null;
-  if (devices.length > 0) {
-    const buf = photoBuf;
-    const adapter = getAdapter(devices[0].vendor);
-    try {
-      const res = await adapter.registerFace(
-        { memberId: member.id, photo: buf },
-        {
-          id: devices[0].id,
-          deviceId: devices[0].deviceId,
-          baseUrl: devices[0].baseUrl,
-          protocol: devices[0].protocol as "http" | "tcp",
-          modelVersion: devices[0].modelVersion as "B" | "C",
-          webhookSecret: devices[0].webhookSecret ?? "",
-        },
-      );
-      faceId = res.faceId;
-      await prisma.playlandMember.update({ where: { id: member.id }, data: { faceId } });
-    } catch (e) {
-      console.warn("[playland/public/register-face] adapter error", e);
+  for (const device of devices) {
+    if (device.vendor === "mock") {
+      if (hasRealDevice) continue;
+      // Mock devices answer synchronously in-process — no LAN/agent involved.
+      try {
+        const adapter = getAdapter(device.vendor);
+        const res = await adapter.registerFace(
+          { memberId: member.id, photo: photoBuf },
+          {
+            id: device.id,
+            deviceId: device.deviceId,
+            baseUrl: device.baseUrl,
+            protocol: device.protocol as "http" | "tcp",
+            modelVersion: device.modelVersion as "B" | "C",
+            webhookSecret: device.webhookSecret ?? "",
+          },
+        );
+        faceId = res.faceId;
+      } catch (e) {
+        console.warn("[playland/public/register-face] mock adapter error", e);
+      }
+      continue;
     }
+    // Real hardware (acs-auto): Vercel can't reach the device's private LAN
+    // IP directly (NAT). Queue it — the shop-floor agent polls PlaylandFaceSync
+    // and pushes the face over the device's local HTTP API.
+    await prisma.playlandFaceSync.upsert({
+      where: { deviceId_memberId: { deviceId: device.id, memberId: member.id } },
+      create: { orgId: branch.orgId, deviceId: device.id, memberId: member.id, status: "PENDING" },
+      update: { status: "PENDING", attempts: 0, errorMessage: null },
+    });
+    // acs-auto convention: memberId IS the face_id (device never returns one) ·
+    // no need to wait for the agent round-trip to know it.
+    faceId = member.id;
   }
   if (!faceId) {
-    // Mock-mode fallback so flow works
+    // No devices configured for this branch yet — mock-mode fallback so the flow still works
     faceId = `MOCK-${member.id.replace(/-/g, "").slice(0, 12).toUpperCase()}`;
-    await prisma.playlandMember.update({ where: { id: member.id }, data: { faceId } });
   }
+  await prisma.playlandMember.update({ where: { id: member.id }, data: { faceId } });
 
   // Link to booking if provided
   if (b.bookingId) {

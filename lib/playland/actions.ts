@@ -99,44 +99,61 @@ export async function createMember(input: CreateMemberInput): Promise<ActionResu
     });
   }
 
-  // Trigger face sync to device (Version C local cache)
-  // Find device(s) at this branch and enqueue
+  // Trigger face sync to device.
+  // Real hardware's memberId-as-faceId convention always wins over a mock
+  // device's fabricated id — mirrors app/api/playland/public/register-face/route.ts.
+  // (Was previously: unconditionally create a PENDING row per device, THEN try a
+  // synchronous direct call to devices[0] regardless of vendor — for real acs-auto
+  // hardware that direct call always fails (Vercel can't reach a private LAN IP),
+  // the catch just logged a warning, and faceId was NEVER set — every counter
+  // registration with a photo at a branch with real hardware got a permanently
+  // null faceId, with zero visible error. [[playland-auditbigteam-track-a-5-p0-2026-09-29]])
   const devices = await prisma.playlandDevice.findMany({ where: { branchId: input.branchId, status: { not: "DISABLED" } } });
-  for (const d of devices) {
-    await prisma.playlandFaceSync.create({
-      data: { orgId: session.user.org_id, deviceId: d.id, memberId: member.id, status: "PENDING" },
-    });
-  }
-
-  // For mock: synchronously register and mark synced + assign faceId
+  const hasRealDevice = devices.some((d) => d.vendor !== "mock");
   let assignedFaceId: string | null = null;
-  if (devices.length > 0 && input.photoDataUrl) {
+  if (input.photoDataUrl) {
     const buf = Buffer.from(input.photoDataUrl.replace(/^data:image\/\w+;base64,/, ""), "base64");
-    const adapter = getAdapter(devices[0].vendor);
-    try {
-      const res = await adapter.registerFace(
-        { memberId: member.id, photo: buf },
-        {
-          id: devices[0].id,
-          deviceId: devices[0].deviceId,
-          baseUrl: devices[0].baseUrl,
-          protocol: devices[0].protocol as "http" | "tcp",
-          modelVersion: devices[0].modelVersion as "B" | "C",
-          webhookSecret: devices[0].webhookSecret ?? "",
-        },
-      );
-      assignedFaceId = res.faceId;
-      await prisma.playlandMember.update({ where: { id: member.id }, data: { faceId: assignedFaceId } });
-      await prisma.playlandFaceSync.updateMany({
-        where: { memberId: member.id, deviceId: devices[0].id },
-        data: { status: "SYNCED", syncedAt: new Date() },
+    for (const device of devices) {
+      if (device.vendor === "mock") {
+        if (hasRealDevice) continue;
+        try {
+          const adapter = getAdapter(device.vendor);
+          const res = await adapter.registerFace(
+            { memberId: member.id, photo: buf },
+            {
+              id: device.id,
+              deviceId: device.deviceId,
+              baseUrl: device.baseUrl,
+              protocol: device.protocol as "http" | "tcp",
+              modelVersion: device.modelVersion as "B" | "C",
+              webhookSecret: device.webhookSecret ?? "",
+            },
+          );
+          assignedFaceId = res.faceId;
+          await prisma.playlandFaceSync.upsert({
+            where: { deviceId_memberId: { deviceId: device.id, memberId: member.id } },
+            create: { orgId: session.user.org_id, deviceId: device.id, memberId: member.id, status: "SYNCED", syncedAt: new Date() },
+            update: { status: "SYNCED", syncedAt: new Date() },
+          });
+        } catch (e) {
+          console.warn("[playland] mock adapter error", e);
+        }
+        continue;
+      }
+      // Real hardware (acs-auto): this server can't reach the device's private
+      // LAN IP directly. Queue it — the shop-floor agent polls PlaylandFaceSync
+      // and pushes the face over the device's local HTTP API.
+      await prisma.playlandFaceSync.upsert({
+        where: { deviceId_memberId: { deviceId: device.id, memberId: member.id } },
+        create: { orgId: session.user.org_id, deviceId: device.id, memberId: member.id, status: "PENDING" },
+        update: { status: "PENDING", attempts: 0, errorMessage: null },
       });
-    } catch (e) {
-      console.warn("[playland] face register failed", e);
+      assignedFaceId = member.id;
     }
-  } else if (input.photoDataUrl) {
-    // No device but photo provided · still generate a mock face id so UI demos work
-    assignedFaceId = `MOCK-${member.id.replace(/-/g, "").slice(0, 12).toUpperCase()}`;
+    if (!assignedFaceId) {
+      // No devices configured for this branch yet — mock-mode fallback so the flow still works
+      assignedFaceId = `MOCK-${member.id.replace(/-/g, "").slice(0, 12).toUpperCase()}`;
+    }
     await prisma.playlandMember.update({ where: { id: member.id }, data: { faceId: assignedFaceId } });
   }
 
