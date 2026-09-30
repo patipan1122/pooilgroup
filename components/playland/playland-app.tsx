@@ -32,6 +32,7 @@ import {
   type WristbandLookup,
 } from "@/lib/playland/wristband";
 import { printWristband } from "@/components/playland/print-wristband";
+import { printReceipt } from "@/components/playland/print-receipt";
 import { FaceCapture } from "@/components/playland/face-capture";
 import { BarcodeScanBox } from "@/components/playland/barcode-scan-box";
 import { lookupProductByBarcode } from "@/lib/playland/stock";
@@ -642,6 +643,9 @@ export default function PlaylandApp(props: Props) {
       adultCount: s.ckAdults,
       kind: "checkin_pending_face",
     };
+    // ไม่มีสายรัดให้ลูกค้าถือกลับไป (สแกนหน้าแทน) — พิมพ์ใบเสร็จเป็นหลักฐานจ่ายเงินแทน
+    const printed = printReceipt({ no: receipt.no, name: receipt.name, lines: receipt.lines, total: receipt.total, note: "สแกนหน้าที่ประตูเพื่อเริ่มเวลา · ไม่ต้องใช้สายรัด" });
+    if (!printed) showToast("⚠️ เบราว์เซอร์บล็อกการพิมพ์ · กด 'พิมพ์ใบเสร็จซ้ำ' ที่ใบเสร็จ");
     dispatch({ t: "paidPendingReceipt", receipt });
     showToast("ลงทะเบียนหน้าสำเร็จ · สแกนหน้าที่ประตูได้เลย " + receipt.name);
     router.refresh();
@@ -842,6 +846,13 @@ export default function PlaylandApp(props: Props) {
     const r = s.receipt;
     if (!r || !r.bandCode) return;
     const ok = printWristband({ code: r.bandCode, memberName: r.name, adultCount: r.adultCount ?? 0 });
+    if (!ok) showToast("เบราว์เซอร์บล็อก popup · อนุญาต popup แล้วลองใหม่");
+  };
+
+  const reprintReceipt = () => {
+    const r = s.receipt;
+    if (!r) return;
+    const ok = printReceipt({ no: r.no, name: r.name, lines: r.lines, total: r.total, note: "สแกนหน้าที่ประตูเพื่อเริ่มเวลา · ไม่ต้องใช้สายรัด" });
     if (!ok) showToast("เบราว์เซอร์บล็อก popup · อนุญาต popup แล้วลองใหม่");
   };
 
@@ -1197,7 +1208,7 @@ export default function PlaylandApp(props: Props) {
                 </div>
               )}
               <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 14 }}>
-                <div onClick={() => go("shift")} style={{ cursor: "pointer", fontSize: 14, color: "#6b6052", padding: "8px 14px", borderRadius: 10, background: "#f4ede0" }}>ปิดกะ</div>
+                <div onClick={() => go("shift")} style={{ cursor: "pointer", fontSize: 14, color: "#6b6052", padding: "8px 14px", borderRadius: 10, background: "#f4ede0" }}>{props.hasOpenShift !== false ? "ปิดกะ" : "เปิดกะ"}</div>
                 <div onClick={() => router.push("/playland/office")} title="กลับหลังบ้าน (ภาพรวมร้าน)" style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 14, color: "#8a7f70", padding: "8px 14px", borderRadius: 10, background: "#f7f2ea", border: "1px solid #ece5d8" }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8a7f70" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5M21 12H9" /></svg>
                   กลับหลังบ้าน
@@ -1832,6 +1843,11 @@ export default function PlaylandApp(props: Props) {
                   <div onClick={reprintBand} style={{ cursor: "pointer", flex: 1, background: "#fff", border: "1px solid #ece5d8", borderRadius: 13, padding: 15, textAlign: "center", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b6052" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><path d="M6 14h12v8H6z" /></svg>
                     พิมพ์สายรัดซ้ำ
+                  </div>
+                ) : rc?.kind === "checkin_pending_face" ? (
+                  <div onClick={reprintReceipt} style={{ cursor: "pointer", flex: 1, background: "#fff", border: "1px solid #ece5d8", borderRadius: 13, padding: 15, textAlign: "center", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b6052" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><path d="M6 14h12v8H6z" /></svg>
+                    พิมพ์ใบเสร็จซ้ำ
                   </div>
                 ) : null}
                 <div onClick={() => go("home")} style={{ cursor: "pointer", flex: 1.2, background: "#2D6CB1", color: "#fff", borderRadius: 13, padding: 15, textAlign: "center", fontSize: 16, fontFamily: MITR, fontWeight: 500 }}>เสร็จ</div>
