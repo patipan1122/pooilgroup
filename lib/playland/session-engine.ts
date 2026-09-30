@@ -22,6 +22,61 @@ const WARN_BEFORE_EXPIRE_MINUTES = 10;
 
 type Tx = Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0];
 
+// ---------------------------------------------------------------------------
+// Gate whitelist sync — closes the "face stays a standing key forever" gap.
+//
+// The ACS-F606 device opens its own relay locally the instant it matches a
+// registered face, with NO real-time check against our backend (see
+// acs-auto-adapter.ts header + docs/acs/README.md). So the only lever we
+// have is WHICH faces are on each device's local whitelist right now:
+//   ACTIVE (currently inside)   → NOT on the entrance device's whitelist
+//   PAUSED (stepped out, grace) → back on the entrance device's whitelist
+//   FORFEITED / COMPLETED       → off BOTH entrance and exit whitelists
+// Real devices are behind shop-LAN NAT (Vercel can't reach them directly),
+// so both add/remove go through the existing async PlaylandFaceSync queue —
+// same mechanism `syncMemberFaceToDevices` (actions.ts) already uses.
+// ---------------------------------------------------------------------------
+
+async function directionalDeviceIds(tx: Tx, branchId: string): Promise<{ entrance: string[]; exit: string[] }> {
+  const devices = await tx.playlandDevice.findMany({
+    where: { branchId, status: { not: "DISABLED" }, vendor: { not: "mock" } },
+    select: { id: true, direction: true },
+  });
+  return {
+    entrance: devices.filter((d) => d.direction === "IN").map((d) => d.id),
+    exit: devices.filter((d) => d.direction === "OUT").map((d) => d.id),
+  };
+}
+
+async function queueFaceJobs(tx: Tx, orgId: string, deviceIds: string[], memberId: string, mode: "ADD" | "REMOVE") {
+  for (const deviceId of deviceIds) {
+    await tx.playlandFaceSync.upsert({
+      where: { deviceId_memberId: { deviceId, memberId } },
+      create: { orgId, deviceId, memberId, status: mode === "ADD" ? "PENDING" : "DELETE_PENDING" },
+      update: { status: mode === "ADD" ? "PENDING" : "DELETE_PENDING", attempts: 0, lastAttemptAt: null, errorMessage: null },
+    });
+  }
+}
+
+/** Just walked in — take them off the entrance whitelist so re-scanning the same face doesn't keep opening the gate. */
+async function revokeEntranceAccess(tx: Tx, orgId: string, branchId: string, memberId: string) {
+  const { entrance } = await directionalDeviceIds(tx, branchId);
+  if (entrance.length > 0) await queueFaceJobs(tx, orgId, entrance, memberId, "REMOVE");
+}
+
+/** Just stepped out mid-visit — put them back on the entrance whitelist so they can scan back in within the grace window. */
+async function restoreEntranceAccess(tx: Tx, orgId: string, branchId: string, memberId: string) {
+  const { entrance } = await directionalDeviceIds(tx, branchId);
+  if (entrance.length > 0) await queueFaceJobs(tx, orgId, entrance, memberId, "ADD");
+}
+
+/** Visit is fully over (forfeited grace / checked out) — off every gate device until their next paid visit re-registers them. */
+export async function revokeAllGateAccess(tx: Tx, orgId: string, branchId: string, memberId: string) {
+  const { entrance, exit } = await directionalDeviceIds(tx, branchId);
+  const all = [...entrance, ...exit];
+  if (all.length > 0) await queueFaceJobs(tx, orgId, all, memberId, "REMOVE");
+}
+
 export interface HandleFaceEventInput {
   orgId: string;
   branchId: string;
@@ -150,6 +205,7 @@ export async function handleFaceEvent(input: HandleFaceEventInput): Promise<Hand
             data: { status: "ACTIVE", checkInAt: event.eventAt, expiresAt },
           });
           if (activated.count === 1) {
+            await revokeEntranceAccess(tx, orgId, branchId, memberId);
             const ev = await insertEvent(tx, input, memberId, pending.id);
             return { eventId: ev.id, sessionId: pending.id, outcome: "session_created", message: "activated pending session via face scan" };
           }
@@ -181,6 +237,7 @@ export async function handleFaceEvent(input: HandleFaceEventInput): Promise<Hand
             where: { id: session.id },
             data: { status: "FORFEITED", checkOutAt: now },
           });
+          await revokeAllGateAccess(tx, orgId, branchId, memberId);
           const ev = await insertEvent(tx, input, memberId, session.id);
           await tx.playlandAlert.create({
             data: {
@@ -207,11 +264,15 @@ export async function handleFaceEvent(input: HandleFaceEventInput): Promise<Hand
             reentryDeadlineAt: null,
           },
         });
+        await revokeEntranceAccess(tx, orgId, branchId, memberId);
         const ev = await insertEvent(tx, input, memberId, session.id);
         return { eventId: ev.id, sessionId: session.id, outcome: "session_resumed", message: `resumed (+${pausedSecs}s paused)` };
       }
 
-      // session.status === "ACTIVE" · just log (duplicate in-scan)
+      // session.status === "ACTIVE" · just log (duplicate in-scan) — also re-assert
+      // the entrance-whitelist removal in case the earlier DELETE job hasn't landed
+      // on the device yet (agent poll lag), so a repeat scan can't reopen the gate.
+      await revokeEntranceAccess(tx, orgId, branchId, memberId);
       const ev = await insertEvent(tx, input, memberId, session.id);
       return { eventId: ev.id, sessionId: session.id, outcome: "logged_only", message: "already active" };
     }
@@ -229,6 +290,7 @@ export async function handleFaceEvent(input: HandleFaceEventInput): Promise<Hand
           where: { id: session.id },
           data: { status: "PAUSED", pausedAt: event.eventAt, reentryDeadlineAt: deadline },
         });
+        await restoreEntranceAccess(tx, orgId, branchId, memberId);
         const ev = await insertEvent(tx, input, memberId, session.id);
         return { eventId: ev.id, sessionId: session.id, outcome: "session_paused", message: `paused · re-entry by ${deadline.toISOString()}` };
       }
@@ -318,7 +380,7 @@ export async function expireDueSessions() {
   // PAUSED sessions past grace
   const dueForfeit = await prisma.playlandSession.findMany({
     where: { status: "PAUSED", reentryDeadlineAt: { lte: now } },
-    select: { id: true, orgId: true, branchId: true },
+    select: { id: true, orgId: true, branchId: true, memberId: true },
   });
   for (const s of dueForfeit) {
     await prisma.$transaction([
@@ -335,6 +397,8 @@ export async function expireDueSessions() {
         },
       }),
     ]);
+    // Visit is over — off every gate device (matches the immediate too-late-reentry path above)
+    await revokeAllGateAccess(prisma, s.orgId, s.branchId, s.memberId);
   }
   // ACTIVE sessions about to expire (warning at -10min)
   const warnDeadline = new Date(now.getTime() + WARN_BEFORE_EXPIRE_MINUTES * 60_000);

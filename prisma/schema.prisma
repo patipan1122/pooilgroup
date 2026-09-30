@@ -4496,6 +4496,16 @@ enum PlaylandFaceSyncStatus {
   @@schema("playland")
 }
 
+// Mirrors the device-side `inout` param (0=exit,1=entrance) so server code can
+// tell entrance vs exit devices apart WITHOUT a live LAN call (Vercel can't
+// reach the device directly — see acs-auto-adapter.ts header comment).
+enum PlaylandDeviceDirection {
+  IN
+  OUT
+
+  @@schema("playland")
+}
+
 // ---------- 1. Branches ----------
 model PlaylandBranch {
   id           String   @id @default(uuid()) @db.Uuid
@@ -4554,6 +4564,7 @@ model PlaylandDevice {
   modelVersion    String               @default("C") // "B" online-only | "C" mixed
   secretEncrypted String?              @map("secret_encrypted")
   webhookSecret   String?              @map("webhook_secret") // shared in URL query · since no HMAC support
+  direction       PlaylandDeviceDirection? @map("direction") // mirrors device's `inout` param · null = unknown/not set yet
   status          PlaylandDeviceStatus @default(PAIRING)
   lastSeenAt      DateTime?            @map("last_seen_at") @db.Timestamptz(6)
   lastEventAt     DateTime?            @map("last_event_at") @db.Timestamptz(6)

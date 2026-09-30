@@ -16,6 +16,7 @@ import { getAdapter } from "./acs/mock-adapter";
 import { verifyBranchOrg, verifyBranchAssignment, verifyMemberOrg, verifyPackageOrg, verifyBookingOrg, isValidThaiPhone, decodePhotoDataUrl } from "./guards";
 import { requireOpenShift } from "./wristband";
 import { readOvertimeRate, overtimeFromExpiry } from "./overtime";
+import { revokeAllGateAccess } from "./session-engine";
 import { putObject } from "@/lib/r2/upload";
 import crypto from "node:crypto";
 
@@ -484,6 +485,8 @@ export async function checkOutSession(input: CheckOutInput): Promise<ActionResul
       where: { sessionId, orgId: session.user.org_id, status: "ACTIVE" },
       data: { status: "RETURNED", returnedAt: now, lastScanAt: now },
     });
+    // เอาหน้าออกจากทุกเครื่องสแกนที่ประตู — เช็คเอาท์แล้วห้ามสแกนหน้าเข้าซ้ำอีก (same bug class as the wristband release above)
+    await revokeAllGateAccess(tx, session.user.org_id, sRow.branchId, sRow.memberId);
   });
 
   await prisma.playlandAuditLog.create({
