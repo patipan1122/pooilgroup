@@ -117,8 +117,12 @@ export function EditUserForm({
         });
       } else {
         next.add(slug);
-        // โปรแกรมใหม่ default = แอดมิน (ผู้ใช้ตั้งใจให้เขาดูแลโปรแกรมนี้)
-        setAdminSel((a) => new Set(a).add(slug));
+        // โปรแกรมใหม่ default = แอดมิน เฉพาะตอนคนกดเป็น super_admin (ตั้งแอดมิน
+        // โปรแกรมสงวนสิทธิ์ไว้ที่ super_admin — API บล็อกอยู่แล้วถ้าไม่ใช่) ไม่งั้น
+        // default = สมาชิก กันกดบันทึกแล้วเจอ error ตอนหลัง
+        if (canAppointAdmins) {
+          setAdminSel((a) => new Set(a).add(slug));
+        }
       }
       return next;
     });
@@ -163,8 +167,9 @@ export function EditUserForm({
         return;
       }
 
-      // 2) ถ้าเป็นแอดมินโปรแกรม → บันทึกสิทธิ์โปรแกรม (แทนที่ชุดเดิมทั้งหมด)
-      if (role === "program_admin") {
+      // 2) บันทึกสิทธิ์โปรแกรม (แทนที่ชุดเดิมทั้งหมด) — ทุกตำแหน่งที่ไม่ใช่
+      // แอดมินระดับองค์กร (ซึ่งเห็นทุกโปรแกรมอยู่แล้วโดยไม่ต้องมี grant)
+      if (showPrograms) {
         const modRes = await fetch(`/api/admin/users/${userId}/modules`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -190,7 +195,12 @@ export function EditUserForm({
   }
 
   const showBranches = role === "branch_manager" || role === "staff";
-  const showPrograms = role === "program_admin";
+  // แอดมินระดับองค์กร (super_admin/org_admin/admin) เห็นทุกโปรแกรมอยู่แล้วโดย
+  // ไม่ต้องมี grant — ตำแหน่งอื่นทั้งหมดควรเพิ่ม/ลดสิทธิ์โปรแกรมได้เสมอ ไม่ใช่
+  // เฉพาะตอนตำแหน่งหลักเป็น program_admin (เดิมบังคับให้เปลี่ยนตำแหน่งหลักก่อน
+  // ถึงจะเห็นช่องติ๊กโปรแกรม ซึ่งถ้าเดิมเป็น branch_manager/staff การเปลี่ยน
+  // ตำแหน่งหลักจะทำให้ช่องเลือกสาขาหายไปด้วย — นี่คือจุดที่ CEO บอกว่างง)
+  const showPrograms = !["super_admin", "org_admin", "admin"].includes(role);
 
   return (
     <>
@@ -306,7 +316,7 @@ export function EditUserForm({
                         {p.name}
                       </span>
                     </label>
-                    {on && (
+                    {on && canAppointAdmins && (
                       <div className="flex gap-2 px-3 pb-3 pl-12">
                         <button
                           type="button"
@@ -332,6 +342,16 @@ export function EditUserForm({
                         >
                           สมาชิก
                         </button>
+                      </div>
+                    )}
+                    {/* ไม่ใช่ super_admin → ตั้ง "แอดมินโปรแกรม" ไม่ได้ (สงวนสิทธิ์
+                        ไว้ที่ super_admin เท่านั้น) โชว์สถานะเป็นสมาชิกเฉยๆ แทน
+                        ปุ่มที่กดแล้วจะโดน API บล็อกอยู่ดี */}
+                    {on && !canAppointAdmins && (
+                      <div className="px-3 pb-3 pl-12">
+                        <span className="text-xs text-zinc-500">
+                          สมาชิก — ให้เป็นแอดมินโปรแกรมได้เฉพาะ super_admin
+                        </span>
                       </div>
                     )}
                   </div>

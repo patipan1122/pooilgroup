@@ -170,7 +170,7 @@ enum UserRole {
   driver // FuelOS Phase 2
   viewer // Read-only (accountant / HR)
   program_admin // Admin of specific program(s) only — scoped via user_modules · NOT org-wide
-  org_admin // [deprecated alias — kept for back-compat, will migrate to admin]
+  org_admin // Operational admin — same tier as `admin`, used interchangeably across the codebase (CEO 2026-09-30: keep as a real role, not deprecated)
 
   @@schema("public")
 }
