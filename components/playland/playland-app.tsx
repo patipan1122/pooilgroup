@@ -90,6 +90,7 @@ export interface PlaylandMemberVM {
   type: string; // "KID" | "PARENT" | ...
   lastVisit: string | null;
   mascot: string;
+  hasPhoto?: boolean;
 }
 export interface PlaylandBookingVM {
   id: string;
@@ -132,6 +133,8 @@ interface Props {
   revenue: number; // baht today (kept for back-compat)
   branchId: string;
   branchSlug?: string | null;
+  branchName?: string | null;
+  branchPhone?: string | null;
   cashierName: string;
   hasOpenShift?: boolean;
   shift?: PlaylandShiftVM | null; // open shift financials → ปิดกะ/เปิดกะ จริง
@@ -462,7 +465,7 @@ export default function PlaylandApp(props: Props) {
   const checkoutKid = (id: string) => dispatch({ t: "set", p: { coKidId: id, screen: "checkout" } });
   const addSnackFor = (id: string) => dispatch({ t: "set", p: { chargeKidId: id, screen: "pos" } });
   const openExtend = (id: string) => dispatch({ t: "set", p: { extKidId: id } });
-  const closeExtend = () => dispatch({ t: "set", p: { extKidId: null } });
+  const closeExtend = () => { dispatch({ t: "set", p: { extKidId: null } }); setExtConfirm(null); };
 
   // ----- POS pay (immediate paid sale; charges to a kid's session if chosen) -----
   const [posPay, setPosPay] = useState<PayMethod>("CASH");
@@ -591,11 +594,13 @@ export default function PlaylandApp(props: Props) {
 
   // ----- extend (paid immediately with chosen method) -----
   const [extPay, setExtPay] = useState<PayMethod>("CASH");
+  const [extConfirm, setExtConfirm] = useState<{ id: string; mins: number; p: number } | null>(null);
   const [boardQuery, setBoardQuery] = useState(""); // ค้นชื่อเด็กบนกระดาน (หาเร็วตอนเช็คเอาท์)
   const applyExtend = async (opt: { id: string; mins: number; p: number }) => {
     if (busyRef.current) return; // กันกดรัว = ต่อเวลา/เก็บเงินซ้ำ
     const kidId = s.extKidId;
     if (!kidId) return;
+    const kid = s.kids.find((k) => k.id === kidId);
     // ใช้แพ็กเกจตามที่กดจริง (id ตรง) → ราคาที่โชว์ = ที่ชาร์จจริง
     const pkg = packages.find((p) => p.id === opt.id) ?? packages.find((p) => p.mins === opt.mins) ?? packages.find((p) => p.mins > 0);
     if (isRealId(kidId) && pkg && isRealId(pkg.id)) {
@@ -606,7 +611,17 @@ export default function PlaylandApp(props: Props) {
         if (res.ok) {
           dispatch({ t: "applyExtendLocal", kidId, mins: opt.mins, price: opt.p });
           showToast("ต่อเวลา +" + opt.mins + " นาที · รับเงิน ฿" + opt.p);
-          router.refresh();
+          const newExpiry = kid && !kid.dayPass ? new Date(Date.now() + Math.max(0, kid.sec) * 1000 + opt.mins * 60_000) : null;
+          const printed = printReceipt({
+            no: randReceiptNo(),
+            name: kid?.name || "น้อง",
+            lines: [{ label: "ต่อเวลา +" + opt.mins + " นาที", amount: opt.p }],
+            total: opt.p,
+            branchName: props.branchName ?? undefined,
+            branchPhone: props.branchPhone ?? undefined,
+            expiresTime: newExpiry ? newExpiry.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }) : undefined,
+          });
+          if (!printed) showToast("⚠️ เบราว์เซอร์บล็อกการพิมพ์ใบเสร็จ · อนุญาต popup แล้วลองกดต่อเวลาให้อีกครั้งถ้าต้องพิมพ์");
         } else {
           showToast("❌ " + res.error);
         }
@@ -615,10 +630,12 @@ export default function PlaylandApp(props: Props) {
       } finally {
         busyRef.current = false;
         setBusy(false);
+        setExtConfirm(null);
       }
     } else {
       // preset/demo → optimistic
       dispatch({ t: "applyExtendLocal", kidId, mins: opt.mins, price: opt.p });
+      setExtConfirm(null);
       showToast("ต่อเวลา +" + opt.mins + " นาที · รับเงิน ฿" + opt.p);
     }
   };
@@ -647,7 +664,7 @@ export default function PlaylandApp(props: Props) {
       kind: "checkin_pending_face",
     };
     // ไม่มีสายรัดให้ลูกค้าถือกลับไป (สแกนหน้าแทน) — พิมพ์ใบเสร็จเป็นหลักฐานจ่ายเงินแทน
-    const printed = printReceipt({ no: receipt.no, name: receipt.name, lines: receipt.lines, total: receipt.total, note: "สแกนหน้าที่ประตูเพื่อเริ่มเวลา · ไม่ต้องใช้สายรัด" });
+    const printed = printReceipt({ no: receipt.no, name: receipt.name, lines: receipt.lines, total: receipt.total, note: "สแกนหน้าที่ประตูเพื่อเริ่มเวลา · ไม่ต้องใช้สายรัด", branchName: props.branchName ?? undefined, branchPhone: props.branchPhone ?? undefined });
     if (!printed) showToast("⚠️ เบราว์เซอร์บล็อกการพิมพ์ · กด 'พิมพ์ใบเสร็จซ้ำ' ที่ใบเสร็จ");
     dispatch({ t: "paidPendingReceipt", receipt });
     showToast("ลงทะเบียนหน้าสำเร็จ · สแกนหน้าที่ประตูได้เลย " + receipt.name);
@@ -855,7 +872,7 @@ export default function PlaylandApp(props: Props) {
   const reprintReceipt = () => {
     const r = s.receipt;
     if (!r) return;
-    const ok = printReceipt({ no: r.no, name: r.name, lines: r.lines, total: r.total, note: "สแกนหน้าที่ประตูเพื่อเริ่มเวลา · ไม่ต้องใช้สายรัด" });
+    const ok = printReceipt({ no: r.no, name: r.name, lines: r.lines, total: r.total, note: "สแกนหน้าที่ประตูเพื่อเริ่มเวลา · ไม่ต้องใช้สายรัด", branchName: props.branchName ?? undefined, branchPhone: props.branchPhone ?? undefined });
     if (!ok) showToast("เบราว์เซอร์บล็อก popup · อนุญาต popup แล้วลองใหม่");
   };
 
@@ -876,7 +893,7 @@ export default function PlaylandApp(props: Props) {
   // =========================== MEMBERS screen state ===========================
   // Seed with the recent members the server shell passed (so the list isn't empty on open).
   const seededMembers: MemberSearchHit[] = useMemo(
-    () => initialMembers.map((m) => ({ id: m.id, name: m.name, nickname: m.nickname, phone: m.phone, memberCode: m.memberCode, type: m.type, lastVisitAt: m.lastVisit })),
+    () => initialMembers.map((m) => ({ id: m.id, name: m.name, nickname: m.nickname, phone: m.phone, memberCode: m.memberCode, type: m.type, lastVisitAt: m.lastVisit, hasPhoto: m.hasPhoto ?? false })),
     [initialMembers],
   );
   const [memQuery, setMemQuery] = useState("");
@@ -1149,6 +1166,9 @@ export default function PlaylandApp(props: Props) {
 
   // check-in "เคยมาแล้ว" search results — live member search (fallback to seeded list)
   const ckSearchResults: MemberSearchHit[] = memResults;
+  const [memberDetail, setMemberDetail] = useState<MemberSearchHit | null>(null);
+  const selectSearchedMember = (m: MemberSearchHit) =>
+    dispatch({ t: "set", p: { ckName: m.nickname || m.name, ckNickname: m.nickname ?? "", ckMemberId: isRealId(m.id) ? m.id : null, ckStep: "package" } });
 
   // กระดาน: กรองตามชื่อ + เรียง "ใกล้หมด/เกินเวลาก่อน" (เวลาน้อยขึ้นก่อน · day pass ท้ายสุด)
   const boardKids = (() => {
@@ -1389,22 +1409,39 @@ export default function PlaylandApp(props: Props) {
                     </div>
                     <div onClick={closeExtend} style={{ cursor: "pointer", width: 36, height: 36, borderRadius: "50%", background: "#f4ede0", display: "flex", alignItems: "center", justifyContent: "center", color: "#8a7f70", fontSize: 18 }}>✕</div>
                   </div>
-                  <div style={{ padding: "24px 30px" }}>
-                    <div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 8 }}>รับเงินด้วย</div>
-                    <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-                      {payButtons(extPay, setExtPay)}
-                    </div>
-                    <div style={{ fontSize: 15, color: "#8a7f70", marginBottom: 14 }}>แตะเพื่อต่อเวลา · รับเงินทันที</div>
-                    <div className="pl-grid-3" style={{ gap: 12 }}>
-                      {extOptions.map((o) => (
-                        <div key={o.id} onClick={() => applyExtend(o)} style={{ cursor: "pointer", background: "#fff", border: "1.5px solid #ece5d8", borderRadius: 14, padding: "18px 0", textAlign: "center" }}>
-                          <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 24, color: "#2D6CB1" }}>{o.label}</div>
-                          <div style={{ fontSize: 13, color: "#8a7f70" }}>นาที</div>
-                          <div style={{ fontFamily: FREDOKA, fontWeight: 600, color: "#1F8A5B", fontSize: 16, marginTop: 6 }}>{o.price}</div>
+                  {extConfirm ? (
+                    <div style={{ padding: "24px 30px" }}>
+                      <div style={{ background: "#fdf8ef", border: "1px solid #f0dfb8", borderRadius: 14, padding: 20, marginBottom: 18, textAlign: "center" }}>
+                        <div style={{ fontSize: 15, color: "#8a7f70", marginBottom: 6 }}>ยืนยันต่อเวลาให้ {ext.name}</div>
+                        <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 30, color: "#2D6CB1" }}>+{extConfirm.mins} นาที</div>
+                        <div style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: 22, color: "#1F8A5B", marginTop: 4 }}>รับเงิน ฿{extConfirm.p}</div>
+                        <div style={{ fontSize: 14, color: "#8a7f70", marginTop: 8 }}>ด้วย {PAY_LABELS[extPay]}</div>
+                      </div>
+                      <div style={{ display: "flex", gap: 12 }}>
+                        <div onClick={() => setExtConfirm(null)} style={{ flex: 1, cursor: "pointer", textAlign: "center", padding: 15, borderRadius: 12, border: "1px solid #ece5d8", color: "#6b6052", fontSize: 16 }}>ยกเลิก</div>
+                        <div onClick={() => applyExtend(extConfirm)} style={{ flex: 2, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1, textAlign: "center", padding: 15, borderRadius: 12, background: "#1F8A5B", color: "#fff", fontSize: 16, fontFamily: MITR }}>
+                          {busy ? "กำลังบันทึก..." : "✅ ยืนยัน รับเงิน"}
                         </div>
-                      ))}
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div style={{ padding: "24px 30px" }}>
+                      <div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 8 }}>รับเงินด้วย</div>
+                      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+                        {payButtons(extPay, setExtPay)}
+                      </div>
+                      <div style={{ fontSize: 15, color: "#8a7f70", marginBottom: 14 }}>แตะเพื่อเลือกแพ็กเกจต่อเวลา</div>
+                      <div className="pl-grid-3" style={{ gap: 12 }}>
+                        {extOptions.map((o) => (
+                          <div key={o.id} onClick={() => setExtConfirm(o)} style={{ cursor: "pointer", background: "#fff", border: "1.5px solid #ece5d8", borderRadius: 14, padding: "18px 0", textAlign: "center" }}>
+                            <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 24, color: "#2D6CB1" }}>{o.label}</div>
+                            <div style={{ fontSize: 13, color: "#8a7f70" }}>นาที</div>
+                            <div style={{ fontFamily: FREDOKA, fontWeight: 600, color: "#1F8A5B", fontSize: 16, marginTop: 6 }}>{o.price}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -1622,18 +1659,43 @@ export default function PlaylandApp(props: Props) {
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     {ckSearchResults.length === 0 && <div style={{ textAlign: "center", color: "#bcae9b", fontSize: 15, padding: "26px 0" }}>{memSearching ? "กำลังค้นหา..." : "พิมพ์ชื่อหรือเบอร์ แล้วกดค้นหา"}</div>}
                     {ckSearchResults.map((m, i) => (
-                      <div key={m.id} onClick={() => dispatch({ t: "set", p: { ckName: m.nickname || m.name, ckNickname: m.nickname ?? "", ckMemberId: isRealId(m.id) ? m.id : null, ckStep: "package" } })} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", border: "1px solid #ece5d8", borderRadius: 14, background: "#fff" }}>
-                        <div style={{ width: 48, height: 48, borderRadius: "50%", background: i === 0 ? "#fdf3df" : "#eaf3f6", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+                      <div key={m.id} onClick={() => selectSearchedMember(m)} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", border: "1px solid #ece5d8", borderRadius: 14, background: "#fff" }}>
+                        <div style={{ width: 48, height: 48, borderRadius: "50%", background: i === 0 ? "#fdf3df" : "#eaf3f6", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flex: "none" }}>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={mascotSrc(MASCOTS[i % 3])} alt="" style={{ width: 40 }} />
+                          <img src={m.hasPhoto ? `/api/playland/members/${m.id}/photo` : mascotSrc(MASCOTS[i % 3])} alt="" style={m.hasPhoto ? { width: "100%", height: "100%", objectFit: "cover" } : { width: 40 }} />
                         </div>
-                        <div style={{ flex: 1 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontWeight: 500, fontSize: 18 }}>{m.nickname || m.name}</div>
                           <div style={{ fontSize: 14, color: "#8a7f70" }}>{m.name}{m.phone ? " · " + m.phone : ""}{m.memberCode ? " · " + m.memberCode : ""}</div>
                         </div>
-                        <div style={{ background: m.type === "KID" ? "#eaf3f6" : "#fdf3df", color: m.type === "KID" ? "#2D6CB1" : "#a9791a", fontSize: 13, fontWeight: 600, padding: "5px 12px", borderRadius: 999 }}>{m.type === "KID" ? "เด็ก" : "ผู้ใหญ่"}</div>
+                        <div onClick={(e) => { e.stopPropagation(); setMemberDetail(m); }} style={{ cursor: "pointer", color: "#2D6CB1", fontSize: 13, fontWeight: 600, padding: "7px 12px", borderRadius: 999, border: "1px solid #cfe0f0", flex: "none" }}>ดูรายละเอียด</div>
+                        <div style={{ background: m.type === "KID" ? "#eaf3f6" : "#fdf3df", color: m.type === "KID" ? "#2D6CB1" : "#a9791a", fontSize: 13, fontWeight: 600, padding: "5px 12px", borderRadius: 999, flex: "none" }}>{m.type === "KID" ? "เด็ก" : "ผู้ใหญ่"}</div>
                       </div>
                     ))}
+                  </div>
+                </div>
+              )}
+              {/* member detail quick-look — confirm identity before selecting */}
+              {memberDetail && (
+                <div onClick={() => setMemberDetail(null)} style={{ position: "fixed", inset: 0, background: "rgba(28,39,64,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 95 }}>
+                  <div onClick={(e) => e.stopPropagation()} style={{ width: 380, maxWidth: "calc(100vw - 32px)", background: "#fff", borderRadius: 20, boxShadow: "0 20px 60px rgba(0,0,0,.3)", overflow: "hidden" }}>
+                    <div style={{ width: "100%", aspectRatio: "1/1", background: "#f4ede0" }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={memberDetail.hasPhoto ? `/api/playland/members/${memberDetail.id}/photo` : mascotSrc(MASCOTS[0])} alt="" style={memberDetail.hasPhoto ? { width: "100%", height: "100%", objectFit: "cover" } : { width: "50%", margin: "25%" }} />
+                    </div>
+                    <div style={{ padding: 22 }}>
+                      <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 22, marginBottom: 2 }}>{memberDetail.nickname || memberDetail.name}</div>
+                      <div style={{ fontSize: 15, color: "#8a7f70", marginBottom: 14 }}>{memberDetail.name}</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 15, color: "#3A3026", marginBottom: 20 }}>
+                        {memberDetail.phone && <div>📞 {memberDetail.phone}</div>}
+                        {memberDetail.memberCode && <div>🪪 {memberDetail.memberCode}</div>}
+                        <div>🕓 มาล่าสุด {memberDetail.lastVisitAt ? new Date(memberDetail.lastVisitAt).toLocaleDateString("th-TH", { day: "2-digit", month: "2-digit", year: "numeric" }) : "ครั้งแรก"}</div>
+                      </div>
+                      <div style={{ display: "flex", gap: 10 }}>
+                        <div onClick={() => setMemberDetail(null)} style={{ flex: 1, cursor: "pointer", textAlign: "center", padding: 13, borderRadius: 12, border: "1px solid #ece5d8", color: "#6b6052" }}>ปิด</div>
+                        <div onClick={() => { selectSearchedMember(memberDetail); setMemberDetail(null); }} style={{ flex: 2, cursor: "pointer", textAlign: "center", padding: 13, borderRadius: 12, background: "#2D6CB1", color: "#fff", fontFamily: MITR }}>เลือกคนนี้</div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -1762,6 +1824,18 @@ export default function PlaylandApp(props: Props) {
                 <div style={{ maxWidth: 480, margin: "0 auto" }}>
                   <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 24, marginBottom: 4 }}>ลงทะเบียนหน้า · {s.ckName || "น้องใหม่"}</div>
                   <div style={{ fontSize: 15, color: "#8a7f70", marginBottom: 22 }}>รับเงินแล้ว — ถ่ายรูปหน้าลูกค้าให้ชัด เพื่อส่งให้เครื่องสแกนที่ประตูจดจำ</div>
+
+                  {/* ลูกค้าเก่า: โชว์รูปที่เคยลงทะเบียนไว้เทียบไว้ให้พนักงานดู — แต่ยังต้องถ่ายรูปใหม่ทุกครั้ง
+                      (ยืนยันว่าคนที่มายืนอยู่ตอนนี้คือตัวจริง ไม่ใช่ญาติที่เอาหน้าคนอื่นมาแอบใช้) */}
+                  {s.ckMemberId && memResults.find((m) => m.id === s.ckMemberId)?.hasPhoto && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#f9f4ea", borderRadius: 12, padding: "10px 14px", marginBottom: 14 }}>
+                      <div style={{ width: 40, height: 40, borderRadius: "50%", overflow: "hidden", flex: "none" }}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={`/api/playland/members/${s.ckMemberId}/photo`} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      </div>
+                      <div style={{ fontSize: 12.5, color: "#8a7f70", lineHeight: 1.4 }}>รูปที่เคยลงทะเบียนไว้ · เทียบดูว่าใช่คนเดียวกัน แล้วถ่ายรูปใหม่ด้านล่างอีกครั้ง</div>
+                    </div>
+                  )}
 
                   <FaceCapture value={facePhoto} onChange={handleFacePhoto} label="ถ่ายรูปหน้าลูกค้า · กล้องที่เครื่องนี้" />
 
@@ -2265,10 +2339,11 @@ function backIcon(stroke: string, size = 20) {
   );
 }
 
-// Payment-method pills (เงินสด / พร้อมเพย์ / บัตร) — used by check-in pay, POS, extend
+// Payment-method pills (เงินสด / พร้อมเพย์) — used by check-in pay, POS, extend
+// ตัดบัตรออกทั้งโปรแกรม (CEO 2026-09-30: ร้านไม่รับบัตรจริง) — เอาออกจากจุดเดียวนี้ที่เดียว ครบทุกหน้าที่ใช้ payButtons
 const PAY_LABELS: Record<PayMethod, string> = { CASH: "เงินสด", PROMPTPAY: "พร้อมเพย์", CARD: "บัตร" };
 function payButtons(current: PayMethod, set: (m: PayMethod) => void) {
-  return (["CASH", "PROMPTPAY", "CARD"] as PayMethod[]).map((m) => {
+  return (["CASH", "PROMPTPAY"] as PayMethod[]).map((m) => {
     const on = current === m;
     return (
       <span

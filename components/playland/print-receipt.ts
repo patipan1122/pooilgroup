@@ -14,6 +14,12 @@ export interface PrintReceiptOpts {
   total: number;
   note?: string;
   issuedAt?: Date;
+  branchName?: string;
+  branchPhone?: string;
+  /** "HH:mm" — เวลาเข้าเล่น */
+  checkInTime?: string;
+  /** "HH:mm" — เวลาที่แพ็กเกจหมด (ไม่ใช่เวลาปัจจุบัน) */
+  expiresTime?: string;
 }
 
 /** Returns false if the popup was blocked (caller can show a manual retry). */
@@ -39,18 +45,28 @@ export function printReceipt(opts: PrintReceiptOpts): boolean {
   .total { display: flex; justify-content: space-between; font-size: 12pt; font-weight: 700; padding-top: 1mm; }
   .note { text-align: center; font-size: 8.5pt; color: #444; margin-top: 3mm; line-height: 1.4; }
   .date { text-align: center; font-size: 7.5pt; color: #888; margin-top: 2mm; }
+  .branch { text-align: center; font-size: 8.5pt; color: #333; margin-bottom: 1mm; }
+  .times { display: flex; justify-content: space-between; font-size: 8.5pt; color: #333; padding: 0.5mm 0; }
+  .policy { text-align: center; font-size: 7.5pt; color: #666; margin-top: 2mm; line-height: 1.5; border-top: 1px dashed #ccc; padding-top: 2mm; }
+  .footer { text-align: center; font-size: 7.5pt; color: #888; margin-top: 2mm; }
   @media screen { body { background: #eee; padding: 20px; } .receipt { background: white; box-shadow: 0 2px 12px rgba(0,0,0,.15); margin: 0 auto; } .hint { text-align: center; font-family: ui-sans-serif, system-ui; font-size: 12px; color: #555; margin-top: 16px; } }
 </style></head><body>
 <div class="receipt">
   <div class="brand">Play <span style="color:#F0B323">a</span> lot</div>
+  ${opts.branchName ? `<div class="branch">สาขา${esc(opts.branchName)}</div>` : ""}
   <div class="no">ใบเสร็จ ${esc(opts.no)}</div>
   <div class="name">${esc(opts.name)}</div>
   <div class="divider"></div>
   ${linesHtml}
   <div class="divider"></div>
   <div class="total"><span>รวม</span><span>฿${opts.total}</span></div>
+  ${opts.checkInTime || opts.expiresTime ? `<div class="divider"></div>` : ""}
+  ${opts.checkInTime ? `<div class="times"><span>เริ่มเล่น</span><span>${esc(opts.checkInTime)} น.</span></div>` : ""}
+  ${opts.expiresTime ? `<div class="times"><span>หมดเวลา</span><span>${esc(opts.expiresTime)} น.</span></div>` : ""}
   ${opts.note ? `<div class="note">${esc(opts.note)}</div>` : ""}
+  <div class="policy">มารับช้าเกิน 15 นาทีหลังหมดเวลา คิดค่าบริการเพิ่มเท่าราคาแพ็กเกจ 1 ชั่วโมง</div>
   <div class="date">${dateStr}</div>
+  ${opts.branchPhone ? `<div class="footer">สอบถาม/แนะนำติชม โทร ${esc(opts.branchPhone)}</div>` : ""}
 </div>
 <div class="hint">ถ้าหน้าต่างนี้ไม่ปริ้นอัตโนมัติ · กด Ctrl+P (หรือ Cmd+P)</div>
 <script>

@@ -178,6 +178,7 @@ export default async function PlaylandPage({
     type: m.type,
     lastVisit: m.lastVisitAt ? m.lastVisitAt.toISOString() : null,
     mascot: MASCOTS3[i % 3],
+    hasPhoto: Boolean(m.photoR2Path),
   }));
 
   const bookingsVM: PlaylandBookingVM[] = todayBookings.map((b) => {
@@ -222,6 +223,8 @@ export default async function PlaylandPage({
       revenue={revenue}
       branchId={branchId}
       branchSlug={branch?.slug ?? null}
+      branchName={branch?.name ?? null}
+      branchPhone={branch?.phone ?? null}
       cashierName={cashierName}
       hasOpenShift={!!openShift}
       shift={openShift ? { id: openShift.id, openingCashCents: openShift.openingCashCents, totalSalesCents: openShift.totalSalesCents, cashSalesCents } : null}

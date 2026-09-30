@@ -285,6 +285,7 @@ export interface MemberSearchHit {
   memberCode: string | null;
   type: string;
   lastVisitAt: string | null;
+  hasPhoto: boolean;
 }
 
 export async function searchMembersAction(input: { branchId?: string; query: string }): Promise<ActionResult<MemberSearchHit[]>> {
@@ -303,6 +304,7 @@ export async function searchMembersAction(input: { branchId?: string; query: str
       memberCode: m.memberCode,
       type: m.type,
       lastVisitAt: m.lastVisitAt ? m.lastVisitAt.toISOString() : null,
+      hasPhoto: Boolean(m.photoR2Path),
     })),
   };
 }
