@@ -15,6 +15,9 @@ interface Body {
   packageId: string;
   customerName: string;
   customerPhone: string;
+  customerPhoneBackup?: string;
+  childNickname?: string;
+  childAge?: number;
   partySize: number;
   slotDate: string;
   slotHour: number;
@@ -33,7 +36,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "missing fields" }, { status: 400 });
   }
   if (!isValidThaiPhone(body.customerPhone)) return NextResponse.json({ ok: false, error: "เบอร์โทรไม่ถูกต้อง" }, { status: 400 });
+  if (body.customerPhoneBackup && !isValidThaiPhone(body.customerPhoneBackup)) return NextResponse.json({ ok: false, error: "เบอร์สำรองไม่ถูกต้อง" }, { status: 400 });
   if (body.customerName.length > 100) return NextResponse.json({ ok: false, error: "name too long" }, { status: 400 });
+  if (body.childNickname && body.childNickname.length > 60) return NextResponse.json({ ok: false, error: "childNickname too long" }, { status: 400 });
+  if (body.childAge !== undefined && (body.childAge < 0 || body.childAge > 18)) return NextResponse.json({ ok: false, error: "อายุไม่ถูกต้อง" }, { status: 400 });
   if (body.partySize < 1 || body.partySize > 20) return NextResponse.json({ ok: false, error: "party size 1-20" }, { status: 400 });
   if (body.slotHour < 0 || body.slotHour > 23) return NextResponse.json({ ok: false, error: "bad hour" }, { status: 400 });
   const slotDate = new Date(`${body.slotDate}T${String(body.slotHour).padStart(2, "0")}:00:00+07:00`);
@@ -51,6 +57,11 @@ export async function POST(req: NextRequest) {
   const slotEnd = new Date(slotStart.getTime() + (pkg.minutes ?? 60) * 60_000);
   const amount = pkg.price * body.partySize;
 
+  const metadata: Record<string, string | number> = {};
+  if (body.customerPhoneBackup) metadata.customerPhoneBackup = body.customerPhoneBackup;
+  if (body.childNickname) metadata.childNickname = body.childNickname;
+  if (body.childAge !== undefined) metadata.childAge = body.childAge;
+
   const booking = await prisma.playlandBooking.create({
     data: {
       orgId: branch.orgId,
@@ -67,6 +78,7 @@ export async function POST(req: NextRequest) {
       paymentStatus: "pending",
       status: "PENDING",
       expiresAt: new Date(Date.now() + 30 * 60_000), // 30 min to pay
+      metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
     },
   });
 

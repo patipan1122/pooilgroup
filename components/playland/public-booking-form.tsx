@@ -24,6 +24,9 @@ export function PublicBookingForm({ branchId, branchSlug, packages }: { branchId
   const [hour, setHour] = useState("13");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [phoneBackup, setPhoneBackup] = useState("");
+  const [childNickname, setChildNickname] = useState("");
+  const [childAge, setChildAge] = useState("");
   const [partySize, setPartySize] = useState("1");
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string; url?: string } | null>(null);
 
@@ -42,6 +45,9 @@ export function PublicBookingForm({ branchId, branchSlug, packages }: { branchId
         body: JSON.stringify({
           branchId, packageId: pkg.id,
           customerName: name.trim(), customerPhone: phone.trim(),
+          customerPhoneBackup: phoneBackup.trim() || undefined,
+          childNickname: childNickname.trim() || undefined,
+          childAge: childAge.trim() ? parseInt(childAge, 10) : undefined,
           partySize: parseInt(partySize || "1"),
           slotDate: date, slotHour: parseInt(hour),
         }),
@@ -125,12 +131,24 @@ export function PublicBookingForm({ branchId, branchSlug, packages }: { branchId
         <div className="pl-eyebrow" style={{ marginBottom: 10 }}>③ ข้อมูลติดต่อ</div>
         <div className="pl-grid-2e" style={{ gap: 10 }}>
           <div>
-            <label className="pl-label">ชื่อผู้ปกครอง *</label>
+            <label className="pl-label">ชื่อ-นามสกุลผู้ปกครอง (ชื่อจริง) *</label>
             <input className="pl-input" required value={name} onChange={(e) => setName(e.target.value)} placeholder="คุณ..." />
+          </div>
+          <div>
+            <label className="pl-label">ชื่อเล่นน้อง</label>
+            <input className="pl-input" value={childNickname} onChange={(e) => setChildNickname(e.target.value)} placeholder="เช่น น้องพีท" />
           </div>
           <div>
             <label className="pl-label">เบอร์โทร *</label>
             <input className="pl-input" required type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="0812345678" />
+          </div>
+          <div>
+            <label className="pl-label">เบอร์สำรอง</label>
+            <input className="pl-input" type="tel" value={phoneBackup} onChange={(e) => setPhoneBackup(e.target.value)} placeholder="0812345678 (ถ้ามี)" />
+          </div>
+          <div>
+            <label className="pl-label">อายุน้อง</label>
+            <input className="pl-input" type="number" min={0} max={18} value={childAge} onChange={(e) => setChildAge(e.target.value)} placeholder="เช่น 5" />
           </div>
         </div>
       </section>
@@ -139,7 +157,6 @@ export function PublicBookingForm({ branchId, branchSlug, packages }: { branchId
       {pkg && (
         <div className="pl-card pl-card-accent" style={{
           display: "flex", justifyContent: "space-between", alignItems: "center",
-          position: "sticky", bottom: 16,
           boxShadow: "var(--pl-shadow-3)",
         }}>
           <div>

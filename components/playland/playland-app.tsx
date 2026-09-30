@@ -96,6 +96,9 @@ export interface PlaylandBookingVM {
   code: string;
   customerName: string;
   customerPhone: string;
+  customerPhoneBackup?: string | null;
+  childNickname?: string | null;
+  childAge?: number | null;
   slotTime: string; // formatted HH:mm
   slotDate: string; // formatted
   pkgName: string;
@@ -1047,6 +1050,9 @@ export default function PlaylandApp(props: Props) {
   const [bkForm, setBkForm] = useState(false);
   const [bkName, setBkName] = useState("");
   const [bkPhone, setBkPhone] = useState("");
+  const [bkPhoneBackup, setBkPhoneBackup] = useState("");
+  const [bkNickname, setBkNickname] = useState("");
+  const [bkAge, setBkAge] = useState("");
   const [bkPkg, setBkPkg] = useState<string | null>(null);
   const [bkDate, setBkDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [bkHour, setBkHour] = useState(14);
@@ -1066,6 +1072,9 @@ export default function PlaylandApp(props: Props) {
         packageId: pkgId,
         customerName: bkName.trim(),
         customerPhone: bkPhone.trim(),
+        customerPhoneBackup: bkPhoneBackup.trim() || undefined,
+        childNickname: bkNickname.trim() || undefined,
+        childAge: bkAge.trim() ? Number(bkAge) : undefined,
         partySize: bkParty,
         slotDate: bkDate,
         slotHour: bkHour,
@@ -1073,7 +1082,7 @@ export default function PlaylandApp(props: Props) {
       });
       if (res.ok) {
         showToast("จองสำเร็จ " + res.data.bookingCode);
-        setBkForm(false); setBkName(""); setBkPhone(""); setBkParty(2);
+        setBkForm(false); setBkName(""); setBkPhone(""); setBkPhoneBackup(""); setBkNickname(""); setBkAge(""); setBkParty(2);
         router.refresh();
       } else showToast(res.error);
     } catch { showToast("จองไม่สำเร็จ"); }
@@ -2152,9 +2161,12 @@ export default function PlaylandApp(props: Props) {
               {bkForm && (
                 <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "22px 24px", marginBottom: 20 }}>
                   <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 19, marginBottom: 14 }}>จองใหม่ (walk-up / โทรจอง)</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
-                    <div><div style={{ fontSize: 13, color: "#8a7f70", marginBottom: 6 }}>ชื่อลูกค้า *</div><input value={bkName} onChange={(e) => setBkName(e.target.value)} placeholder="ชื่อ" style={inputStyle} /></div>
+                  <div className="pl-grid-2e" style={{ gap: 14, marginBottom: 14 }}>
+                    <div><div style={{ fontSize: 13, color: "#8a7f70", marginBottom: 6 }}>ชื่อ-นามสกุลผู้ปกครอง (ชื่อจริง) *</div><input value={bkName} onChange={(e) => setBkName(e.target.value)} placeholder="ชื่อ" style={inputStyle} /></div>
+                    <div><div style={{ fontSize: 13, color: "#8a7f70", marginBottom: 6 }}>ชื่อเล่นน้อง</div><input value={bkNickname} onChange={(e) => setBkNickname(e.target.value)} placeholder="เช่น น้องพีท" style={inputStyle} /></div>
                     <div><div style={{ fontSize: 13, color: "#8a7f70", marginBottom: 6 }}>เบอร์โทร</div><input value={bkPhone} onChange={(e) => setBkPhone(e.target.value)} placeholder="0812345678" inputMode="tel" style={inputStyle} /></div>
+                    <div><div style={{ fontSize: 13, color: "#8a7f70", marginBottom: 6 }}>เบอร์สำรอง</div><input value={bkPhoneBackup} onChange={(e) => setBkPhoneBackup(e.target.value)} placeholder="0812345678 (ถ้ามี)" inputMode="tel" style={inputStyle} /></div>
+                    <div><div style={{ fontSize: 13, color: "#8a7f70", marginBottom: 6 }}>อายุน้อง</div><input value={bkAge} onChange={(e) => setBkAge(e.target.value)} placeholder="เช่น 5" inputMode="numeric" style={inputStyle} /></div>
                   </div>
                   <div style={{ marginBottom: 14 }}>
                     <div style={{ fontSize: 13, color: "#8a7f70", marginBottom: 6 }}>แพ็กเกจ</div>
@@ -2175,8 +2187,19 @@ export default function PlaylandApp(props: Props) {
               )}
 
               {props.branchSlug && (
-                <div style={{ background: "#eaf3f6", color: "#2D6CB1", borderRadius: 12, padding: "12px 16px", fontSize: 14, marginBottom: 18 }}>
-                  ลิงก์จองสาธารณะ: <strong>/p/playland/{props.branchSlug}/book</strong> — ส่งให้ลูกค้าจองเองได้
+                <div style={{ background: "#eaf3f6", color: "#2D6CB1", borderRadius: 12, padding: "12px 16px", fontSize: 14, marginBottom: 18, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <span>
+                    ลิงก์จองสาธารณะ: <strong>{`https://pooilgroup.com/p/playland/${props.branchSlug}/book`}</strong> — ส่งให้ลูกค้าจองเองได้
+                  </span>
+                  <span
+                    onClick={() => {
+                      navigator.clipboard?.writeText(`https://pooilgroup.com/p/playland/${props.branchSlug}/book`);
+                      showToast("คัดลอกลิงก์แล้ว");
+                    }}
+                    style={{ cursor: "pointer", background: "#2D6CB1", color: "#fff", fontSize: 13, padding: "6px 12px", borderRadius: 8, whiteSpace: "nowrap" }}
+                  >
+                    คัดลอกลิงก์
+                  </span>
                 </div>
               )}
 
@@ -2190,8 +2213,13 @@ export default function PlaylandApp(props: Props) {
                     </div>
                     <div style={{ width: 1, height: 36, background: "#f2ebdd" }} />
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 500, fontSize: 17 }}>{b.customerName}</div>
-                      <div style={{ fontSize: 13, color: "#8a7f70" }}>{b.customerPhone} · {b.pkgName} · {b.code}</div>
+                      <div style={{ fontWeight: 500, fontSize: 17 }}>
+                        {b.customerName}
+                        {b.childNickname && <span style={{ color: "#2D6CB1" }}> · น้อง{b.childNickname}{b.childAge != null ? ` (${b.childAge} ขวบ)` : ""}</span>}
+                      </div>
+                      <div style={{ fontSize: 13, color: "#8a7f70" }}>
+                        {b.customerPhone}{b.customerPhoneBackup ? ` / สำรอง ${b.customerPhoneBackup}` : ""} · {b.pkgName} · {b.code}
+                      </div>
                     </div>
                     <div style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: 17, marginRight: 6 }}>฿{b.amount.toLocaleString()}</div>
                     {bookingChip(b.status)}

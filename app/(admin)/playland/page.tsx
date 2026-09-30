@@ -180,18 +180,24 @@ export default async function PlaylandPage({
     mascot: MASCOTS3[i % 3],
   }));
 
-  const bookingsVM: PlaylandBookingVM[] = todayBookings.map((b) => ({
-    id: b.id,
-    code: b.bookingCode,
-    customerName: b.customerName,
-    customerPhone: b.customerPhone,
-    slotTime: new Date(b.slotStart).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }),
-    slotDate: new Date(b.slotStart).toLocaleDateString("th-TH"),
-    pkgName: b.package?.name ?? "—",
-    partySize: b.partySize,
-    amount: Math.round(b.amountCents / 100),
-    status: b.status,
-  }));
+  const bookingsVM: PlaylandBookingVM[] = todayBookings.map((b) => {
+    const meta = b.metadata && typeof b.metadata === "object" ? (b.metadata as Record<string, unknown>) : null;
+    return {
+      id: b.id,
+      code: b.bookingCode,
+      customerName: b.customerName,
+      customerPhone: b.customerPhone,
+      customerPhoneBackup: typeof meta?.customerPhoneBackup === "string" ? meta.customerPhoneBackup : null,
+      childNickname: typeof meta?.childNickname === "string" ? meta.childNickname : null,
+      childAge: typeof meta?.childAge === "number" ? meta.childAge : null,
+      slotTime: new Date(b.slotStart).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }),
+      slotDate: new Date(b.slotStart).toLocaleDateString("th-TH"),
+      pkgName: b.package?.name ?? "—",
+      partySize: b.partySize,
+      amount: Math.round(b.amountCents / 100),
+      status: b.status,
+    };
+  });
 
   const revenue = Math.round(stats.totalRevenueCents / 100);
   const statsVM: PlaylandStats = {

@@ -974,6 +974,9 @@ export interface CreateBookingInput {
   packageId: string;
   customerName: string;
   customerPhone: string;
+  customerPhoneBackup?: string;
+  childNickname?: string;
+  childAge?: number;
   partySize: number;
   /** YYYY-MM-DD (local) */
   slotDate: string;
@@ -990,6 +993,8 @@ export async function createBooking(
   if (!(await verifyBranchAssignment(input.branchId, session.user.org_id, session.user.id, session.user.role))) return err("คุณไม่ได้รับมอบหมายให้ทำงานสาขานี้");
   if (!input.customerName.trim()) return err("กรอกชื่อลูกค้า");
   if (!isValidThaiPhone(input.customerPhone)) return err("เบอร์โทรไม่ถูกต้อง (ใช้ 9-10 หลัก เริ่มต้น 0)");
+  if (input.customerPhoneBackup && !isValidThaiPhone(input.customerPhoneBackup)) return err("เบอร์สำรองไม่ถูกต้อง");
+  if (input.childAge !== undefined && (input.childAge < 0 || input.childAge > 18)) return err("อายุไม่ถูกต้อง");
   if (input.partySize < 1 || input.partySize > 20) return err("จำนวนคน 1-20");
   if (input.slotHour < 0 || input.slotHour > 23) return err("เวลาไม่ถูกต้อง");
 
@@ -1004,6 +1009,11 @@ export async function createBooking(
 
   const slotEnd = new Date(slotStart.getTime() + (pkg.minutes ?? 60) * 60_000);
   const amount = pkg.price * input.partySize;
+
+  const metadata: Record<string, string | number> = {};
+  if (input.customerPhoneBackup) metadata.customerPhoneBackup = input.customerPhoneBackup;
+  if (input.childNickname) metadata.childNickname = input.childNickname;
+  if (input.childAge !== undefined) metadata.childAge = input.childAge;
 
   const booking = await prisma.playlandBooking.create({
     data: {
@@ -1021,6 +1031,7 @@ export async function createBooking(
       paymentStatus: "pending",
       status: "PENDING",
       expiresAt: new Date(Date.now() + 24 * 60 * 60_000),
+      metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
     },
   });
 
