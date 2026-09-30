@@ -200,6 +200,13 @@ export function SignaturePlacementEditor({
   // ID of the placement awaiting delete-confirmation. null = no dialog open.
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [deletingBusy, setDeletingBusy] = useState(false);
+  // PDF viewer retry — react-pdf's <Document> gives no built-in retry, so we
+  // key-remount it to force a fresh fetch. The `error` render prop below
+  // replaces react-pdf's default fallback (a bare, unhelpful English string)
+  // with a Thai message + this retry button — see lib/docuflow/pdfjs-config.ts
+  // for the underlying CSP bug that was causing the failure it was masking
+  // (CEO click-report 2026-09-30).
+  const [pdfRetryKey, setPdfRetryKey] = useState(0);
 
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const [overlaySize, setOverlaySize] = useState<{
@@ -557,6 +564,7 @@ export function SignaturePlacementEditor({
                 style={{ maxWidth: 720 }}
               >
                 <ReactPdfDocument
+                  key={pdfRetryKey}
                   file={pdfUrl}
                   onLoadSuccess={({ numPages }: { numPages: number }) =>
                     setPageCount(numPages)
@@ -566,6 +574,26 @@ export function SignaturePlacementEditor({
                     toast.error("เปิดไฟล์ PDF ไม่สำเร็จ");
                   }}
                   loading={<PdfSkeleton />}
+                  error={
+                    <div className="w-full min-h-[320px] flex flex-col items-center justify-center gap-3 bg-zinc-50 rounded-xl border border-zinc-200 px-6 py-10 text-center">
+                      <p className="text-sm font-medium text-zinc-700">
+                        เปิดไฟล์ PDF ไม่สำเร็จ
+                      </p>
+                      <p className="text-xs text-zinc-500 max-w-sm">
+                        อาจเป็นเพราะอินเทอร์เน็ตไม่เสถียร หรือไฟล์โหลดไม่ทัน
+                        ลองกดปุ่มด้านล่างเพื่อโหลดใหม่อีกครั้ง
+                        ถ้ายังไม่สำเร็จ ให้แจ้งทีมงาน
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPdfRetryKey((k) => k + 1)}
+                      >
+                        <RotateCcw className="size-4" />
+                        ลองโหลดใหม่
+                      </Button>
+                    </div>
+                  }
                 >
                   <div className="relative">
                     <ReactPdfPage

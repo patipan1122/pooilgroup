@@ -255,6 +255,18 @@ export default async function DocumentsListPage({
               <Sparkles size={15} />
               ถาม AI
             </DfButton>
+            {/* CEO click-report item 4 (2026-09-30): "ตั้งค่าประเภทเอกสาร" was
+                only reachable by scrolling to the bottom of the category grid
+                below, then landing on the settings HUB (an extra hop before
+                reaching the actual document-types settings page). This puts
+                a direct shortcut in the toolbar, visible without scrolling,
+                only in the ตามประเภท (category) view where it's relevant. */}
+            {adminTier && view === "category" ? (
+              <DfButton href="/docuflow/settings/document-types" variant="ghost">
+                <Settings size={15} />
+                ตั้งค่าประเภทเอกสาร
+              </DfButton>
+            ) : null}
             {adminTier ? (
               <DfButton
                 href="/docuflow/documents/upload/template"
@@ -337,7 +349,7 @@ export default async function DocumentsListPage({
             ))}
             {adminTier && (
               <Link
-                href="/docuflow/settings"
+                href="/docuflow/settings/document-types"
                 style={{
                   padding: 16,
                   borderRadius: 18,

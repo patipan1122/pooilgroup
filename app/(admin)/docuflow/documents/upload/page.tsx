@@ -11,6 +11,7 @@ import { prisma } from "@/lib/prisma";
 import { BUSINESS_TYPE_LIST } from "@/constants/business-types";
 import { listDocumentTypesForUpload } from "@/lib/docuflow/document-types";
 import { listDocumentGroups } from "@/lib/docuflow/document-groups";
+import { loadDocumentTags } from "@/lib/docuflow/data";
 import { UploadForm } from "@/components/docuflow/upload-form";
 import {
   DfButton,
@@ -33,7 +34,7 @@ export default async function DocumentUploadPage({ searchParams }: PageProps) {
   const orgId = session.user.org_id;
   const { businessType } = await searchParams;
 
-  const [companies, branches, users, documentTypes, documentGroups] =
+  const [companies, branches, users, documentTypes, documentGroups, availableTags] =
     await Promise.all([
       prisma.company.findMany({
         where: { orgId, isActive: true },
@@ -58,6 +59,7 @@ export default async function DocumentUploadPage({ searchParams }: PageProps) {
       }),
       listDocumentTypesForUpload(orgId),
       listDocumentGroups(orgId),
+      loadDocumentTags(orgId),
     ]);
 
   const businessTypes = BUSINESS_TYPE_LIST.map((b) => ({
@@ -211,6 +213,7 @@ export default async function DocumentUploadPage({ searchParams }: PageProps) {
               businessTypes={businessTypes}
               documentTypes={documentTypes}
               documentGroups={documentGroups}
+              availableTags={availableTags}
               orgId={orgId}
               defaultBusinessType={businessType}
             />

@@ -18,7 +18,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
@@ -84,6 +84,11 @@ export function SignerDocumentPreview({
     currentPlacement?.pageNumber ?? 1,
   );
   const [pageCount, setPageCount] = useState<number | null>(null);
+  // See signature-placement-editor.tsx for why this key-remount retry
+  // pattern exists — react-pdf gives no built-in retry, and its default
+  // error fallback is a bare English string with no next step for a
+  // non-technical signer.
+  const [pdfRetryKey, setPdfRetryKey] = useState(0);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const [overlaySize, setOverlaySize] = useState<{
     width: number;
@@ -150,6 +155,7 @@ export function SignerDocumentPreview({
           style={{ maxWidth: 720 }}
         >
           <ReactPdfDocument
+            key={pdfRetryKey}
             file={pdfUrl}
             onLoadSuccess={({ numPages }: { numPages: number }) =>
               setPageCount(numPages)
@@ -159,6 +165,25 @@ export function SignerDocumentPreview({
               toast.error("เปิดไฟล์ PDF ไม่สำเร็จ");
             }}
             loading={<PdfSkeleton />}
+            error={
+              <div className="w-full min-h-[320px] flex flex-col items-center justify-center gap-3 bg-zinc-50 rounded-xl px-6 py-10 text-center">
+                <p className="text-sm font-medium text-zinc-700">
+                  เปิดไฟล์ PDF ไม่สำเร็จ
+                </p>
+                <p className="text-xs text-zinc-500 max-w-sm">
+                  อาจเป็นเพราะอินเทอร์เน็ตไม่เสถียร ลองกดปุ่มด้านล่างเพื่อโหลดใหม่
+                  ถ้ายังไม่สำเร็จ ให้แจ้งผู้ส่งเอกสาร
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPdfRetryKey((k) => k + 1)}
+                >
+                  <RotateCcw className="size-4" />
+                  ลองโหลดใหม่
+                </Button>
+              </div>
+            }
           >
             <div className="relative">
               <ReactPdfPage

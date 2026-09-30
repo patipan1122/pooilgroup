@@ -9,6 +9,7 @@
 // ────────────────────────────────────────────────────────────────────
 
 import { useState, useTransition, useRef, useMemo, useEffect } from "react";
+import { flushSync } from "react-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -88,6 +89,8 @@ interface Props {
   businessTypes: BizType[];
   documentTypes: DocumentTypeOption[];
   documentGroups: DocumentGroupRecord[];
+  /** Distinct tags already used org-wide — powers the tag combobox suggestions. */
+  availableTags: string[];
   orgId: string;
   /** Prefill from ?businessType=X (e.g. linked from the checklist page). */
   defaultBusinessType?: string;
@@ -229,6 +232,7 @@ export function UploadForm({
   businessTypes,
   documentTypes,
   documentGroups,
+  availableTags,
   orgId,
   defaultBusinessType,
 }: Props) {
@@ -246,6 +250,12 @@ export function UploadForm({
   const [completedDocs, setCompletedDocs] = useState<CompletedDoc[]>([]);
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
+  // Tag combobox — CEO click-report item 3: "ควรจะเป็นแบบ dropdown เลือกเอา
+  // จะได้ดูว่าอันไหนเคยสร้างแล้ว แต่ถ้ายังไม่มีแท็กก็สามารถกดสร้างแท็กได้เลย".
+  // Suggestions come from `availableTags` (org-wide distinct tags, server
+  // prop via loadDocumentTags) but free-text Enter/comma still works — this
+  // is suggest-while-typing, not a forced select-from-list.
+  const [tagOpen, setTagOpen] = useState(false);
   const fileNameSyncRef = useRef(false);
 
   // Local copy of `documentTypes` so the "+ สร้างใหม่" quick-create dialog
@@ -258,6 +268,15 @@ export function UploadForm({
   useEffect(() => {
     setLocalDocumentTypes(documentTypes);
   }, [documentTypes]);
+
+  // Same pattern as localDocumentTypes above, for the "+ สร้างใหม่" quick-create
+  // next to the กลุ่มเอกสาร (DocumentGroup) dropdown — CEO click-report item 2.
+  const [localDocumentGroups, setLocalDocumentGroups] =
+    useState<DocumentGroupRecord[]>(documentGroups);
+  const [quickCreateGroupOpen, setQuickCreateGroupOpen] = useState(false);
+  useEffect(() => {
+    setLocalDocumentGroups(documentGroups);
+  }, [documentGroups]);
 
   const {
     register,
@@ -353,6 +372,14 @@ export function UploadForm({
       .slice(0, 40);
   }, [q, allScopes]);
 
+  const tagQuery = tagInput.trim().toLowerCase();
+  const filteredTagSuggestions = useMemo(() => {
+    const selected = new Set(tags.map((t) => t.toLowerCase()));
+    const pool = availableTags.filter((t) => !selected.has(t.toLowerCase()));
+    if (!tagQuery) return pool.slice(0, 20);
+    return pool.filter((t) => t.toLowerCase().includes(tagQuery)).slice(0, 20);
+  }, [tagQuery, availableTags, tags]);
+
   // Group document types by business type for the <optgroup> select below —
   // makes a long list scannable instead of one flat alphabetical dump.
   const groupedDocumentTypes = useMemo(() => {
@@ -403,10 +430,54 @@ export function UploadForm({
       ...data.documentType,
       isCanonical: false,
     };
-    setLocalDocumentTypes((prev) => [...prev, created]);
+    // flushSync forces the new <option> to actually commit to the DOM before
+    // setValue runs. Without it, this is a real race: setValue() for an
+    // uncontrolled <select> (registered via {...register(...)}, no `value`
+    // prop) writes straight to the DOM element synchronously via ref, but
+    // React's state update from setLocalDocumentTypes hasn't committed the
+    // new <option> yet at that point — so the assignment silently no-ops
+    // (native <select>.value ignores a value with no matching <option>) and
+    // the dropdown is left on "— ไม่ระบุ —" even though the toast says
+    // success and the type genuinely was created. Found 2026-09-30 while
+    // building the sibling DocumentGroup quick-create (item 2) — confirmed
+    // via repeated live headless runs (3/3 reproduced, not flaky) that this
+    // ALSO affects this already-shipped document-type dialog, despite the
+    // 2026-09-25 postmortem's live-test having appeared to pass (likely a
+    // lucky first-run timing fluke, not a real pass — see postmortems/).
+    flushSync(() => {
+      setLocalDocumentTypes((prev) => [...prev, created]);
+    });
     setValue("documentTypeId", data.documentType.id);
     setQuickCreateOpen(false);
     toast.success(`สร้างประเภทเอกสาร "${created.name}" แล้ว`);
+  }
+
+  // Mirrors handleQuickCreateDocType above — same "create then auto-select"
+  // UX, but posting to /api/docuflow/document-groups (name + description
+  // only, no company/UUID field so the strict-UUID bug class from the
+  // doc-type quick-create postmortem doesn't apply here).
+  async function handleQuickCreateGroup(input: { name: string }) {
+    const res = await fetch("/api/docuflow/document-groups", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: input.name }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || "สร้างกลุ่มเอกสารไม่สำเร็จ");
+    }
+    const data = (await res.json()) as { documentGroup: DocumentGroupRecord };
+    // flushSync — see the matching comment in handleQuickCreateDocType above
+    // for why this is required (real race, not a timing hack): setValue()
+    // for an uncontrolled <select> writes to the DOM synchronously, before
+    // React would otherwise have committed the new <option> from the state
+    // update below.
+    flushSync(() => {
+      setLocalDocumentGroups((prev) => [...prev, data.documentGroup]);
+    });
+    setValue("documentGroupId", data.documentGroup.id);
+    setQuickCreateGroupOpen(false);
+    toast.success(`สร้างกลุ่มเอกสาร "${data.documentGroup.name}" แล้ว`);
   }
 
   function addScope(s: Scope) {
@@ -437,6 +508,18 @@ export function UploadForm({
 
   function removeTag(tag: string) {
     setTags((prev) => prev.filter((t) => t !== tag));
+  }
+
+  /** Pick an existing tag from the suggestion dropdown — same add-path as
+   * addTagFromInput (dedupe + cap), just skipping the trim/# handling since
+   * suggestions are already clean values from the DB. */
+  function selectTag(tag: string) {
+    setTags((prev) => {
+      if (prev.some((t) => t.toLowerCase() === tag.toLowerCase())) return prev;
+      return [...prev, tag.slice(0, 40)];
+    });
+    setTagInput("");
+    setTagOpen(false);
   }
 
   function cleanFileName(f: File) {
@@ -470,6 +553,16 @@ export function UploadForm({
     function onClick(e: MouseEvent) {
       if (!pickerRef.current) return;
       if (!pickerRef.current.contains(e.target as Node)) setScopeOpen(false);
+    }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, []);
+
+  const tagPickerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function onClick(e: MouseEvent) {
+      if (!tagPickerRef.current) return;
+      if (!tagPickerRef.current.contains(e.target as Node)) setTagOpen(false);
     }
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
@@ -1189,12 +1282,25 @@ export function UploadForm({
         onCreate={handleQuickCreateDocType}
       />
 
-      <Field
-        label="กลุ่มเอกสาร"
-        optional
-        htmlFor="documentGroupId"
-        hint="การจัดกลุ่มอีกมิติหนึ่ง นอกเหนือจากประเภทเอกสาร"
-      >
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <label
+            htmlFor="documentGroupId"
+            className="flex items-center gap-1 text-sm font-medium text-zinc-800"
+          >
+            กลุ่มเอกสาร
+            <span className="text-zinc-500 font-normal">(ไม่บังคับ)</span>
+          </label>
+          <button
+            type="button"
+            onClick={() => setQuickCreateGroupOpen(true)}
+            disabled={busy}
+            className="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-brand-600)] hover:underline disabled:opacity-50"
+          >
+            <Plus className="size-3.5" />
+            สร้างใหม่
+          </button>
+        </div>
         <select
           id="documentGroupId"
           {...register("documentGroupId")}
@@ -1202,21 +1308,30 @@ export function UploadForm({
           className="w-full rounded-lg border-2 border-zinc-200 px-3 py-2 text-sm focus:border-[var(--color-brand-500)] focus:outline-none bg-white"
         >
           <option value="">— ไม่ระบุ —</option>
-          {documentGroups.map((g) => (
+          {localDocumentGroups.map((g) => (
             <option key={g.id} value={g.id}>
               {g.name}
             </option>
           ))}
         </select>
-      </Field>
+        <p className="text-xs text-zinc-500">
+          การจัดกลุ่มอีกมิติหนึ่ง นอกเหนือจากประเภทเอกสาร
+        </p>
+      </div>
+
+      <QuickCreateDocGroupDialog
+        open={quickCreateGroupOpen}
+        onClose={() => setQuickCreateGroupOpen(false)}
+        onCreate={handleQuickCreateGroup}
+      />
 
       <Field
         label="Tag"
         optional
         htmlFor="tagInput"
-        hint="ใช้ค้นหา/กรองเอกสารภายหลัง · กด Enter หรือ , เพื่อเพิ่ม"
+        hint="เลือกจาก tag ที่เคยสร้างแล้ว หรือพิมพ์ใหม่แล้วกด Enter/, เพื่อสร้าง tag ใหม่"
       >
-        <div className="space-y-2">
+        <div className="space-y-2" ref={tagPickerRef}>
           {tags.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
               {tags.map((t) => (
@@ -1238,20 +1353,47 @@ export function UploadForm({
               ))}
             </div>
           )}
-          <Input
-            id="tagInput"
-            value={tagInput}
-            disabled={busy}
-            placeholder="พิมพ์ tag แล้วกด Enter เช่น ด่วน, ต่ออายุ"
-            onChange={(e) => setTagInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === ",") {
-                e.preventDefault();
-                addTagFromInput();
-              }
-            }}
-            onBlur={addTagFromInput}
-          />
+          <div className="relative">
+            <Input
+              id="tagInput"
+              value={tagInput}
+              disabled={busy}
+              placeholder="พิมพ์ค้นหา tag เดิม หรือพิมพ์ tag ใหม่แล้วกด Enter"
+              onChange={(e) => {
+                setTagInput(e.target.value);
+                setTagOpen(true);
+              }}
+              onFocus={() => setTagOpen(true)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === ",") {
+                  e.preventDefault();
+                  addTagFromInput();
+                }
+              }}
+              onBlur={addTagFromInput}
+            />
+            {tagOpen && filteredTagSuggestions.length > 0 && (
+              <div className="absolute left-0 right-0 top-full mt-1 rounded-xl border-2 border-zinc-200 bg-white shadow-pop z-20 max-h-56 overflow-y-auto">
+                {filteredTagSuggestions.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    // onMouseDown (not onClick) fires before the input's onBlur,
+                    // so addTagFromInput() (which would otherwise create a
+                    // duplicate free-text tag from tagInput) never runs first.
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      selectTag(t);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-zinc-50 transition-colors border-b border-zinc-50 last:border-b-0"
+                  >
+                    <span className="text-zinc-400">#</span>
+                    <span className="flex-1 truncate text-zinc-800">{t}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </Field>
 
@@ -1657,6 +1799,88 @@ function QuickCreateDocTypeDialog({
           </Button>
           <Button type="button" onClick={handleSubmit} loading={busy}>
             สร้างประเภทเอกสาร
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+/* ============================================================
+   QuickCreateDocGroupDialog — "+ สร้างใหม่" next to the กลุ่มเอกสาร
+   dropdown (CEO click-report item 2, 2026-09-30). Same shape/pattern
+   as QuickCreateDocTypeDialog above — copy, not shared code, since the
+   two dialogs' fields genuinely differ (DocumentGroup has no
+   businessType/company dimension). See the postmortem referenced at
+   the top of QuickCreateDocTypeDialog for why this MUST stay a <div>,
+   not a <form>: it renders inline inside UploadForm's own outer
+   <form>, and a nested <form> silently breaks the submit button (the
+   click falls through to the outer upload form instead).
+   ============================================================ */
+
+function QuickCreateDocGroupDialog({
+  open,
+  onClose,
+  onCreate,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCreate: (input: { name: string }) => Promise<void>;
+}) {
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  function handleClose() {
+    if (busy) return;
+    setName("");
+    onClose();
+  }
+
+  async function handleSubmit() {
+    if (!name.trim()) {
+      toast.error("ใส่ชื่อกลุ่มเอกสารก่อน");
+      return;
+    }
+    setBusy(true);
+    try {
+      await onCreate({ name: name.trim() });
+      setName("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "สร้างกลุ่มเอกสารไม่สำเร็จ");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onClose={handleClose} title="สร้างกลุ่มเอกสารใหม่">
+      {/* Deliberately a <div>, not a <form> — see QuickCreateDocTypeDialog's
+          comment above for why (nested <form> inside UploadForm's outer
+          <form> silently breaks the submit button). */}
+      <div className="space-y-4">
+        <Field label="ชื่อกลุ่มเอกสาร" required htmlFor="qcg-name">
+          <Input
+            id="qcg-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                handleSubmit();
+              }
+            }}
+            disabled={busy}
+            autoFocus
+            placeholder="เช่น เอกสารต่ออายุประจำปี"
+          />
+        </Field>
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="outline" onClick={handleClose} disabled={busy}>
+            ยกเลิก
+          </Button>
+          <Button type="button" onClick={handleSubmit} loading={busy}>
+            สร้างกลุ่มเอกสาร
           </Button>
         </div>
       </div>

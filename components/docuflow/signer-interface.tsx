@@ -127,6 +127,10 @@ export function SignerInterface({
   const [openPad, setOpenPad] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(!!placement.signedAt);
+  // See signature-placement-editor.tsx for why this key-remount retry
+  // pattern exists (react-pdf has no built-in retry; default error
+  // fallback is an unhelpful bare English string).
+  const [pdfRetryKey, setPdfRetryKey] = useState(0);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const [overlaySize, setOverlaySize] = useState<{
     width: number;
@@ -253,6 +257,7 @@ export function SignerInterface({
               style={{ maxWidth: 720 }}
             >
               <ReactPdfDocument
+                key={pdfRetryKey}
                 file={pdfUrl}
                 onLoadSuccess={({ numPages }: { numPages: number }) =>
                   setPageCount(numPages)
@@ -262,6 +267,24 @@ export function SignerInterface({
                   toast.error("เปิดไฟล์ PDF ไม่สำเร็จ");
                 }}
                 loading={<PdfSkeleton />}
+                error={
+                  <div className="w-full min-h-[320px] flex flex-col items-center justify-center gap-3 bg-zinc-50 px-6 py-10 text-center">
+                    <p className="text-sm font-medium text-zinc-700">
+                      เปิดไฟล์ PDF ไม่สำเร็จ
+                    </p>
+                    <p className="text-xs text-zinc-500 max-w-sm">
+                      อาจเป็นเพราะอินเทอร์เน็ตไม่เสถียร ลองกดปุ่มด้านล่างเพื่อโหลดใหม่
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPdfRetryKey((k) => k + 1)}
+                    >
+                      <RotateCcw className="size-4" />
+                      ลองโหลดใหม่
+                    </Button>
+                  </div>
+                }
               >
                 <div className="relative">
                   <ReactPdfPage

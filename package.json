@@ -4,9 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3100",
-    "build": "prisma generate && node scripts/check-prisma-table-map.mjs && node scripts/check-schema-applied.mjs && next build",
+    "build": "prisma generate && node scripts/check-prisma-table-map.mjs && node scripts/check-schema-applied.mjs && node scripts/check-pdfjs-worker.mjs && next build",
     "check:table-map": "node scripts/check-prisma-table-map.mjs",
     "check:schema": "node scripts/check-schema-applied.mjs",
+    "check:pdfjs-worker": "node scripts/check-pdfjs-worker.mjs",
     "postinstall": "prisma generate",
     "start": "next start -p 3100",
     "lint": "eslint",

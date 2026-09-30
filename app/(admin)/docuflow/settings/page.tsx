@@ -150,7 +150,8 @@ export default async function DocuFlowSettingsPage() {
             icon={<Building2 size={20} />}
             tone="warn"
             title="สร้างสาขา"
-            desc="เพิ่มสาขาใหม่เข้าองค์กร (หน้ากลาง ใช้ร่วมกันทุกโปรแกรม)"
+            badge="ใช้ร่วมทุกโปรแกรม"
+            desc="สาขาใหม่จะใช้ได้กับทุกโปรแกรมในองค์กร (ClawFleet, Ledger, ChairOps ฯลฯ) ไม่ใช่แค่ DocuFlow — เพราะเป็นข้อมูลโครงสร้างองค์กรกลาง"
           />
           <SettingsHubCard
             href="/users"
