@@ -136,8 +136,26 @@ export const acsAutoAdapter: ACSAdapter = {
     const employeeNumber = typeof r.employee_number === "string" ? r.employee_number
       : typeof r.employee_number === "number" ? String(r.employee_number) : null;
 
+    // Trust the device's own clock for eventAt (it's the moment the real-world
+    // scan happened, not when our webhook received it) — BUT clamp against
+    // drift. Confirmed live 2026-09-30: both devices' clocks had silently
+    // drifted ~1h ahead (no battery-backed RTC + nightly auto-reboot via
+    // `rebootTime` param), which fed a wrong checkInAt/expiresAt straight
+    // into billing (overtime fee calc) and the re-entry grace window. If the
+    // device disagrees with our server by more than a few minutes, something
+    // is wrong with ITS clock, not reality — fall back to server time.
+    const MAX_DEVICE_CLOCK_DRIFT_MS = 5 * 60_000;
+    const now = new Date();
     const timeStr = typeof r.time === "string" ? r.time : null;
-    const eventAt = timeStr ? new Date(timeStr.replace(" ", "T") + "+07:00") : new Date();
+    const deviceReportedAt = timeStr ? new Date(timeStr.replace(" ", "T") + "+07:00") : null;
+    const driftOk = deviceReportedAt && Math.abs(deviceReportedAt.getTime() - now.getTime()) <= MAX_DEVICE_CLOCK_DRIFT_MS;
+    if (deviceReportedAt && !driftOk) {
+      console.warn("[playland/acs] device clock drift too large, using server time", {
+        deviceReportedAt: deviceReportedAt.toISOString(),
+        serverNow: now.toISOString(),
+      });
+    }
+    const eventAt = driftOk ? (deviceReportedAt as Date) : now;
 
     return {
       webhookId: id,
