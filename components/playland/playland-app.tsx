@@ -1561,17 +1561,17 @@ export default function PlaylandApp(props: Props) {
                 <div style={{ maxWidth: 840, margin: "0 auto" }}>
                   <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 28, marginBottom: 6 }}>เด็กคนนี้เคยมาเล่นไหม?</div>
                   <div style={{ fontSize: 16, color: "#8a7f70", marginBottom: 26 }}>เลือกอย่างเดียวก่อน — ระบบพาไปต่อเอง</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>
-                    <div onClick={() => dispatch({ t: "set", p: { ckStep: "search" } })} style={{ cursor: "pointer", background: "#fff", border: "2px solid #2D6CB1", borderRadius: 20, padding: 30, display: "flex", alignItems: "center", gap: 22 }}>
+                  <div className="pl-grid-2e">
+                    <div onClick={() => dispatch({ t: "set", p: { ckStep: "search" } })} style={{ cursor: "pointer", background: "#fff", border: "2px solid #2D6CB1", borderRadius: 20, padding: 30, display: "flex", alignItems: "center", gap: 22, minWidth: 0 }}>
                       <div style={{ width: 64, height: 64, borderRadius: 18, background: "#eaf3f6", display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}>
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#2D6CB1" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3-3" /></svg>
                       </div>
-                      <div>
+                      <div style={{ minWidth: 0 }}>
                         <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 24 }}>เคยมาแล้ว</div>
                         <div style={{ fontSize: 15, color: "#8a7f70" }}>ค้นชื่อ / เบอร์เดิม</div>
                       </div>
                     </div>
-                    <div onClick={() => dispatch({ t: "set", p: { ckStep: "register" } })} style={{ cursor: "pointer", background: "#fff", border: "2px solid #ece5d8", borderRadius: 20, padding: 30, display: "flex", alignItems: "center", gap: 22 }}>
+                    <div onClick={() => dispatch({ t: "set", p: { ckStep: "register" } })} style={{ cursor: "pointer", background: "#fff", border: "2px solid #ece5d8", borderRadius: 20, padding: 30, display: "flex", alignItems: "center", gap: 22, minWidth: 0 }}>
                       <div style={{ width: 64, height: 64, borderRadius: 18, background: "#fdf3df", display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}>
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#F0B323" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
                       </div>
@@ -1680,17 +1680,17 @@ export default function PlaylandApp(props: Props) {
                 <div style={{ maxWidth: 840, margin: "0 auto" }}>
                   <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 26, marginBottom: 6 }}>เข้าเล่นด้วยวิธีไหน?</div>
                   <div style={{ fontSize: 15, color: "#8a7f70", marginBottom: 26 }}>{s.ckPkg.label} · ฿{s.ckPkg.price} — เลือกได้อย่างเดียว</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>
-                    <div onClick={() => dispatch({ t: "set", p: { ckMethod: "wristband", ckStep: "pay" } })} style={{ cursor: "pointer", background: "#fff", border: "2px solid #2D6CB1", borderRadius: 20, padding: 30, display: "flex", alignItems: "center", gap: 22 }}>
+                  <div className="pl-grid-2e">
+                    <div onClick={() => dispatch({ t: "set", p: { ckMethod: "wristband", ckStep: "pay" } })} style={{ cursor: "pointer", background: "#fff", border: "2px solid #2D6CB1", borderRadius: 20, padding: 30, display: "flex", alignItems: "center", gap: 22, minWidth: 0 }}>
                       <div style={{ width: 64, height: 64, borderRadius: 18, background: "#eaf3f6", display: "flex", alignItems: "center", justifyContent: "center", flex: "none", fontSize: 30 }}>🎫</div>
-                      <div>
+                      <div style={{ minWidth: 0 }}>
                         <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 24 }}>สายรัดข้อมือ</div>
                         <div style={{ fontSize: 15, color: "#8a7f70" }}>พิมพ์สายรัด · สแกนที่ประตู</div>
                       </div>
                     </div>
-                    <div onClick={() => dispatch({ t: "set", p: { ckMethod: "face", ckStep: "pay" } })} style={{ cursor: "pointer", background: "#fff", border: "2px solid #ece5d8", borderRadius: 20, padding: 30, display: "flex", alignItems: "center", gap: 22 }}>
+                    <div onClick={() => dispatch({ t: "set", p: { ckMethod: "face", ckStep: "pay" } })} style={{ cursor: "pointer", background: "#fff", border: "2px solid #ece5d8", borderRadius: 20, padding: 30, display: "flex", alignItems: "center", gap: 22, minWidth: 0 }}>
                       <div style={{ width: 64, height: 64, borderRadius: 18, background: "#fdf3df", display: "flex", alignItems: "center", justifyContent: "center", flex: "none", fontSize: 30 }}>📷</div>
-                      <div>
+                      <div style={{ minWidth: 0 }}>
                         <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 24 }}>สแกนหน้า</div>
                         <div style={{ fontSize: 15, color: "#8a7f70" }}>ถ่ายรูปยืนยันตัวตน · ไม่ต้องใช้สายรัด</div>
                       </div>
