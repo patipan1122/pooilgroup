@@ -2,7 +2,7 @@
 // User-friendly: กดย่อ-ขยายตามประเภท เห็นจำนวนคนแต่ละตำแหน่ง เชิญในที่เดียว
 
 import Link from "next/link";
-import { UserPlus, Inbox, Upload, Download, Building2 } from "lucide-react";
+import { UserPlus, Inbox, Upload, Download, Building2, ShieldCheck } from "lucide-react";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { Section } from "@/components/ui/section";
@@ -278,6 +278,13 @@ export default async function UsersPage() {
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            <Link
+              href="/users/permissions"
+              className="inline-flex items-center gap-2 px-4 h-11 rounded-xl border-2 border-zinc-200 bg-white font-bold hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/40 transition-colors text-sm"
+            >
+              <ShieldCheck className="size-4" />
+              ภาพรวมสิทธิ์
+            </Link>
             <Link
               href="/users/requests"
               className="inline-flex items-center gap-2 px-4 h-11 rounded-xl border-2 border-zinc-200 bg-white font-bold hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/40 transition-colors text-sm relative"
