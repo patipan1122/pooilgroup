@@ -154,11 +154,11 @@ export default async function DocuFlowSettingsPage() {
             desc="สาขาใหม่จะใช้ได้กับทุกโปรแกรมในองค์กร (ClawFleet, Ledger, ChairOps ฯลฯ) ไม่ใช่แค่ DocuFlow — เพราะเป็นข้อมูลโครงสร้างองค์กรกลาง"
           />
           <SettingsHubCard
-            href="/users"
+            href="/docuflow/settings/users"
             icon={<Users size={20} />}
             tone="ink"
             title="ผู้ใช้งาน & สิทธิ์"
-            desc="จัดการผู้ใช้ · กำหนดสิทธิ์แอดมิน (หน้ากลางขององค์กร)"
+            desc="ดูทุกตำแหน่งใน DocuFlow · เชิญพนักงานเข้าเฉพาะโปรแกรมนี้ · ปรับตำแหน่งรายคน"
           />
           <SettingsHubCard
             href="/docuflow/settings/notifications"

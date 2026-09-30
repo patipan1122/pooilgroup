@@ -59,7 +59,16 @@ export default async function PermissionsOverviewPage() {
     await Promise.all([
       admin
         .from("user_modules")
-        .select("user_id, module_name, role, users(name, role, is_active)")
+        // `users` explicit FK hint (!user_modules_user_id_fkey) is REQUIRED —
+        // user_modules has TWO foreign keys into users (user_id AND
+        // granted_by), so a plain `users(...)` embed is ambiguous and
+        // PostgREST rejects it with PGRST201 (data=null, unchecked here —
+        // was silently blanking this entire page's member/admin counts and
+        // names for EVERY program since it shipped). Found live 2026-09-30
+        // while building /docuflow/settings/users, which had the same bug.
+        .select(
+          "user_id, module_name, role, users!user_modules_user_id_fkey(name, role, is_active)",
+        )
         .eq("org_id", orgId)
         .eq("is_active", true),
       admin
