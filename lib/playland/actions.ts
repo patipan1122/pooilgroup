@@ -16,6 +16,8 @@ import { getAdapter } from "./acs/mock-adapter";
 import { verifyBranchOrg, verifyBranchAssignment, verifyMemberOrg, verifyPackageOrg, verifyBookingOrg, isValidThaiPhone, decodePhotoDataUrl } from "./guards";
 import { requireOpenShift } from "./wristband";
 import { readOvertimeRate, overtimeFromExpiry } from "./overtime";
+import { putObject } from "@/lib/r2/upload";
+import crypto from "node:crypto";
 
 type ActionResult<T = void> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -52,6 +54,15 @@ async function syncMemberFaceToDevices(orgId: string, branchId: string, memberId
   const hasRealDevice = devices.some((d) => d.vendor !== "mock");
   let assignedFaceId: string | null = null;
   const buf = Buffer.from(photoDataUrl.replace(/^data:image\/\w+;base64,/, ""), "base64");
+  // Persist to R2 first — real (acs-auto) devices sync asynchronously via the
+  // shop-floor agent, so this request's in-memory buffer won't exist anymore
+  // by the time that happens. Mirrors register-face/route.ts. Only needed
+  // when there's a real device to queue for; skip for mock-only branches.
+  if (hasRealDevice) {
+    const photoKey = `playland/faces/${orgId}/${memberId}/${crypto.randomUUID()}.jpg`;
+    await putObject(photoKey, buf, "image/jpeg");
+    await prisma.playlandMember.update({ where: { id: memberId }, data: { photoR2Path: photoKey } });
+  }
   for (const device of devices) {
     if (device.vendor === "mock") {
       if (hasRealDevice) continue;
