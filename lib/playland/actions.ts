@@ -42,6 +42,61 @@ export interface CreateMemberInput {
   consentGiven: boolean;
 }
 
+// Push a captured face photo to every device configured for this branch.
+// Real hardware's memberId-as-faceId convention always wins over a mock
+// device's fabricated id — mirrors app/api/playland/public/register-face/route.ts.
+// Shared by createMember (new-member registration with photo) and
+// addMemberFacePhoto (existing member adding a face at checkout — Wave 2).
+async function syncMemberFaceToDevices(orgId: string, branchId: string, memberId: string, photoDataUrl: string): Promise<string | null> {
+  const devices = await prisma.playlandDevice.findMany({ where: { branchId, status: { not: "DISABLED" } } });
+  const hasRealDevice = devices.some((d) => d.vendor !== "mock");
+  let assignedFaceId: string | null = null;
+  const buf = Buffer.from(photoDataUrl.replace(/^data:image\/\w+;base64,/, ""), "base64");
+  for (const device of devices) {
+    if (device.vendor === "mock") {
+      if (hasRealDevice) continue;
+      try {
+        const adapter = getAdapter(device.vendor);
+        const res = await adapter.registerFace(
+          { memberId, photo: buf },
+          {
+            id: device.id,
+            deviceId: device.deviceId,
+            baseUrl: device.baseUrl,
+            protocol: device.protocol as "http" | "tcp",
+            modelVersion: device.modelVersion as "B" | "C",
+            webhookSecret: device.webhookSecret ?? "",
+          },
+        );
+        assignedFaceId = res.faceId;
+        await prisma.playlandFaceSync.upsert({
+          where: { deviceId_memberId: { deviceId: device.id, memberId } },
+          create: { orgId, deviceId: device.id, memberId, status: "SYNCED", syncedAt: new Date() },
+          update: { status: "SYNCED", syncedAt: new Date() },
+        });
+      } catch (e) {
+        console.warn("[playland] mock adapter error", e);
+      }
+      continue;
+    }
+    // Real hardware (acs-auto): this server can't reach the device's private
+    // LAN IP directly. Queue it — the shop-floor agent polls PlaylandFaceSync
+    // and pushes the face over the device's local HTTP API.
+    await prisma.playlandFaceSync.upsert({
+      where: { deviceId_memberId: { deviceId: device.id, memberId } },
+      create: { orgId, deviceId: device.id, memberId, status: "PENDING" },
+      update: { status: "PENDING", attempts: 0, errorMessage: null },
+    });
+    assignedFaceId = memberId;
+  }
+  if (!assignedFaceId) {
+    // No devices configured for this branch yet — mock-mode fallback so the flow still works
+    assignedFaceId = `MOCK-${memberId.replace(/-/g, "").slice(0, 12).toUpperCase()}`;
+  }
+  await prisma.playlandMember.update({ where: { id: memberId }, data: { faceId: assignedFaceId } });
+  return assignedFaceId;
+}
+
 export async function createMember(input: CreateMemberInput): Promise<ActionResult<{ memberId: string; faceId: string | null }>> {
   const session = await requireSession();
   if (!canPlaylandCashier(session.user.role)) return err("ไม่มีสิทธิ์ลงทะเบียนสมาชิก");
@@ -99,62 +154,11 @@ export async function createMember(input: CreateMemberInput): Promise<ActionResu
     });
   }
 
-  // Trigger face sync to device.
-  // Real hardware's memberId-as-faceId convention always wins over a mock
-  // device's fabricated id — mirrors app/api/playland/public/register-face/route.ts.
-  // (Was previously: unconditionally create a PENDING row per device, THEN try a
-  // synchronous direct call to devices[0] regardless of vendor — for real acs-auto
-  // hardware that direct call always fails (Vercel can't reach a private LAN IP),
-  // the catch just logged a warning, and faceId was NEVER set — every counter
-  // registration with a photo at a branch with real hardware got a permanently
-  // null faceId, with zero visible error. [[playland-auditbigteam-track-a-5-p0-2026-09-29]])
-  const devices = await prisma.playlandDevice.findMany({ where: { branchId: input.branchId, status: { not: "DISABLED" } } });
-  const hasRealDevice = devices.some((d) => d.vendor !== "mock");
+  // Trigger face sync to device (see syncMemberFaceToDevices above for why this
+  // is queued rather than called synchronously — [[playland-auditbigteam-track-a-5-p0-2026-09-29]])
   let assignedFaceId: string | null = null;
   if (input.photoDataUrl) {
-    const buf = Buffer.from(input.photoDataUrl.replace(/^data:image\/\w+;base64,/, ""), "base64");
-    for (const device of devices) {
-      if (device.vendor === "mock") {
-        if (hasRealDevice) continue;
-        try {
-          const adapter = getAdapter(device.vendor);
-          const res = await adapter.registerFace(
-            { memberId: member.id, photo: buf },
-            {
-              id: device.id,
-              deviceId: device.deviceId,
-              baseUrl: device.baseUrl,
-              protocol: device.protocol as "http" | "tcp",
-              modelVersion: device.modelVersion as "B" | "C",
-              webhookSecret: device.webhookSecret ?? "",
-            },
-          );
-          assignedFaceId = res.faceId;
-          await prisma.playlandFaceSync.upsert({
-            where: { deviceId_memberId: { deviceId: device.id, memberId: member.id } },
-            create: { orgId: session.user.org_id, deviceId: device.id, memberId: member.id, status: "SYNCED", syncedAt: new Date() },
-            update: { status: "SYNCED", syncedAt: new Date() },
-          });
-        } catch (e) {
-          console.warn("[playland] mock adapter error", e);
-        }
-        continue;
-      }
-      // Real hardware (acs-auto): this server can't reach the device's private
-      // LAN IP directly. Queue it — the shop-floor agent polls PlaylandFaceSync
-      // and pushes the face over the device's local HTTP API.
-      await prisma.playlandFaceSync.upsert({
-        where: { deviceId_memberId: { deviceId: device.id, memberId: member.id } },
-        create: { orgId: session.user.org_id, deviceId: device.id, memberId: member.id, status: "PENDING" },
-        update: { status: "PENDING", attempts: 0, errorMessage: null },
-      });
-      assignedFaceId = member.id;
-    }
-    if (!assignedFaceId) {
-      // No devices configured for this branch yet — mock-mode fallback so the flow still works
-      assignedFaceId = `MOCK-${member.id.replace(/-/g, "").slice(0, 12).toUpperCase()}`;
-    }
-    await prisma.playlandMember.update({ where: { id: member.id }, data: { faceId: assignedFaceId } });
+    assignedFaceId = await syncMemberFaceToDevices(session.user.org_id, input.branchId, member.id, input.photoDataUrl);
   }
 
   // Audit
@@ -190,6 +194,74 @@ export async function createMember(input: CreateMemberInput): Promise<ActionResu
   revalidatePath("/playland");
   revalidatePath("/playland/members");
   return { ok: true, data: { memberId: member.id, faceId: assignedFaceId } };
+}
+
+// Add/replace a face for an EXISTING member — used at counter checkout when
+// the customer chooses "สแกนหน้า" as their entry method instead of a wristband
+// (Wave 2, D-A2 · 2026-09-30). This is a staff-witnessed capture at the counter
+// PC's own webcam, not the public unauthenticated mobile self-register flow
+// (register-face/route.ts) — CEO confirmed these are deliberately separate flows.
+export async function addMemberFacePhoto(input: { memberId: string; branchId: string; photoDataUrl: string }): Promise<ActionResult<{ faceId: string | null }>> {
+  const session = await requireSession();
+  if (!canPlaylandCashier(session.user.role)) return err("ไม่มีสิทธิ์ลงทะเบียนหน้า");
+  if (!(await verifyMemberOrg(input.memberId, session.user.org_id))) return err("สมาชิกไม่อยู่ใน org");
+  if (!(await verifyBranchOrg(input.branchId, session.user.org_id))) return err("สาขาไม่อยู่ใน org ของคุณ");
+  try { decodePhotoDataUrl(input.photoDataUrl, 2_000_000); }
+  catch (e) { return err(e instanceof Error ? e.message : "photo invalid"); }
+
+  const assignedFaceId = await syncMemberFaceToDevices(session.user.org_id, input.branchId, input.memberId, input.photoDataUrl);
+
+  await prisma.playlandAuditLog.create({
+    data: {
+      orgId: session.user.org_id,
+      branchId: input.branchId,
+      actorUserId: session.user.id,
+      actorRole: session.user.role,
+      action: "member.add_face",
+      entityType: "PlaylandMember",
+      entityId: input.memberId,
+      after: { faceId: assignedFaceId },
+      category: "general",
+    },
+  });
+
+  revalidatePath("/playland");
+  return { ok: true, data: { faceId: assignedFaceId } };
+}
+
+export interface FaceSyncStatusResult {
+  status: "SYNCED" | "PENDING" | "FAILED" | "NONE";
+  faceId: string | null;
+}
+
+// Poll target for the counter UI's "กำลังลงทะเบียนหน้า..." wait screen (Wave 2).
+// Real ACS-F606 hardware is synced by a LAN-side agent process, not instantly —
+// see PlaylandFaceSync queue — so the UI must wait for SYNCED before telling
+// staff it's safe to let the customer walk to the gate.
+export async function getMemberFaceSyncStatus(input: { memberId: string; branchId: string }): Promise<ActionResult<FaceSyncStatusResult>> {
+  const session = await requireSession();
+  if (!canPlaylandCashier(session.user.role)) return err("ไม่มีสิทธิ์");
+  if (!(await verifyMemberOrg(input.memberId, session.user.org_id))) return err("สมาชิกไม่อยู่ใน org");
+
+  const member = await prisma.playlandMember.findUnique({ where: { id: input.memberId }, select: { faceId: true } });
+  if (!member?.faceId) return { ok: true, data: { status: "NONE", faceId: null } };
+
+  const devices = await prisma.playlandDevice.findMany({
+    where: { branchId: input.branchId, status: { not: "DISABLED" }, vendor: { not: "mock" } },
+    select: { id: true },
+  });
+  if (devices.length === 0) {
+    // Mock-only/no-hardware branch — faceId was assigned synchronously, already usable
+    return { ok: true, data: { status: "SYNCED", faceId: member.faceId } };
+  }
+
+  const syncs = await prisma.playlandFaceSync.findMany({
+    where: { memberId: input.memberId, deviceId: { in: devices.map((d) => d.id) } },
+    select: { status: true },
+  });
+  if (syncs.some((s) => s.status === "FAILED")) return { ok: true, data: { status: "FAILED", faceId: member.faceId } };
+  if (syncs.length > 0 && syncs.every((s) => s.status === "SYNCED")) return { ok: true, data: { status: "SYNCED", faceId: member.faceId } };
+  return { ok: true, data: { status: "PENDING", faceId: member.faceId } };
 }
 
 // Search members from the client SPA (members screen / check-in "เคยมาแล้ว")
@@ -246,9 +318,9 @@ export async function checkInSession(input: CheckInInput): Promise<ActionResult<
   try { shiftId = await requireOpenShift(session.user.org_id, input.branchId, session.user.id); }
   catch (e) { return err(e instanceof Error ? e.message : "shift required"); }
 
-  // Prevent double check-in: if member has ACTIVE/PAUSED session, error
+  // Prevent double check-in: if member has a live (paid-and-waiting or playing) session, error
   const existing = await prisma.playlandSession.findFirst({
-    where: { orgId: session.user.org_id, memberId: input.memberId, status: { in: ["ACTIVE", "PAUSED"] } },
+    where: { orgId: session.user.org_id, memberId: input.memberId, status: { in: ["PENDING_ENTRY", "ACTIVE", "PAUSED"] } },
     select: { id: true, status: true },
   });
   if (existing) return err(`สมาชิกนี้มี session ${existing.status} อยู่แล้ว · ปิด session เดิมก่อน`);
@@ -271,8 +343,10 @@ export async function checkInSession(input: CheckInInput): Promise<ActionResult<
   if (!pkg) return err("Package ไม่พบ");
 
   const minutes = pkg.minutes ?? 0;
-  const expiresAt = minutes > 0 ? new Date(Date.now() + minutes * 60_000) : null;
 
+  // D-A2 (CEO 2026-09-29): จ่ายเงินที่เคาน์เตอร์ ≠ เริ่มนับเวลา — นาฬิกาต้องเริ่มตอนสแกนเข้าประตูจริง
+  //   (หน้า/สายรัด) เท่านั้น · session เริ่มที่ PENDING_ENTRY (ยังไม่มี checkInAt/expiresAt จริง)
+  //   แล้วให้ activatePendingSession (wristband.ts) เป็นคนเซ็ตตอนสแกนที่ประตู
   // D-A1 (CEO 2026-06-24): ค่าเข้าเล่น = บันทึกเป็น "รายการขายจริง" แยกตามวิธีจ่าย
   //   → ตอนปิดกะ สรุปเงินสดในลิ้นชักได้ตรง (เดิมค่าเข้าไม่เข้าระบบเลย)
   // ทำ session + sale + เพิ่มยอดกะ ใน transaction เดียว (atomic — เงินกับ session เกิดพร้อมกัน)
@@ -288,9 +362,7 @@ export async function checkInSession(input: CheckInInput): Promise<ActionResult<
         bookingId: input.bookingId,
         packageMinutes: minutes,
         packagePriceCents: pkg.price,
-        status: "ACTIVE",
-        checkInAt: new Date(),
-        expiresAt: expiresAt ?? undefined,
+        status: "PENDING_ENTRY",
         cashierUserId: session.user.id,
       },
     });

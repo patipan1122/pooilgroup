@@ -133,6 +133,28 @@ export async function handleFaceEvent(input: HandleFaceEventInput): Promise<Hand
     // ---- 5a. Direction IN ----
     if (event.direction === "in") {
       if (!session) {
+        // Wave 2 (D-A2 · 2026-09-30): customer paid at the counter and chose
+        // "สแกนหน้า" instead of a wristband → session sits PENDING_ENTRY until
+        // this exact gate scan starts the clock. Mirrors activatePendingSession
+        // (wristband.ts) — the wristband-gate equivalent of this same rule.
+        const pending = await tx.playlandSession.findFirst({
+          where: { orgId, branchId, memberId, status: "PENDING_ENTRY" },
+          orderBy: { createdAt: "desc" },
+        });
+        if (pending) {
+          const expiresAt = pending.packageMinutes > 0 ? new Date(event.eventAt.getTime() + pending.packageMinutes * 60_000) : null;
+          // Race-safe: succeeds only if still PENDING_ENTRY · guards against a
+          // duplicate scan resetting the clock a second time.
+          const activated = await tx.playlandSession.updateMany({
+            where: { id: pending.id, status: "PENDING_ENTRY" },
+            data: { status: "ACTIVE", checkInAt: event.eventAt, expiresAt },
+          });
+          if (activated.count === 1) {
+            const ev = await insertEvent(tx, input, memberId, pending.id);
+            return { eventId: ev.id, sessionId: pending.id, outcome: "session_created", message: "activated pending session via face scan" };
+          }
+          // Lost the race (already activated a moment earlier) — fall through to the normal alert below.
+        }
         // No open session · this is unexpected (member should have a session before entering)
         // Log as ALERT — cashier must register/check-in first
         const ev = await insertEvent(tx, input, memberId, null);

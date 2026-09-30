@@ -52,6 +52,9 @@ export async function requireOpenShift(orgId: string, branchId: string, cashierU
 export async function issueWristband(input: {
   branchId: string;
   memberId: string;
+  /** ถ้าจ่ายเงินไว้แล้วที่เคาน์เตอร์ (checkInSession สร้าง session แบบ PENDING_ENTRY ไว้ก่อน)
+   *  ผูกสายรัดนี้เข้ากับ session นั้น · scan ที่ประตูจะแค่ "เริ่มเวลา" ไม่เก็บเงินซ้ำ */
+  sessionId?: string;
 }): Promise<ActionResult<{ wristbandId: string; code: string }>> {
   const session = await requireSession();
   if (!canPlaylandCashier(session.user.role)) return err("ไม่มีสิทธิ์");
@@ -62,6 +65,14 @@ export async function issueWristband(input: {
     await requireOpenShift(session.user.org_id, input.branchId, session.user.id);
   } catch (e) {
     return err(e instanceof Error ? e.message : "shift required");
+  }
+
+  if (input.sessionId) {
+    const pending = await prisma.playlandSession.findFirst({
+      where: { id: input.sessionId, orgId: session.user.org_id, memberId: input.memberId, status: "PENDING_ENTRY" },
+      select: { id: true },
+    });
+    if (!pending) return err("session ที่จะผูกสายรัดนี้ไม่พบ หรือสถานะเปลี่ยนไปแล้ว");
   }
 
   // Retry-on-collision (extremely rare with 24^9 ≈ 2.6 trillion combos)
@@ -78,6 +89,7 @@ export async function issueWristband(input: {
       branchId: input.branchId,
       code,
       memberId: input.memberId,
+      sessionId: input.sessionId,
       status: "ISSUED",
       issuedByUserId: session.user.id,
       boundAt: new Date(),
@@ -122,7 +134,7 @@ export type WristbandLookup = {
     expiresAt: string | null;
     packageName: string;
   } | null;
-  allowedActions: Array<"ACTIVATE" | "POS_CHARGE" | "EXIT" | "REBIND">;
+  allowedActions: Array<"ACTIVATE" | "ACTIVATE_PENDING" | "POS_CHARGE" | "EXIT" | "REBIND">;
   hint: string;
 };
 
@@ -150,9 +162,15 @@ export async function lookupWristband(rawCode: string): Promise<ActionResult<Wri
   } else if (w.status === "RETURNED") {
     hint = "wristband นี้คืนแล้ว · ออก wristband ใหม่ถ้าจะใช้อีก";
   } else if (w.status === "ISSUED") {
-    // First scan at gate · activate session
-    allowedActions = ["ACTIVATE"];
-    hint = "ครั้งแรก · กดเปิด gate + เริ่มเวลาเล่น";
+    if (w.sessionId && w.session?.status === "PENDING_ENTRY") {
+      // จ่ายเงินไว้แล้วที่เคาน์เตอร์ · scan นี้แค่เริ่มเวลา ไม่เก็บเงินซ้ำ
+      allowedActions = ["ACTIVATE_PENDING"];
+      hint = "จ่ายเงินแล้วที่เคาน์เตอร์ · กดเพื่อเริ่มเวลาเล่น";
+    } else {
+      // First scan at gate · collect payment + activate session
+      allowedActions = ["ACTIVATE"];
+      hint = "ครั้งแรก · กดเปิด gate + เริ่มเวลาเล่น";
+    }
   } else if (w.status === "ACTIVE") {
     allowedActions = ["POS_CHARGE", "EXIT"];
     hint = "เลือก: ขายของให้คนนี้ · หรือ ออก (จบ session)";
@@ -216,14 +234,14 @@ export async function activateWristband(input: {
   if (!(await verifyBranchAssignment(w.branchId, session.user.org_id, session.user.id, session.user.role))) return err("คุณไม่ได้รับมอบหมายให้ทำงานสาขานี้");
 
   // Prevent double-charge: same guard checkInSession already has — a member
-  // who already has an ACTIVE/PAUSED session must close it first, not get a
-  // second paid session opened via the wristband-activate path.
+  // who already has a live (paid-and-waiting or playing) session must close/
+  // activate it first, not get a second paid session opened via this path.
   // [[playland-auditbigteam-track-a-5-p0-2026-09-29]]
   const existingSession = await prisma.playlandSession.findFirst({
-    where: { orgId: session.user.org_id, memberId: w.memberId, status: { in: ["ACTIVE", "PAUSED"] } },
+    where: { orgId: session.user.org_id, memberId: w.memberId, status: { in: ["PENDING_ENTRY", "ACTIVE", "PAUSED"] } },
     select: { id: true, status: true },
   });
-  if (existingSession) return err(`สมาชิกนี้มี session ${existingSession.status} อยู่แล้ว · ปิด session เดิมก่อน`);
+  if (existingSession) return err(`สมาชิกนี้มี session ${existingSession.status} อยู่แล้ว · ปิด/เริ่มเวลา session เดิมก่อน`);
 
   let shiftId: string;
   try {
@@ -296,6 +314,80 @@ export async function activateWristband(input: {
 
   revalidatePath("/playland");
   return { ok: true, data: { sessionId: result.id } };
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// ACTIVATE PENDING · scan at gate for a wristband ALREADY paid at the counter
+// (checkInSession created the session as PENDING_ENTRY · this scan is what
+// actually starts the clock — no payment collected here, it happened already)
+// D-A2 (CEO 2026-09-29)
+// ────────────────────────────────────────────────────────────────────────────
+export async function activatePendingSession(code: string): Promise<ActionResult<{
+  sessionId: string;
+  memberName: string;
+  memberNickname: string | null;
+  packageLabel: string;
+  packageMinutes: number;
+  packagePriceCents: number;
+}>> {
+  const session = await requireSession();
+  if (!canPlaylandCashier(session.user.role)) return err("ไม่มีสิทธิ์");
+
+  const upper = code.trim().toUpperCase();
+  const w = await prisma.playlandWristband.findFirst({
+    where: { code: upper, orgId: session.user.org_id, status: "ISSUED" },
+    include: {
+      member: { select: { name: true, nickname: true } },
+      session: { include: { package: { select: { name: true } } } },
+    },
+  });
+  if (!w) return err("wristband ไม่อยู่ในสถานะ ISSUED");
+  if (!w.sessionId || !w.session) return err('wristband นี้ยังไม่ได้จ่ายเงิน · ใช้ปุ่ม "เปิด gate · เริ่มเล่น" แทน');
+  if (w.session.status !== "PENDING_ENTRY") return err(`session สถานะ ${w.session.status} อยู่แล้ว · เริ่มเวลาซ้ำไม่ได้`);
+  if (!(await verifyBranchAssignment(w.branchId, session.user.org_id, session.user.id, session.user.role))) return err("คุณไม่ได้รับมอบหมายให้ทำงานสาขานี้");
+
+  const now = new Date();
+  const expiresAt = w.session.packageMinutes > 0 ? new Date(now.getTime() + w.session.packageMinutes * 60_000) : null;
+
+  await prisma.$transaction(async (tx) => {
+    // Race-safe: สำเร็จเฉพาะถ้ายังเป็น PENDING_ENTRY อยู่ · กันสแกนซ้อน 2 ครั้งพร้อมกันรีเซ็ตเวลาซ้ำ
+    const activated = await tx.playlandSession.updateMany({
+      where: { id: w.sessionId!, status: "PENDING_ENTRY" },
+      data: { status: "ACTIVE", checkInAt: now, expiresAt },
+    });
+    if (activated.count !== 1) throw new Error("session ถูกเริ่มเวลาไปแล้ว หรือสถานะเปลี่ยนไปแล้ว");
+    await tx.playlandWristband.update({
+      where: { id: w.id },
+      data: { status: "ACTIVE", activatedAt: now, lastScanAt: now },
+    });
+    await tx.playlandWristbandScan.create({
+      data: {
+        orgId: session.user.org_id, wristbandId: w.id, scannedByUserId: session.user.id,
+        scanType: "GATE_IN", outcome: "ok", metadata: { sessionId: w.sessionId },
+      },
+    });
+  });
+
+  await prisma.playlandAuditLog.create({
+    data: {
+      orgId: session.user.org_id, branchId: w.branchId, actorUserId: session.user.id, actorRole: session.user.role,
+      action: "session.activate_pending", entityType: "PlaylandSession", entityId: w.sessionId,
+      category: "general", after: { expiresAt },
+    },
+  });
+
+  revalidatePath("/playland");
+  return {
+    ok: true,
+    data: {
+      sessionId: w.sessionId,
+      memberName: w.member?.name ?? "—",
+      memberNickname: w.member?.nickname ?? null,
+      packageLabel: w.session.package?.name ?? "—",
+      packageMinutes: w.session.packageMinutes,
+      packagePriceCents: w.session.packagePriceCents,
+    },
+  };
 }
 
 // ────────────────────────────────────────────────────────────────────────────

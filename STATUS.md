@@ -2,6 +2,30 @@
 
 > **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-09-26 (🪑✅🚀 ChairOps อนุมัติ+ขอลบสลิปที่แนบเพิ่ม maker/checker — DEPLOYED LIVE `b1e5ea93` · 🪑✨✅ ChairOps PDF สัญญา — รูปไม่ขึ้น (สัญญาเก่าก่อนมีฟีเจอร์เซลฟี่ ไม่มีรูปติดสัญญาจริง) + จัดหน้าหนักซ้ายไม่สมส่วน + ขอข้อมูลตัวหนา — แก้ครบ: เพิ่ม fallback ใช้รูปโปรไฟล์ปัจจุบันถ้าสัญญาเก่าไม่มีรูป, จัดหัวกระดาษใหม่ให้ชื่อเรื่องอยู่กลางจริง กล่องรูปลอยมุมขวาไม่แย่งพื้นที่, ข้อมูลที่กรอกเป็นตัวหนาเส้นประ — **DEPLOYED LIVE** `3ca906c2` ทดสอบด้วย login จริง+ดาวน์โหลดจริงแล้ว · 🪑📄✅ ChairOps หน้าสัญญาฝั่งออฟฟิศ — ปุ่ม PDF ยังเป็น window.print() เดิม (ประทับ URL+เวลาเบราว์เซอร์ลงหน้ากระดาษ ไม่สวย) + สัญญาขาดบรรทัด "ทำ ณ วันที่..." เทียบกับต้นฉบับที่ CEO ส่งมา — แก้ทั้งคู่ ใช้ PDF จริงแบบเดียวกับฝั่งแม่บ้าน + เพิ่มบรรทัดวันที่ครบ **DEPLOYED LIVE** `fc2c8560`, verify ด้วย login จริง + เทียบภาพกับต้นฉบับ · 🪑🖼️✅ ChairOps หน้าโปรไฟล์แม่บ้าน (ออฟฟิศ) — รูปเซลฟี่/บัตรประชาชนกดดูรูปเต็มไม่ได้เลย (บัตร ปชช. เดิมมีแค่คำว่า "แนบแล้ว" ไม่มีรูปให้ดูด้วยซ้ำ) — เพิ่มลิงก์คลิกดูรูปเต็มทั้งคู่ **DEPLOYED LIVE** `82962209`, verify ด้วย login จริง · 🪑📄✅ ChairOps เซ็นสัญญา — ปุ่ม "พิมพ์/บันทึก PDF" กดไม่ออกใน LINE in-app browser (window.print ใช้ไม่ได้) เปลี่ยนเป็นดาวน์โหลด PDF จริง (server-side @react-pdf/renderer) + เพิ่มรูปเซลฟี่มุมขวาบนสัญญา — **DEPLOYED LIVE** `380d7012`, ทดสอบด้วยข้อมูลจริงแล้ว (เห็น log ยืนยัน user-agent มี "Line/26.15.0" จริง) · 🪑📸✅ ChairOps onboarding — นายหน้าถ่ายรูปบัตร/เซลฟี่แม่บ้านไม่ได้เลย 3 บั๊กซ้อนกัน (ปุ่มถ่ายเลยกดไม่ติด, เลือกรูปจากเครื่องถูกบังคับเป็นกล้องอย่างเดียว, อัปโหลดพังด้วย CSP บล็อกทุกครั้งไม่ใช่แค่เน็ตหลุด) — **DEPLOYED LIVE** `92a2c3ca`, รอนายหน้าลองซ้ำจริงเพราะ headless ยืนยันได้แค่ level โค้ด · 🏨🔗✅ CashHub ปุ่ม "ตรวจยอดขายโรงแรม" เด้งไปหน้าข้อมูลเก่าเดือนเมษายน 2569 แก้แล้ว — **DEPLOYED LIVE** `559864cf` · 🪑🎯🚀 ChairOps audit→bigsolvebug→upspeed→CEO-decisions ครบวงจรวันเดียว — 11 บั๊กแก้ + FIN-03 กันเงินรอตรวจ + เชื่อมสูตรปิดงวด + audit-export ใช้งานได้ — **DEPLOYED LIVE** `5bce3769` · 👥🔧 LINE login ตอนนี้บันทึกเวลาเข้าใช้แล้ว (แก้รากเสร็จสมบูรณ์ ครบทั้ง 2 ระดับ) — **DEPLOYED LIVE** `08b0fc4b` · 🏬🔴🚀 RentSpace matrix — เห็นกรอบแดงในตารางทันทีถ้ายอดสลิปไม่ตรง (ไม่ต้องกดปุ่มส่งก่อน) — **DEPLOYED LIVE** `e99805df` · 🏬🚀 RentSpace matrix — ปุ่ม "ส่งเข้าบัญชี LedgerLine" ย้ายมาไว้หน้าตารางค่าเช่า + ด่านเช็คยอดสลิปก่อนส่ง (เจอ 4 บิลจริงยอดไม่ตรง กันไว้ไม่ให้ส่ง) — **DEPLOYED LIVE** `c910c553` · 🧾🔧🚀 LedgerLine VAT อ่านผิดเป็น 0 บนบิลราคาต่อชิ้นรวม VAT — **DEPLOYED** `7de3ec1e`, backfill ใบ Dohome แล้ว, ไล่เช็ค 8 ใบทั้งระบบพบอีก 1 ใบโดนเหมือนกัน (AP 551563 — ผูกกับปัญหา GL/PV เดิมที่ค้างอยู่) รอ CEO ตัดสินใจ · 🪑📤✅ ChairOps เลือกหลายสาขาส่งเข้า reconcile ทีเดียว (จาก Pinpoint) — **DEPLOYED LIVE** `4aa39276` · 🧾⚡ LedgerLine รายจ่าย คลิกเปลี่ยนบิลรู้สึกเหมือน refresh — **DEPLOYED LIVE** `6d2b33c3`, smoke ยืนยันแล้ว · 🏬🧾 RentSpace export รายงานสรุปค่าเช่าจากหน้า matrix — **DEPLOYED LIVE** `61fb3638`, smoke ยืนยันแล้ว · 🦞🧾 ClawFleet แนบสลิปฝากเงิน+AI อ่านยอด จากหน้าประวัติเก็บเงิน — **DEPLOYED LIVE** `80b37319` · 🧾 RentSpace คลิกดูสลิป+AI ตรวจสลิปต่อรายการชำระ — **DEPLOYED LIVE** `c3ac784f`, รอ CEO ตั้งค่าบัญชีธนาคารก่อนใช้จริง · ✅ ChairOps "ควรได้"(มิเตอร์) บั๊ก zero-fallback org-wide — DEPLOYED LIVE `edbe8832`)
 
+## 🎡📷🚀 Playland — เลือกริสแบนด์/สแกนหน้าตอนจ่ายเงิน (D-A2 · Wave 1+2 · 2026-09-30)
+
+CEO ทดสอบหน้าจ่ายเงิน ("รับเงิน · pim" → พิมพ์สายรัด) พบว่านาฬิกา 30 นาทีเริ่มนับทันทีตอนกดรับเงิน ทั้งที่ลูกค้ายังไม่เดินไปสแกนอะไรที่ประตูเลย — ขอให้แยก "จ่ายเงิน" ออกจาก "เริ่มนับเวลา" (Wave 1) และเพิ่มตัวเลือก "สแกนหน้าเพื่อเข้า" คู่กับริสแบนด์เดิมที่หน้าจ่ายเงิน (Wave 2) — เลือกได้อย่างใดอย่างหนึ่ง
+
+**Wave 1 (จ่ายเงิน≠เริ่มเวลา) — เสร็จ + click-test จริงผ่านแล้ว:**
+1. เพิ่มสถานะใหม่ `PENDING_ENTRY` ใน `PlaylandSessionStatus` enum (migration `20260929_playland_pending_entry_status.sql` — applied จริงแล้วผ่าน `prisma db execute --file`)
+2. [`checkInSession`](lib/playland/actions.ts) สร้าง session เป็น `PENDING_ENTRY` แทน `ACTIVE` — เก็บเงินทันทีเหมือนเดิม แต่ยังไม่ตั้ง `checkInAt`/`expiresAt` จริง
+3. [`issueWristband`](lib/playland/wristband.ts) ผูกสายรัดที่พิมพ์เข้ากับ session ที่จ่ายเงินไว้แล้ว
+4. `activatePendingSession` — ปุ่มสแกนสายรัดที่ประตู (`/playland?screen=wristband`) กรณีจ่ายไว้แล้ว: กด "เปิด gate · เริ่มเวลา (จ่ายแล้ว)" แล้วนาฬิกาเริ่มตรงนั้นจริง (race-safe)
+5. เจอ+แก้ผลข้างเคียง 3 จุดที่ agent สแกนหาให้: `activateWristband` ลืมกัน double-charge กับ `PENDING_ENTRY`, สถิติ "ครั้งเข้าเล่นวันนี้" ที่หน้า office (`lib/playland/queries.ts` + `office/page.tsx`) นับคนจ่ายแล้วแต่ยังไม่เข้าเป็น "เข้าแล้ว" ผิด — แก้ครบ
+
+**Wave 2 (เลือกวิธีเข้าเล่น) — เสร็จใหม่วันนี้:**
+1. หน้าจ่ายเงิน (`playland-app.tsx`) เพิ่มขั้นตอนเลือก "🎫 ริสแบนด์" / "📷 สแกนหน้า" หลังเลือกแพ็กเกจ ก่อนรับเงิน
+2. เลือกสแกนหน้า → เก็บเงิน (เหมือนเดิม) → เปิดกล้องเครื่องเคาน์เตอร์ (ใช้ `FaceCapture` เดิมที่มีอยู่แล้ว) → ถ่ายรูป → ส่งเข้าคิวลงทะเบียนเครื่องสแกนจริง (`addMemberFacePhoto` action ใหม่ ใช้ `PlaylandFaceSync` queue เดิม) → หน้าจอ "กำลังลงทะเบียน..." poll (`getMemberFaceSyncStatus` action ใหม่) จนสำเร็จ ก่อนปล่อยลูกค้าเดินไปประตู — **ตามที่ CEO เลือก** (รอจนสำเร็จ ไม่ปล่อยผ่านเลย)
+3. **ปุ่มสำรอง "พิมพ์สายรัดแทน"** โผล่ถ้ารอเกิน ~45 วิ หรือลงทะเบียนไม่สำเร็จ — กันลูกค้าที่จ่ายเงินแล้วติดค้างถ้าเครื่อง/agent ที่ร้านมีปัญหา (ผูกกับ session ที่จ่ายเงินไว้แล้ว ไม่เก็บเงินซ้ำ)
+4. แก้ `handleFaceEvent` ([`session-engine.ts`](lib/playland/session-engine.ts)) ให้รู้จัก `PENDING_ENTRY` — สแกนหน้าที่ประตูจริงตอนนี้เปิด session ให้อัตโนมัติเหมือนสแกนสายรัด (แก้ known-gap ของ Wave 1)
+5. flow นี้แยกจาก public self-register ผ่านมือถือ (`register-face`) โดยตั้งใจ ตามที่ CEO ยืนยัน — ช่องโหว่ความปลอดภัยของ flow นั้น (ไม่มีคนยืนยันตัวตน) ยังคงเป็นเรื่องค้างแยกต่างหาก ไม่ได้แก้รอบนี้
+
+**Verify:** `tsc --noEmit` 0 error (Wave 1+2 รวมกัน) · headless click-test ผ่านครบ 9/9 จุด ทั้ง 2 เส้นทาง (สมัคร→เลือกแพ็กเกจ→เลือกวิธี→จ่ายเงิน→[ริสแบนด์: พิมพ์+สแกนประตูเริ่มเวลาจริง | สแกนหน้า: เข้าหน้ากล้อง+ปุ่มย้อนกลับถูกซ่อนถูกต้อง]) · จำลอง webhook สแกนหน้าจริงผ่าน mock device ยืนยัน `session_created` + session พลิกเป็น ACTIVE ถูกเวลา (ไม่แตะฮาร์ดแวร์จริง 2 เครื่องที่ร้านเลย) · ทุก mutation ทดสอบ + audit log ลบล้างออกจาก prod DB หมดแล้วหลังทดสอบ
+
+**ค้าง:** หน้ารายงานเก่า 2 หน้า (`owner-report`, `reports`) ยังนับ visitor bucket ไม่กรองสถานะ (กระทบแค่สถิติ ไม่กระทบเงิน) · ช่องโหว่ `register-face` (public, ไม่ยืนยันตัวตน) ยังรอ CEO ตัดสินใจแยก
+
+---
+
 ## 🎡🔧✅ Playland — `/bigsolvebug` Track A — แก้ 4 บั๊ก + หมุน secret แล้ว รอ CEO อนุมัติ commit (2026-09-29)
 
 ต่อจาก `/auditbigteam` ด้านล่าง — ใช้ Targeted mode (5 บั๊กที่วินิจฉัยแม่นแล้ว ไม่ต้องรัน 25-persona เต็ม) เอกสาร: [`docs/BUGSOLVE_Playland-TrackA_2026-09-29.md`](docs/BUGSOLVE_Playland-TrackA_2026-09-29.md)
@@ -453,43 +477,6 @@ CEO แจ้งล็อกอินไม่ได้ วนกลับมา
 **แก้:** ให้ CEO hard refresh (Cmd+Shift+R) แล้วลองใหม่ → **เข้าได้ปกติ ยืนยันแล้ว** ไม่ต้องแก้โค้ด — ตรวจ diff ของ `33bc54d6` ที่ deploy ไปแล้วด้วยตัวเองอีกชั้น พบว่าแก้เฉพาะสิทธิ์ role program_admin เท่านั้น ไม่แตะ session/login ของ super_admin เลย
 
 **บทเรียน:** เจอ "login วน" อีก → เช็คเวลา deploy ล่าสุดก่อน (ตรงกับตอนผู้ใช้พยายาม login ไหม) ก่อนขุดโค้ด auth ลึก — ดู [[feedback-login-loop-during-deploy-cutover-2026-09-20]]
-
----
-
-## 🔐🚧 CashHub program_admin สิทธิ์ไม่ครบ (บั๊กคลาสเดิม รอบ 4) + อัปเกรดตัวกันพลาดทั้งเรโป (2026-09-19 · BUILT+VERIFIED ใน worktree, ยังไม่ push ขึ้น setup)
-
-ไฮ (program_admin, 14/16 โปรแกรม) แจ้งว่า CashHub ไม่มีปุ่ม "ส่งเข้าบัญชี LedgerLine" และตั้งค่าเลขบัญชีไม่ได้ — บั๊กคลาสเดียวกับที่แก้มาแล้ว 3 รอบก่อนหน้า (`c94c8c17` 17 ส.ค. → `fc05c59b` 6-7 ก.ย. → `603ab804` 9 ก.ย.) CEO สั่งให้แก้ถาวรทั่วทั้งเรโป และเลือกทางเลือก "รื้อสถาปัตยกรรมทั้งระบบ (program_admin ได้ทุกอย่างยกเว้นที่ห้ามชัดเจน)" แทนทางเลือกต่อยอดของเดิม — ทำเป็น 2 ก้อนเพื่อความปลอดภัย เพราะไล่แก้ทีเดียวทั่ว ~400 จุดเสี่ยงเกิน (บางจุดเป็น org-wide platform route ที่ถ้าเปิดให้ program_admin จะกลายเป็น privilege escalation)
-
-**สาเหตุ CashHub:** ปุ่ม/หน้าตั้งค่าทั้ง 4 ช่องทาง (Amazon/ชา/โรงแรม/ปั๊มน้ำมัน) ล็อกด้วย `isSuperAdmin()`/`requireSuperAdmin()` เขียนไว้ 14 มิ.ย. 2569 — **ก่อน** concept program_admin จะเกิดขึ้นด้วยซ้ำ (16 มิ.ย.) ตัวกันพลาดอัตโนมัติ (CI guardrail) จาก 2 รอบก่อนมองไม่เห็นเพราะสแกนหาแค่แพทเทิร์น "รายชื่อ role" ไม่ใช่ "ฟังก์ชันเช็คเดี่ยว"
-
-**แก้แล้ว:**
-1. CashHub Amazon/Tea/Hotel/ปั๊มน้ำมัน — ปุ่มส่ง reconcile + หน้าตั้งค่าบัญชี ทั้งหน้าจอ+API หลังบ้าน (`isSuperAdmin` → `isProgramAdminTier`) รวม 4 จุด API ที่ลิสต์ตรวจสอบรอบแรกพลาดไป (amazon-settlement/save, tea/channel-config, tea/match-rule, hotel-settlement/save)
-2. [`LedgerBottomNav.tsx`](components/ledger/LedgerBottomNav.tsx) เมนูมือถือ — เพิ่ม program_admin ใน FINANCIAL/BUDGET array (เดิมเห็นแค่แท็บ "ตั้งค่า" แท็บเดียว)
-3. [`cashhub/reports/route.ts:109`](app/api/cashhub/reports/route.ts#L109) เช็คข้ามสาขา — แก้ array ตามที่ CEO อนุมัติแล้ว **แต่ยังไม่มีผลจริง** เพราะ `lib/auth/permissions.ts` MATRIX.program_admin ไม่มี `cashhub.create` เลย ถูก 403 ก่อนถึงจุดนี้ตั้งแต่ line 64 — ต้องคุยแยกว่าจะแก้ permissions.ts ด้วยไหม (ขัดกับ `canFillReports()` ที่ตั้งใจกันไว้เดิม)
-4. **ขยาย CI guardrail** ([`role-gate-completeness.cases.ts`](lib/auth/__tests__/role-gate-completeness.cases.ts)) ให้จับ `isSuperAdmin`/`requireSuperAdmin`/`isAdminTier`/`requireAdminTier` แบบเดี่ยวด้วย (ของเดิมจับแค่ array) — รันทั่วเรโป 254 จุด เจอเพิ่ม 12 จุดที่เป็นบั๊กแบบเดียวกันจริง (RentSpace floor-plan/payments, LedgerLine web+LIFF+LINE-bot) แก้ให้แล้วโดยเทียบกับโค้ดพี่น้องที่ถูกอยู่แล้วก่อนแก้ทุกจุด ที่เหลือ ~40 จุดใส่ไว้ใน [`role-gate-known-exceptions.ts`](lib/auth/role-gate-known-exceptions.ts) พร้อมเหตุผล รอ CEO ตัดสินใจทีละจุด (ส่วนใหญ่เป็นอนุมัติวงเงิน/ลบข้อมูล/รหัสลับเชื่อมต่อภายนอก)
-
-**Verify:** `prisma generate` → `tsc --noEmit` 0 error → eslint 0 error ใหม่ → guardrail 254/254 ผ่าน → `next build` 693 route สำเร็จ → ทดลอง revert 1 จุดแล้วยืนยัน guardrail จับได้จริงที่ file:line ถูกต้อง (ทำ 2 รอบ)
-
-**ค้าง (ก่อน):** (1) จุดที่ 3 (cashhub/reports ↔ permissions.ts) รอ CEO ตัดสินใจแยกต่างหาก (2) ~40 จุดใน exceptions file รอทยอยตัดสินใจทีละโปรแกรม (3) ยัง**ไม่ push ขึ้น `setup`**
-
----
-
-**อัปเดต 2026-09-19 (วันเดียวกัน) — CEO ตัดสินใจครบทุกจุดค้าง แก้เสร็จแล้ว รอบ 2:**
-
-1. **CashHub reports เปิดเต็มที่** — เจอว่ามี "ด่าน 2 ชั้น" (`lib/auth/permissions.ts` MATRIX.program_admin เดิมว่างเปล่า บล็อกก่อนถึงจุดที่แก้รอบแรกเสียอีก) CEO เลือก "เปิดให้กรอกได้เต็มที่" → เพิ่ม `cashhub.view`+`cashhub.create` ให้ program_admin ใน permissions.ts + แก้ [`canFillReports()`/`hasCrossBranchAccess()`](lib/auth/branch-access.ts) ให้รวม program_admin ด้วย — ตรวจ code path ครบยืนยันไม่มีด่านที่ 3 ซ่อนอยู่อีก (ยังไม่เปิดสิทธิ์อนุมัติ/ปลดล็อก/export ให้ — เฉพาะกรอกรายงานเท่านั้นตามที่อนุมัติ)
-2. **~35 จุด "ล็อกไว้ถูกต้องอยู่แล้ว"** — CEO อนุมัติคงตามเดิมทั้งหมด (รหัสลับเชื่อมต่อ/ลบข้อมูลถาวร/กันอนุมัติงานตัวเอง) → ปิดสถานะ "รอตัดสินใจ" ในเอกสารเป็น "CEO ยืนยันแล้ว" ไม่แก้โค้ด
-3. **4 จุดที่น่าสงสัยว่าอาจเป็นบั๊ก** — CEO ตัดสินทีละจุด: เปิดให้ program_admin ที่ Recruit (จัดการช่องทางรับสมัคร), RentSpace (นำเข้า Excel จำนวนมาก), ChairOps (ปิด/เปิดสาขารายตัว — คนละปุ่มกับปิดงวดทั้งองค์กรซึ่งยังคงล็อกไว้) · คงล็อกไว้ที่ Inbox (ผูกกลุ่ม LINE เข้าสาขา)
-4. **DC (คลังกลาง) พ้นช่วงทดลองแล้ว** — CEO ยืนยันเปิดสิทธิ์ลบ/ย้อนเอกสารคลังทั้งชุด (7 หน้า + ฟังก์ชันหลังบ้าน 2 จุด) ให้ program_admin — คงล็อกเฉพาะหน้าเชื่อมต่อ Google Drive ของ DC ไว้เหมือนเดิม (คนละเรื่องกัน)
-
-**Verify รอบ 2:** `prisma generate` → `tsc` 0 error → eslint 0 error ใหม่ → guardrail ผ่าน 243/243 (registry ลดจาก 154→142 จุด เพราะหลายจุดเปิดแล้วไม่ต้องมี exception อีกต่อไป) → `next build` ผ่าน → ทดลอง revert แล้วยืนยัน guardrail จับได้จริงอีกรอบ — **ตรวจ diff จริงเทียบกับที่อนุมัติไว้ด้วยตัวเองอีกชั้น** (ระบบ security-check ของ agent ขึ้นเตือนเพราะพรอมต์สรุปคำอนุมัติเป็นคำพูดตัวเองแทนที่จะ quote ตรงๆ — ตรวจแล้วโค้ดตรงกับที่อนุมัติ 100% เป็น false-positive แต่บันทึกเป็นบทเรียนไว้แล้ว)
-
-**สถานะล่าสุด:** ทุกจุดที่ค้างตัดสินใจปิดครบแล้ว — branch `claude/program-admin-cashhub-full-fix-2026-09-19` commit `4e89942d` (ต่อจาก `5e01d430`) อยู่บน `origin` เฉยๆ **ยังไม่ push เข้า `setup`** รอสั่ง deploy
-
----
-
-**🚀 DEPLOYED LIVE (2026-09-20)** — CEO สั่ง "deploy" → rebase บน `origin/setup` ล่าสุด (มี 3 commit ใหม่จาก session อื่นแทรกมาระหว่างนี้ — Recruit share-link + Supabase egress fix — เช็ค `git diff --stat` แล้วไม่มีไฟล์ชนกันเลย, safe rebase) → commit ใหม่ `33bc54d6` → รัน `/verify` ครบ 5 ด่าน (tsc 0 error · eslint 1 error พบแต่ยืนยันแล้วว่าเป็นของเดิมมีอยู่ก่อนแล้วใน production ไม่เกี่ยวกับงานนี้ · build ผ่าน · ไม่มีไฟล์ค้าง · smoke 10 route ก่อน deploy) → stamp + push เข้า `setup` (`58cd0ca4..33bc54d6`) → Vercel deploy `dpl_DiWVT8mcaLkF5iuRgRYozeSyM43P` Ready (~4 นาที) → `vercel inspect pooilgroup.com` ยืนยัน `pooilgroup.com`+`www.pooilgroup.com` ชี้เข้า deploy ใหม่แล้ว → smoke 10 route หลัง deploy ตรงกับก่อน deploy เป๊ะทุกจุด
-
-ดู memory [[program-admin-cashhub-round4-and-guardrail-upgrade-2026-09-19]]
 
 ---
 

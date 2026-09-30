@@ -45,7 +45,8 @@ export default async function PlaylandDashboard() {
     prisma.playlandProduct.findMany({ where: { orgId, active: true, reorderLevel: { gt: 0 } }, select: { stock: true, reorderLevel: true, name: true } }),
     prisma.playlandShift.findMany({ where: { orgId, status: "OPEN" }, select: { branchId: true, startedAt: true } }),
     prisma.playlandDevice.count({ where: { orgId, status: { in: ["OFFLINE", "ERROR"] } } }),
-    prisma.playlandSession.groupBy({ by: ["branchId"], where: { orgId, checkInAt: { gte: todayStart } }, _count: { _all: true } }),
+    // PENDING_ENTRY = จ่ายเงินแล้วแต่ยังไม่สแกนเข้าประตูจริง · ไม่นับเป็น "ครั้งเข้าเล่นวันนี้"
+    prisma.playlandSession.groupBy({ by: ["branchId"], where: { orgId, checkInAt: { gte: todayStart }, status: { not: "PENDING_ENTRY" } }, _count: { _all: true } }),
     prisma.playlandShift.findMany({ where: { orgId, status: "CLOSED", endedAt: { gte: todayStart } }, select: { varianceCents: true } }),
   ]);
   const offShiftCount = varShifts.filter((s) => (s.varianceCents ?? 0) !== 0).length;

@@ -19,16 +19,20 @@ import {
   searchMembersAction,
   openShift,
   closeShift,
+  addMemberFacePhoto,
+  getMemberFaceSyncStatus,
   type MemberSearchHit,
 } from "@/lib/playland/actions";
 import {
   issueWristband,
   lookupWristband,
   activateWristband,
+  activatePendingSession,
   exitWristband,
   type WristbandLookup,
 } from "@/lib/playland/wristband";
 import { printWristband } from "@/components/playland/print-wristband";
+import { FaceCapture } from "@/components/playland/face-capture";
 import { BarcodeScanBox } from "@/components/playland/barcode-scan-box";
 import { lookupProductByBarcode } from "@/lib/playland/stock";
 import { overtimeFromSec, DEFAULT_OVERTIME_RATE_PER_MIN_CENTS } from "@/lib/playland/overtime";
@@ -148,8 +152,9 @@ export type Screen =
   | "members"
   | "wristband"
   | "bookings";
-type CkStep = "choose" | "search" | "register" | "package" | "pay";
+type CkStep = "choose" | "search" | "register" | "package" | "method" | "pay" | "face";
 type PayMethod = "CASH" | "PROMPTPAY" | "CARD";
+type EntryMethod = "wristband" | "face"; // Wave 2 (D-A2 · 2026-09-30): เลือกวิธีเข้าเล่นตอนจ่ายเงิน
 
 interface Receipt {
   name: string;
@@ -158,7 +163,7 @@ interface Receipt {
   total: number;
   bandCode?: string | null; // when a wristband was printed
   adultCount?: number;
-  kind?: "checkin" | "pos" | "checkout"; // controls receipt copy
+  kind?: "checkin" | "checkin_pending" | "checkin_pending_face" | "pos" | "checkout"; // controls receipt copy
 }
 
 interface State {
@@ -175,6 +180,8 @@ interface State {
   ckMemberId: string | null; // real memberId chosen/created for check-in (null = needs createMember)
   ckPkg: PlaylandPackageVM | null; // package chosen, awaiting payment
   ckPay: PayMethod;
+  ckMethod: EntryMethod; // ริสแบนด์ (เดิม) หรือสแกนหน้า (Wave 2)
+  ckPendingSessionId: string | null; // sessionId ที่จ่ายเงินแล้ว (PENDING_ENTRY) รอผลลงทะเบียนหน้า/พิมพ์สายรัดสำรอง
   ckAdults: number; // adults coming with the child (0-4)
   receipt: Receipt | null;
   toast: string | null;
@@ -269,6 +276,7 @@ type Action =
   | { t: "completeCheckout"; kidId: string; receipt: Receipt }
   | { t: "addKid"; kid: PlaylandKid }
   | { t: "checkinReceipt"; kid: PlaylandKid; receipt: Receipt }
+  | { t: "paidPendingReceipt"; receipt: Receipt }
   | { t: "posReceipt"; receipt: Receipt; total: number };
 
 function reducer(s: State, a: Action): State {
@@ -329,6 +337,8 @@ function reducer(s: State, a: Action): State {
         ckNickname: "",
         ckMemberId: null,
         ckPkg: null,
+        ckMethod: "wristband",
+        ckPendingSessionId: null,
         ckAdults: 1,
       };
     case "checkinReceipt":
@@ -342,6 +352,24 @@ function reducer(s: State, a: Action): State {
         ckNickname: "",
         ckMemberId: null,
         ckPkg: null,
+        ckMethod: "wristband",
+        ckPendingSessionId: null,
+        ckAdults: 1,
+        screen: "receipt",
+      };
+    case "paidPendingReceipt":
+      // จ่ายเงินแล้ว แต่ยังไม่เริ่มเล่น (รอสแกนที่ประตู) → ไม่เพิ่มเข้า kids (บอร์ด "กำลังเล่น") ตอนนี้
+      return {
+        ...s,
+        receipt: a.receipt,
+        revenue: s.revenue + a.receipt.total,
+        ckStep: "choose",
+        ckName: "",
+        ckNickname: "",
+        ckMemberId: null,
+        ckPkg: null,
+        ckMethod: "wristband",
+        ckPendingSessionId: null,
         ckAdults: 1,
         screen: "receipt",
       };
@@ -375,6 +403,8 @@ export default function PlaylandApp(props: Props) {
     ckMemberId: null,
     ckPkg: null,
     ckPay: "CASH",
+    ckMethod: "wristband",
+    ckPendingSessionId: null,
     ckAdults: 1,
     receipt: null,
     toast: null,
@@ -589,10 +619,109 @@ export default function PlaylandApp(props: Props) {
     }
   };
 
-  // ----- check-in: pick package → goes to PAY step (no timer yet) -----
+  // ----- check-in: pick package → goes to METHOD step (wristband vs face) -----
   const [creating, setCreating] = useState(false);
   const pickPackage = (pkg: PlaylandPackageVM) => {
-    dispatch({ t: "set", p: { ckPkg: pkg, ckStep: "pay" } });
+    dispatch({ t: "set", p: { ckPkg: pkg, ckStep: "method" } });
+  };
+
+  // ----- Wave 2: face-scan entry (capture at counter PC's own webcam) -----
+  const [facePhoto, setFacePhoto] = useState<string | null>(null);
+  type FaceSyncPhase = "idle" | "uploading" | "waiting" | "timeout" | "failed";
+  const [faceSyncPhase, setFaceSyncPhase] = useState<FaceSyncPhase>("idle");
+  const faceSyncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const completeFaceCheckin = useCallback(() => {
+    const pkg = s.ckPkg;
+    const receipt: Receipt = {
+      name: s.ckName || "น้องใหม่",
+      no: randReceiptNo(),
+      lines: pkg ? [{ label: "ค่าเล่น " + pkg.label, amount: pkg.price }] : [],
+      total: pkg ? pkg.price : 0,
+      bandCode: null,
+      adultCount: s.ckAdults,
+      kind: "checkin_pending_face",
+    };
+    dispatch({ t: "paidPendingReceipt", receipt });
+    showToast("ลงทะเบียนหน้าสำเร็จ · สแกนหน้าที่ประตูได้เลย " + receipt.name);
+    router.refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s.ckPkg, s.ckName, s.ckAdults]);
+
+  // Poll PlaylandFaceSync until SYNCED (or FAILED/timeout) — hardware sync goes
+  // through a LAN-side agent, not instantly, so staff must wait for confirmation
+  // before letting the customer walk to the gate (CEO decision, D-A2 Wave 2).
+  useEffect(() => {
+    if (s.ckStep !== "face" || faceSyncPhase !== "waiting" || !s.ckMemberId) return;
+    let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 30; // ~45s at 1.5s
+    const tick = async () => {
+      if (cancelled) return;
+      attempts++;
+      try {
+        const res = await getMemberFaceSyncStatus({ memberId: s.ckMemberId!, branchId: props.branchId });
+        if (cancelled) return;
+        if (res.ok && res.data.status === "SYNCED") { completeFaceCheckin(); return; }
+        if (res.ok && res.data.status === "FAILED") { setFaceSyncPhase("failed"); return; }
+      } catch { /* transient — keep polling */ }
+      if (cancelled) return;
+      if (attempts >= maxAttempts) { setFaceSyncPhase("timeout"); return; }
+      faceSyncTimer.current = setTimeout(tick, 1500);
+    };
+    tick();
+    return () => {
+      cancelled = true;
+      if (faceSyncTimer.current) clearTimeout(faceSyncTimer.current);
+    };
+  }, [s.ckStep, faceSyncPhase, s.ckMemberId, props.branchId, completeFaceCheckin]);
+
+  const handleFacePhoto = async (dataUrl: string | null) => {
+    setFacePhoto(dataUrl);
+    if (!dataUrl || !s.ckMemberId) return;
+    setFaceSyncPhase("uploading");
+    try {
+      const res = await addMemberFacePhoto({ memberId: s.ckMemberId, branchId: props.branchId, photoDataUrl: dataUrl });
+      if (!res.ok) { setFaceSyncPhase("failed"); showToast("❌ " + res.error); return; }
+      setFaceSyncPhase("waiting");
+    } catch {
+      setFaceSyncPhase("failed");
+      showToast("❌ ลงทะเบียนหน้าไม่สำเร็จ · ลองใหม่หรือพิมพ์สายรัดแทน");
+    }
+  };
+
+  // Fallback: หน้ายังไม่ยืนยัน (เครื่อง/agent ที่ร้านมีปัญหา) → พิมพ์สายรัดแทนได้เลย
+  // session จ่ายเงินไว้แล้ว (PENDING_ENTRY) — แค่ผูกสายรัดเข้ากับ session เดิม ไม่เก็บเงินซ้ำ
+  const fallbackToWristband = async () => {
+    if (creating || !s.ckMemberId || !s.ckPendingSessionId) return;
+    setCreating(true);
+    try {
+      const name = s.ckName || "น้องใหม่";
+      let bandCode: string | null = null;
+      const wb = await issueWristband({ branchId: props.branchId, memberId: s.ckMemberId, sessionId: s.ckPendingSessionId });
+      if (wb.ok) bandCode = wb.data.code;
+      if (bandCode) {
+        const printed = printWristband({ code: bandCode, memberName: name, nickname: s.ckNickname || null, adultCount: s.ckAdults });
+        if (!printed) showToast("⚠️ เบราว์เซอร์บล็อกการพิมพ์ · กด 'พิมพ์สายรัดซ้ำ' ที่ใบเสร็จ");
+      }
+      const pkg = s.ckPkg;
+      const receipt: Receipt = {
+        name,
+        no: randReceiptNo(),
+        lines: pkg ? [{ label: "ค่าเล่น " + pkg.label, amount: pkg.price }] : [],
+        total: pkg ? pkg.price : 0,
+        bandCode,
+        adultCount: s.ckAdults,
+        kind: "checkin_pending",
+      };
+      dispatch({ t: "paidPendingReceipt", receipt });
+      showToast("พิมพ์สายรัดสำรองแล้ว · รอสแกนที่ประตู " + name);
+      router.refresh();
+    } catch {
+      showToast("❌ พิมพ์สายรัดสำรองไม่สำเร็จ · ลองใหม่");
+    } finally {
+      setCreating(false);
+    }
   };
 
   // ----- check-in: confirm payment → createMember? → checkIn → issueWristband → print -----
@@ -615,14 +744,14 @@ export default function PlaylandApp(props: Props) {
     const adults = s.ckAdults;
     const payMethod = PAY_MAP[s.ckPay];
 
-    const buildReceipt = (bandCode: string | null): Receipt => ({
+    const buildReceipt = (bandCode: string | null, kind: Receipt["kind"] = "checkin"): Receipt => ({
       name,
       no: randReceiptNo(),
       lines: [{ label: "ค่าเล่น " + pkg.label, amount: pkg.price }],
       total: pkg.price,
       bandCode,
       adultCount: adults,
-      kind: "checkin",
+      kind,
     });
 
     // Real wiring: ensure member → check in (เก็บเงิน) → issue wristband + บังคับปริ้น
@@ -651,10 +780,21 @@ export default function PlaylandApp(props: Props) {
         // เก็บเงินไม่สำเร็จ → แจ้ง error + หยุด · ห้ามตกไป optimistic แล้วโชว์ "รับเงินแล้ว" (เงินหายเงียบ)
         if (!ci.ok) { showToast("❌ " + ci.error + " · ยังไม่ได้รับเงิน"); return; }
 
+        // Wave 2 (D-A2 · 2026-09-30): เลือก "สแกนหน้า" → ไม่พิมพ์สายรัด · ไปหน้าถ่ายรูปยืนยันตัวตนต่อ
+        if (s.ckMethod === "face") {
+          setFacePhoto(null);
+          setFaceSyncPhase("idle");
+          dispatch({ t: "set", p: { ckMemberId: memberId, ckPendingSessionId: ci.data.sessionId, ckStep: "face" } });
+          showToast("รับเงินแล้ว " + name + " · ถ่ายรูปยืนยันตัวตนต่อได้เลย");
+          router.refresh();
+          return;
+        }
+
         // Issue wristband (best-effort; requires open shift + cashier role)
+        // ผูกกับ session ที่เพิ่งจ่ายเงิน (PENDING_ENTRY) — สแกนที่ประตูทีหลังจะแค่เริ่มเวลา ไม่เก็บเงินซ้ำ
         let bandCode: string | null = null;
         try {
-          const wb = await issueWristband({ branchId: props.branchId, memberId });
+          const wb = await issueWristband({ branchId: props.branchId, memberId, sessionId: ci.data.sessionId });
           if (wb.ok) bandCode = wb.data.code;
         } catch {
           /* wristband optional — proceed */
@@ -664,20 +804,10 @@ export default function PlaylandApp(props: Props) {
           const printed = printWristband({ code: bandCode, memberName: name, nickname: s.ckNickname || null, adultCount: adults });
           if (!printed) showToast("⚠️ เบราว์เซอร์บล็อกการพิมพ์ · กด 'พิมพ์สายรัดซ้ำ' ที่ใบเสร็จ");
         }
-        dispatch({
-          t: "checkinReceipt",
-          kid: {
-            id: ci.data.sessionId,
-            name,
-            mascot,
-            pkg: pkg.label,
-            sec: pkg.mins * 60,
-            dayPass: pkg.mins === 0,
-            charges: [{ label: "ค่าเล่น " + pkg.label, amount: pkg.price }],
-          },
-          receipt: buildReceipt(bandCode),
-        });
-        showToast("รับเงินแล้ว · เริ่มเวลา " + name);
+        // D-A2 (CEO 2026-09-29): ยังไม่เริ่มเวลา — จ่ายเงินแล้วรอสแกนที่ประตู (หน้าสายรัด → "เปิด gate · เริ่มเล่น")
+        //   จึงไม่เพิ่มเข้าบอร์ด "กำลังเล่น" (s.kids) ตรงนี้ ปล่อยให้ตอนสแกนที่ประตูเป็นคนเพิ่มแทน
+        dispatch({ t: "paidPendingReceipt", receipt: buildReceipt(bandCode, "checkin_pending") });
+        showToast("รับเงินแล้ว · รอสแกนสายรัดที่ประตูเพื่อเริ่มเวลา " + name);
         router.refresh();
         return;
       } catch {
@@ -836,6 +966,34 @@ export default function PlaylandApp(props: Props) {
     setWbBusy(false);
   };
 
+  // จ่ายเงินไว้แล้วที่เคาน์เตอร์ (PENDING_ENTRY) · scan นี้แค่เริ่มเวลา ไม่ถามแพ็กเกจ/วิธีจ่ายซ้ำ
+  const wbActivatePending = async () => {
+    if (!wbLookup) return;
+    setWbBusy(true);
+    try {
+      const res = await activatePendingSession(wbLookup.wristband.code);
+      if (res.ok) {
+        dispatch({
+          t: "addKid",
+          kid: {
+            id: res.data.sessionId,
+            name: res.data.memberNickname || res.data.memberName,
+            mascot: randMascot(),
+            pkg: res.data.packageLabel,
+            sec: res.data.packageMinutes * 60,
+            dayPass: res.data.packageMinutes === 0,
+            charges: [{ label: "ค่าเล่น " + res.data.packageLabel, amount: Math.round(res.data.packagePriceCents / 100) }],
+          },
+        });
+        showToast("เริ่มเวลาเล่นแล้ว");
+        setWbLookup(null);
+        setWbCode("");
+        router.refresh();
+      } else showToast(res.error);
+    } catch { showToast("เริ่มเวลาไม่สำเร็จ"); }
+    setWbBusy(false);
+  };
+
   const wbExit = async () => {
     if (!wbLookup) return;
     setWbBusy(true);
@@ -913,7 +1071,9 @@ export default function PlaylandApp(props: Props) {
 
   const checkinBack = () => {
     if (s.ckStep === "choose") go("home");
-    else if (s.ckStep === "pay") dispatch({ t: "set", p: { ckStep: "package" } });
+    else if (s.ckStep === "pay") dispatch({ t: "set", p: { ckStep: "method" } });
+    else if (s.ckStep === "method") dispatch({ t: "set", p: { ckStep: "package" } });
+    else if (s.ckStep === "face") return; // จ่ายเงินไปแล้ว · ย้อนไม่ได้ ใช้ปุ่มสำรองในหน้านี้แทน
     else dispatch({ t: "set", p: { ckStep: "choose" } });
   };
 
@@ -1387,8 +1547,12 @@ export default function PlaylandApp(props: Props) {
         {s.screen === "checkin" && (
           <div style={{ flex: 1, minHeight: 0, background: "#F7F2EA", display: "flex", flexDirection: "column", overflowY: "auto" }}>
             <div style={{ height: 74, flex: "none", background: "#fff", borderBottom: "1px solid #ece5d8", display: "flex", alignItems: "center", padding: "0 28px", gap: 16 }}>
-              <div onClick={checkinBack} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 8, color: "#6b6052", fontSize: 16 }}>{backIcon("#6b6052")}ย้อนกลับ</div>
-              <div style={{ width: 1, height: 28, background: "#ece5d8" }} />
+              {s.ckStep !== "face" && (
+                <>
+                  <div onClick={checkinBack} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 8, color: "#6b6052", fontSize: 16 }}>{backIcon("#6b6052")}ย้อนกลับ</div>
+                  <div style={{ width: 1, height: 28, background: "#ece5d8" }} />
+                </>
+              )}
               <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 20 }}>รับเด็กเข้าเล่น</div>
             </div>
             <div style={{ flex: 1, padding: "34px 44px", overflow: "auto" }}>
@@ -1511,6 +1675,29 @@ export default function PlaylandApp(props: Props) {
                   </div>
                 </div>
               )}
+              {/* method — เลือกวิธีเข้าเล่น (Wave 2, D-A2 · 2026-09-30): ริสแบนด์ หรือ สแกนหน้า */}
+              {s.ckStep === "method" && s.ckPkg && (
+                <div style={{ maxWidth: 840, margin: "0 auto" }}>
+                  <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 26, marginBottom: 6 }}>เข้าเล่นด้วยวิธีไหน?</div>
+                  <div style={{ fontSize: 15, color: "#8a7f70", marginBottom: 26 }}>{s.ckPkg.label} · ฿{s.ckPkg.price} — เลือกได้อย่างเดียว</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>
+                    <div onClick={() => dispatch({ t: "set", p: { ckMethod: "wristband", ckStep: "pay" } })} style={{ cursor: "pointer", background: "#fff", border: "2px solid #2D6CB1", borderRadius: 20, padding: 30, display: "flex", alignItems: "center", gap: 22 }}>
+                      <div style={{ width: 64, height: 64, borderRadius: 18, background: "#eaf3f6", display: "flex", alignItems: "center", justifyContent: "center", flex: "none", fontSize: 30 }}>🎫</div>
+                      <div>
+                        <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 24 }}>สายรัดข้อมือ</div>
+                        <div style={{ fontSize: 15, color: "#8a7f70" }}>พิมพ์สายรัด · สแกนที่ประตู</div>
+                      </div>
+                    </div>
+                    <div onClick={() => dispatch({ t: "set", p: { ckMethod: "face", ckStep: "pay" } })} style={{ cursor: "pointer", background: "#fff", border: "2px solid #ece5d8", borderRadius: 20, padding: 30, display: "flex", alignItems: "center", gap: 22 }}>
+                      <div style={{ width: 64, height: 64, borderRadius: 18, background: "#fdf3df", display: "flex", alignItems: "center", justifyContent: "center", flex: "none", fontSize: 30 }}>📷</div>
+                      <div>
+                        <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 24 }}>สแกนหน้า</div>
+                        <div style={{ fontSize: 15, color: "#8a7f70" }}>ถ่ายรูปยืนยันตัวตน · ไม่ต้องใช้สายรัด</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
               {/* PAY — collect payment BEFORE starting the timer */}
               {s.ckStep === "pay" && s.ckPkg && (
                 <div style={{ maxWidth: 720, margin: "0 auto" }}>
@@ -1540,10 +1727,43 @@ export default function PlaylandApp(props: Props) {
                   </div>
 
                   <div onClick={confirmCheckin} style={{ cursor: creating ? "default" : "pointer", opacity: creating ? 0.6 : 1, background: "#1F8A5B", color: "#fff", borderRadius: 14, padding: 18, textAlign: "center", fontFamily: MITR, fontWeight: 500, fontSize: 21, display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }}>
-                    {creating ? "กำลังบันทึก..." : `รับเงิน ฿${s.ckPkg.price} · พิมพ์สายรัด · เริ่มเล่น`}
+                    {creating ? "กำลังบันทึก..." : s.ckMethod === "face" ? `รับเงิน ฿${s.ckPkg.price} · ถ่ายรูปยืนยันตัวตน` : `รับเงิน ฿${s.ckPkg.price} · พิมพ์สายรัด · รอสแกนเข้า`}
                     {!creating && <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 5 5L20 7" /></svg>}
                   </div>
-                  <div style={{ fontSize: 13, color: "#a9978a", textAlign: "center", marginTop: 12 }}>เริ่มจับเวลาหลังกดยืนยันเท่านั้น · สายรัด 1 (เด็ก) + {s.ckAdults} (ผู้ปกครอง)</div>
+                  <div style={{ fontSize: 13, color: "#a9978a", textAlign: "center", marginTop: 12 }}>
+                    {s.ckMethod === "face"
+                      ? "หลังจ่ายเงิน ถ่ายรูปหน้าลูกค้าเพื่อลงทะเบียน แล้วสแกนหน้าที่ประตูเพื่อเริ่มเวลา"
+                      : <>เริ่มจับเวลาตอนสแกนสายรัดที่ประตูเท่านั้น (ไม่ใช่ตอนจ่ายเงิน) · สายรัด 1 (เด็ก) + {s.ckAdults} (ผู้ปกครอง)</>}
+                  </div>
+                </div>
+              )}
+              {/* face — Wave 2: ถ่ายรูปยืนยันตัวตนที่กล้องเครื่องนี้ + รอลงทะเบียนกับเครื่องสแกนจริง */}
+              {s.ckStep === "face" && (
+                <div style={{ maxWidth: 480, margin: "0 auto" }}>
+                  <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 24, marginBottom: 4 }}>ลงทะเบียนหน้า · {s.ckName || "น้องใหม่"}</div>
+                  <div style={{ fontSize: 15, color: "#8a7f70", marginBottom: 22 }}>รับเงินแล้ว — ถ่ายรูปหน้าลูกค้าให้ชัด เพื่อส่งให้เครื่องสแกนที่ประตูจดจำ</div>
+
+                  <FaceCapture value={facePhoto} onChange={handleFacePhoto} label="ถ่ายรูปหน้าลูกค้า · กล้องที่เครื่องนี้" />
+
+                  {faceSyncPhase === "uploading" && (
+                    <div style={{ marginTop: 18, textAlign: "center", color: "#8a7f70", fontSize: 15 }}>กำลังส่งรูป...</div>
+                  )}
+                  {faceSyncPhase === "waiting" && (
+                    <div style={{ marginTop: 18, background: "#fff", border: "1px solid #ece5d8", borderRadius: 14, padding: 18, textAlign: "center" }}>
+                      <div style={{ fontFamily: MITR, fontSize: 17, marginBottom: 6 }}>กำลังลงทะเบียนหน้ากับเครื่องสแกน...</div>
+                      <div style={{ fontSize: 13, color: "#a9978a" }}>รอสักครู่ · ห้ามปล่อยลูกค้าเดินไปประตูจนกว่าจะสำเร็จ</div>
+                    </div>
+                  )}
+                  {(faceSyncPhase === "timeout" || faceSyncPhase === "failed") && (
+                    <div style={{ marginTop: 18, background: "#fff7ed", border: "1px solid #fde3ba", borderRadius: 14, padding: 18, textAlign: "center" }}>
+                      <div style={{ fontFamily: MITR, fontSize: 16, marginBottom: 12, color: "#9a5b13" }}>
+                        {faceSyncPhase === "failed" ? "ลงทะเบียนหน้าไม่สำเร็จ" : "รอนานเกินไป · เครื่องสแกนอาจมีปัญหา"}
+                      </div>
+                      <div onClick={fallbackToWristband} style={{ cursor: creating ? "default" : "pointer", opacity: creating ? 0.6 : 1, background: "#2D6CB1", color: "#fff", borderRadius: 12, padding: 14, fontFamily: MITR, fontSize: 16 }}>
+                        {creating ? "กำลังพิมพ์..." : "🎫 พิมพ์สายรัดแทน"}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1562,14 +1782,26 @@ export default function PlaylandApp(props: Props) {
                 <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 5 5L20 7" /></svg>
               </div>
               <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 30, marginBottom: 4 }}>
-                {rc?.kind === "checkout" ? "เช็คเอาท์เรียบร้อย" : rc?.kind === "checkin" ? "รับเงินแล้ว · เริ่มเล่น" : "รับเงินสำเร็จ"}
+                {rc?.kind === "checkout"
+                  ? "เช็คเอาท์เรียบร้อย"
+                  : rc?.kind === "checkin"
+                    ? "รับเงินแล้ว · เริ่มเล่น"
+                    : rc?.kind === "checkin_pending"
+                      ? "รับเงินแล้ว · รอสแกนเข้า"
+                      : rc?.kind === "checkin_pending_face"
+                        ? "รับเงินแล้ว · ลงทะเบียนหน้าสำเร็จ"
+                        : "รับเงินสำเร็จ"}
               </div>
               <div style={{ fontSize: 16, color: "#8a7f70", marginBottom: 22 }}>
                 {rc?.kind === "checkout"
                   ? `${rc?.name} · คืนสายรัดให้ทางร้าน 💛`
                   : rc?.kind === "checkin"
                     ? `${rc?.name} · พิมพ์สายรัด ${1 + (rc?.adultCount ?? 0)} ใบ · เริ่มเวลาแล้ว`
-                    : `${rc?.name} · ขอบคุณค่ะ 💛`}
+                    : rc?.kind === "checkin_pending"
+                      ? `${rc?.name} · พิมพ์สายรัด ${1 + (rc?.adultCount ?? 0)} ใบ · เอาไปสแกนที่ประตูเพื่อเริ่มเวลา`
+                      : rc?.kind === "checkin_pending_face"
+                        ? `${rc?.name} · สแกนหน้าที่ประตูได้เลย เพื่อเริ่มเวลา (ไม่ต้องใช้สายรัด)`
+                        : `${rc?.name} · ขอบคุณค่ะ 💛`}
               </div>
               <div style={{ width: "100%", background: "#fff", borderRadius: 18, boxShadow: "0 2px 14px rgba(0,0,0,.06)", overflow: "hidden" }}>
                 <div style={{ textAlign: "center", padding: "20px 0 12px", borderBottom: "1px dashed #e0d6c4" }}>
@@ -1596,7 +1828,7 @@ export default function PlaylandApp(props: Props) {
                 </div>
               </div>
               <div style={{ display: "flex", gap: 12, width: "100%", marginTop: 20 }}>
-                {rc?.kind === "checkin" && rc?.bandCode ? (
+                {(rc?.kind === "checkin" || rc?.kind === "checkin_pending") && rc?.bandCode ? (
                   <div onClick={reprintBand} style={{ cursor: "pointer", flex: 1, background: "#fff", border: "1px solid #ece5d8", borderRadius: 13, padding: 15, textAlign: "center", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b6052" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><path d="M6 14h12v8H6z" /></svg>
                     พิมพ์สายรัดซ้ำ
@@ -1871,6 +2103,7 @@ export default function PlaylandApp(props: Props) {
                   )}
                   <div style={{ display: "flex", gap: 10 }}>
                     {wbLookup.allowedActions.includes("ACTIVATE") && <div onClick={wbActivate} style={{ cursor: "pointer", flex: 1, background: "#1F8A5B", color: "#fff", borderRadius: 12, padding: 15, textAlign: "center", fontSize: 16, fontFamily: MITR, fontWeight: 500 }}>เปิด gate · เริ่มเล่น</div>}
+                    {wbLookup.allowedActions.includes("ACTIVATE_PENDING") && <div onClick={wbActivatePending} style={{ cursor: "pointer", flex: 1, background: "#1F8A5B", color: "#fff", borderRadius: 12, padding: 15, textAlign: "center", fontSize: 16, fontFamily: MITR, fontWeight: 500 }}>เปิด gate · เริ่มเวลา (จ่ายแล้ว)</div>}
                     {wbLookup.allowedActions.includes("POS_CHARGE") && <div onClick={wbPosCharge} style={{ cursor: "pointer", flex: 1, background: "#F0B323", color: "#fff", borderRadius: 12, padding: 15, textAlign: "center", fontSize: 16, fontFamily: MITR, fontWeight: 500 }}>ขายขนมให้</div>}
                     {wbLookup.allowedActions.includes("EXIT") && <div onClick={wbExit} style={{ cursor: "pointer", flex: 1, background: "#E74C3C", color: "#fff", borderRadius: 12, padding: 15, textAlign: "center", fontSize: 16, fontFamily: MITR, fontWeight: 500 }}>ออก · คืนสายรัด</div>}
                   </div>

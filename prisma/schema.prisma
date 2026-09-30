@@ -4380,6 +4380,7 @@ enum PlaylandPackageType {
 }
 
 enum PlaylandSessionStatus {
+  PENDING_ENTRY // จ่ายเงินแล้ว · รอสแกนหน้า/สายรัดที่ประตูเพื่อเริ่มเวลา
   ACTIVE
   PAUSED // ออกชั่วคราว · 15 นาที grace
   COMPLETED // ออกถาวร

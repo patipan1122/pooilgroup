@@ -72,10 +72,12 @@ export const getTodayStats = cache(async (orgId: string, branchId?: string) => {
   const productRevenue = productAgg._sum.totalCents ?? 0;
   const activeSessions = sessionsToday.filter((s) => s.status === "ACTIVE" || s.status === "PAUSED").length;
   const expiredSessions = sessionsToday.filter((s) => s.status === "EXPIRED").length;
+  // PENDING_ENTRY = จ่ายเงินแล้วแต่ยังไม่สแกนเข้าประตูจริง · ไม่นับเป็น "ครั้งเข้าเล่นวันนี้"
+  const enteredToday = sessionsToday.filter((s) => s.status !== "PENDING_ENTRY").length;
 
   return {
     memberCount,
-    sessionsToday: sessionsToday.length,
+    sessionsToday: enteredToday,
     activeSessions,
     expiredSessions,
     bookingsToday,

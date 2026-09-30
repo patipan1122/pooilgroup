@@ -5,6 +5,45 @@
 
 ---
 
+## 📦 Archived 2026-09-29 (RULE M auto-archive · 2026-09-19 entry, STATUS.md ถึง 153KB)
+
+## 🔐🚧 CashHub program_admin สิทธิ์ไม่ครบ (บั๊กคลาสเดิม รอบ 4) + อัปเกรดตัวกันพลาดทั้งเรโป (2026-09-19 · BUILT+VERIFIED ใน worktree, ยังไม่ push ขึ้น setup)
+
+ไฮ (program_admin, 14/16 โปรแกรม) แจ้งว่า CashHub ไม่มีปุ่ม "ส่งเข้าบัญชี LedgerLine" และตั้งค่าเลขบัญชีไม่ได้ — บั๊กคลาสเดียวกับที่แก้มาแล้ว 3 รอบก่อนหน้า (`c94c8c17` 17 ส.ค. → `fc05c59b` 6-7 ก.ย. → `603ab804` 9 ก.ย.) CEO สั่งให้แก้ถาวรทั่วทั้งเรโป และเลือกทางเลือก "รื้อสถาปัตยกรรมทั้งระบบ (program_admin ได้ทุกอย่างยกเว้นที่ห้ามชัดเจน)" แทนทางเลือกต่อยอดของเดิม — ทำเป็น 2 ก้อนเพื่อความปลอดภัย เพราะไล่แก้ทีเดียวทั่ว ~400 จุดเสี่ยงเกิน (บางจุดเป็น org-wide platform route ที่ถ้าเปิดให้ program_admin จะกลายเป็น privilege escalation)
+
+**สาเหตุ CashHub:** ปุ่ม/หน้าตั้งค่าทั้ง 4 ช่องทาง (Amazon/ชา/โรงแรม/ปั๊มน้ำมัน) ล็อกด้วย `isSuperAdmin()`/`requireSuperAdmin()` เขียนไว้ 14 มิ.ย. 2569 — **ก่อน** concept program_admin จะเกิดขึ้นด้วยซ้ำ (16 มิ.ย.) ตัวกันพลาดอัตโนมัติ (CI guardrail) จาก 2 รอบก่อนมองไม่เห็นเพราะสแกนหาแค่แพทเทิร์น "รายชื่อ role" ไม่ใช่ "ฟังก์ชันเช็คเดี่ยว"
+
+**แก้แล้ว:**
+1. CashHub Amazon/Tea/Hotel/ปั๊มน้ำมัน — ปุ่มส่ง reconcile + หน้าตั้งค่าบัญชี ทั้งหน้าจอ+API หลังบ้าน (`isSuperAdmin` → `isProgramAdminTier`) รวม 4 จุด API ที่ลิสต์ตรวจสอบรอบแรกพลาดไป (amazon-settlement/save, tea/channel-config, tea/match-rule, hotel-settlement/save)
+2. [`LedgerBottomNav.tsx`](components/ledger/LedgerBottomNav.tsx) เมนูมือถือ — เพิ่ม program_admin ใน FINANCIAL/BUDGET array (เดิมเห็นแค่แท็บ "ตั้งค่า" แท็บเดียว)
+3. [`cashhub/reports/route.ts:109`](app/api/cashhub/reports/route.ts#L109) เช็คข้ามสาขา — แก้ array ตามที่ CEO อนุมัติแล้ว **แต่ยังไม่มีผลจริง** เพราะ `lib/auth/permissions.ts` MATRIX.program_admin ไม่มี `cashhub.create` เลย ถูก 403 ก่อนถึงจุดนี้ตั้งแต่ line 64 — ต้องคุยแยกว่าจะแก้ permissions.ts ด้วยไหม (ขัดกับ `canFillReports()` ที่ตั้งใจกันไว้เดิม)
+4. **ขยาย CI guardrail** ([`role-gate-completeness.cases.ts`](lib/auth/__tests__/role-gate-completeness.cases.ts)) ให้จับ `isSuperAdmin`/`requireSuperAdmin`/`isAdminTier`/`requireAdminTier` แบบเดี่ยวด้วย (ของเดิมจับแค่ array) — รันทั่วเรโป 254 จุด เจอเพิ่ม 12 จุดที่เป็นบั๊กแบบเดียวกันจริง (RentSpace floor-plan/payments, LedgerLine web+LIFF+LINE-bot) แก้ให้แล้วโดยเทียบกับโค้ดพี่น้องที่ถูกอยู่แล้วก่อนแก้ทุกจุด ที่เหลือ ~40 จุดใส่ไว้ใน [`role-gate-known-exceptions.ts`](lib/auth/role-gate-known-exceptions.ts) พร้อมเหตุผล รอ CEO ตัดสินใจทีละจุด (ส่วนใหญ่เป็นอนุมัติวงเงิน/ลบข้อมูล/รหัสลับเชื่อมต่อภายนอก)
+
+**Verify:** `prisma generate` → `tsc --noEmit` 0 error → eslint 0 error ใหม่ → guardrail 254/254 ผ่าน → `next build` 693 route สำเร็จ → ทดลอง revert 1 จุดแล้วยืนยัน guardrail จับได้จริงที่ file:line ถูกต้อง (ทำ 2 รอบ)
+
+**ค้าง (ก่อน):** (1) จุดที่ 3 (cashhub/reports ↔ permissions.ts) รอ CEO ตัดสินใจแยกต่างหาก (2) ~40 จุดใน exceptions file รอทยอยตัดสินใจทีละโปรแกรม (3) ยัง**ไม่ push ขึ้น `setup`**
+
+---
+
+**อัปเดต 2026-09-19 (วันเดียวกัน) — CEO ตัดสินใจครบทุกจุดค้าง แก้เสร็จแล้ว รอบ 2:**
+
+1. **CashHub reports เปิดเต็มที่** — เจอว่ามี "ด่าน 2 ชั้น" (`lib/auth/permissions.ts` MATRIX.program_admin เดิมว่างเปล่า บล็อกก่อนถึงจุดที่แก้รอบแรกเสียอีก) CEO เลือก "เปิดให้กรอกได้เต็มที่" → เพิ่ม `cashhub.view`+`cashhub.create` ให้ program_admin ใน permissions.ts + แก้ [`canFillReports()`/`hasCrossBranchAccess()`](lib/auth/branch-access.ts) ให้รวม program_admin ด้วย — ตรวจ code path ครบยืนยันไม่มีด่านที่ 3 ซ่อนอยู่อีก (ยังไม่เปิดสิทธิ์อนุมัติ/ปลดล็อก/export ให้ — เฉพาะกรอกรายงานเท่านั้นตามที่อนุมัติ)
+2. **~35 จุด "ล็อกไว้ถูกต้องอยู่แล้ว"** — CEO อนุมัติคงตามเดิมทั้งหมด (รหัสลับเชื่อมต่อ/ลบข้อมูลถาวร/กันอนุมัติงานตัวเอง) → ปิดสถานะ "รอตัดสินใจ" ในเอกสารเป็น "CEO ยืนยันแล้ว" ไม่แก้โค้ด
+3. **4 จุดที่น่าสงสัยว่าอาจเป็นบั๊ก** — CEO ตัดสินทีละจุด: เปิดให้ program_admin ที่ Recruit (จัดการช่องทางรับสมัคร), RentSpace (นำเข้า Excel จำนวนมาก), ChairOps (ปิด/เปิดสาขารายตัว — คนละปุ่มกับปิดงวดทั้งองค์กรซึ่งยังคงล็อกไว้) · คงล็อกไว้ที่ Inbox (ผูกกลุ่ม LINE เข้าสาขา)
+4. **DC (คลังกลาง) พ้นช่วงทดลองแล้ว** — CEO ยืนยันเปิดสิทธิ์ลบ/ย้อนเอกสารคลังทั้งชุด (7 หน้า + ฟังก์ชันหลังบ้าน 2 จุด) ให้ program_admin — คงล็อกเฉพาะหน้าเชื่อมต่อ Google Drive ของ DC ไว้เหมือนเดิม (คนละเรื่องกัน)
+
+**Verify รอบ 2:** `prisma generate` → `tsc` 0 error → eslint 0 error ใหม่ → guardrail ผ่าน 243/243 (registry ลดจาก 154→142 จุด เพราะหลายจุดเปิดแล้วไม่ต้องมี exception อีกต่อไป) → `next build` ผ่าน → ทดลอง revert แล้วยืนยัน guardrail จับได้จริงอีกรอบ — **ตรวจ diff จริงเทียบกับที่อนุมัติไว้ด้วยตัวเองอีกชั้น** (ระบบ security-check ของ agent ขึ้นเตือนเพราะพรอมต์สรุปคำอนุมัติเป็นคำพูดตัวเองแทนที่จะ quote ตรงๆ — ตรวจแล้วโค้ดตรงกับที่อนุมัติ 100% เป็น false-positive แต่บันทึกเป็นบทเรียนไว้แล้ว)
+
+**สถานะล่าสุด:** ทุกจุดที่ค้างตัดสินใจปิดครบแล้ว — branch `claude/program-admin-cashhub-full-fix-2026-09-19` commit `4e89942d` (ต่อจาก `5e01d430`) อยู่บน `origin` เฉยๆ **ยังไม่ push เข้า `setup`** รอสั่ง deploy
+
+---
+
+**🚀 DEPLOYED LIVE (2026-09-20)** — CEO สั่ง "deploy" → rebase บน `origin/setup` ล่าสุด (มี 3 commit ใหม่จาก session อื่นแทรกมาระหว่างนี้ — Recruit share-link + Supabase egress fix — เช็ค `git diff --stat` แล้วไม่มีไฟล์ชนกันเลย, safe rebase) → commit ใหม่ `33bc54d6` → รัน `/verify` ครบ 5 ด่าน (tsc 0 error · eslint 1 error พบแต่ยืนยันแล้วว่าเป็นของเดิมมีอยู่ก่อนแล้วใน production ไม่เกี่ยวกับงานนี้ · build ผ่าน · ไม่มีไฟล์ค้าง · smoke 10 route ก่อน deploy) → stamp + push เข้า `setup` (`58cd0ca4..33bc54d6`) → Vercel deploy `dpl_DiWVT8mcaLkF5iuRgRYozeSyM43P` Ready (~4 นาที) → `vercel inspect pooilgroup.com` ยืนยัน `pooilgroup.com`+`www.pooilgroup.com` ชี้เข้า deploy ใหม่แล้ว → smoke 10 route หลัง deploy ตรงกับก่อน deploy เป๊ะทุกจุด
+
+ดู memory [[program-admin-cashhub-round4-and-guardrail-upgrade-2026-09-19]]
+
+---
+
 ## 📦 Archived 2026-09-19 (RULE M auto-archive · 2026-05-04 → 2026-08-23 batch, 331KB)
 
 ## 🧋💸✅ CashHub Tea — เจอเงินหาย ฿31,268 เพราะช่องทางชำระไม่มีถังรองรับ + K Plus ปนผิดบัญชี (2026-08-23 · DEPLOYED `53b0bae8`)
