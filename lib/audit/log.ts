@@ -165,6 +165,10 @@ export type AuditAction =
   // of the org-wide "admin appointment = super_admin only" lock — see
   // app/(admin)/recruit/settings/team-actions.ts).
   | "RECRUIT_TEAM_INVITED"
+  // Generic "program admin invites their own staff" — every program, always
+  // mints role=staff + member-level module grant only, never a peer admin
+  // (CEO 2026-09-30, lib/auth/program-invite.ts).
+  | "PROGRAM_TEAM_INVITED"
   // Recruit v2 (Phase B-full per design canvas)
   | "RECRUIT_INTERVIEW_SCHEDULED"
   | "RECRUIT_INTERVIEW_STATUS_CHANGED"

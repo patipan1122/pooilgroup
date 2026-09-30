@@ -61,14 +61,17 @@ export async function createInviteLinkUser(
   return { ok: true, userId, token, expiresAt };
 }
 
-/** Grant module-admin access (user_modules role='admin', upsert so re-invites
- *  don't dup). Returns an error message on failure, null on success. */
+/** Grant module access (user_modules row, upsert so re-invites don't dup).
+ *  role defaults to 'admin' (original behavior — program-admin grant);
+ *  pass 'member' for a plain team-member grant. Returns an error message
+ *  on failure, null on success. */
 export async function grantModuleAdmin(
   admin: ReturnType<typeof adminClient>,
   orgId: string,
   userId: string,
   grantedBy: string,
   moduleName: string,
+  role: "admin" | "member" = "admin",
 ): Promise<string | null> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (admin.from as any)("user_modules").upsert(
@@ -76,7 +79,7 @@ export async function grantModuleAdmin(
       org_id: orgId,
       user_id: userId,
       module_name: moduleName,
-      role: "admin",
+      role,
       is_active: true,
       granted_by: grantedBy,
       updated_at: new Date().toISOString(),

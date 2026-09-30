@@ -1,11 +1,15 @@
+import { redirect } from "next/navigation";
 import Link from "next/link";
-import { requireRole } from "@/lib/auth/session";
+import { requireSession } from "@/lib/auth/session";
+import { isAdminTier } from "@/lib/auth/role-guards";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { adminClient } from "@/lib/db/server";
 import { prisma } from "@/lib/prisma";
 import { MODULES } from "@/lib/modules";
 import { BackButton } from "@/components/ui/back-button";
 import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { InviteProgramStaffButton } from "@/components/users/invite-program-staff-button";
 
 export const dynamic = "force-dynamic";
 
@@ -20,10 +24,36 @@ const DETAIL_LINKS: Partial<Record<string, { href: string; label: string }>> = {
   chairops: { href: "/chairops/users", label: "จัดการทีมเก้าอี้นวด" },
 };
 
+// โปรแกรมที่มีระบบเชิญทีมของตัวเองอยู่แล้ว (ใช้งานได้จริง ไม่ใช่แค่ลิงก์ไปหน้า
+// กลาง) — ไม่โชว์ปุ่ม "เชิญพนักงาน" แบบทั่วไปซ้ำ กันสับสนว่าจะใช้ทางไหน
+const HAS_OWN_INVITE = new Set(["recruit", "ledger", "clawfleet", "chairops"]);
+
 export default async function PermissionsOverviewPage() {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  // ทุกคนที่ล็อกอินเข้ามาได้ — แต่แอดมินองค์กรเห็นทุกโปรแกรม ส่วนแอดมิน
+  // โปรแกรม (program_admin ที่มีสิทธิ์จริง) เห็นเฉพาะโปรแกรมที่ตัวเองดูแล
+  // (CEO 2026-09-30: "อยากได้หน้ารวม...และให้เชิญต่อกันได้" — หน้านี้ต้องเข้าได้
+  // ทั้งแอดมินองค์กรและแอดมินโปรแกรม ไม่ใช่แค่แอดมินองค์กรเหมือนเดิม)
+  const session = await requireSession();
   const orgId = session.user.org_id;
   const admin = adminClient();
+  const adminTier = isAdminTier(session.user.role);
+
+  const allProgramSlugs = Object.values(MODULES)
+    .filter((m) => m.slug !== "costctrl")
+    .map((m) => m.slug);
+  const canInviteEntries = adminTier
+    ? allProgramSlugs.map((slug) => [slug, true] as const)
+    : await Promise.all(
+        allProgramSlugs.map(
+          async (slug) => [slug, await userIsModuleAdmin(session.user, slug)] as const,
+        ),
+      );
+  const canInvite = new Map(canInviteEntries);
+
+  // ไม่ใช่แอดมินองค์กร และไม่ได้ดูแลโปรแกรมไหนเลย → ไม่มีอะไรให้ดูในหน้านี้
+  if (!adminTier && ![...canInvite.values()].some(Boolean)) {
+    redirect("/403");
+  }
 
   const [{ data: grants }, { count: adminTierCount }, chairopsCounts, ledgerCounts] =
     await Promise.all([
@@ -86,12 +116,14 @@ export default async function PermissionsOverviewPage() {
   const chairopsTotal = chairopsCounts.reduce((s, r) => s + r._count.id, 0);
   const ledgerTotal = ledgerCounts.reduce((s, r) => s + r._count.id, 0);
 
-  const programs = Object.values(MODULES).filter((m) => m.slug !== "costctrl");
+  const programs = Object.values(MODULES).filter(
+    (m) => m.slug !== "costctrl" && (adminTier || canInvite.get(m.slug)),
+  );
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-3xl mx-auto">
       <div className="mb-3">
-        <BackButton label="กลับ" fallbackHref="/users" />
+        <BackButton label="กลับ" fallbackHref={adminTier ? "/users" : "/dashboard"} />
       </div>
 
       <header className="mb-6 animate-fade-up">
@@ -102,20 +134,23 @@ export default async function PermissionsOverviewPage() {
           สิทธิ์แต่ละโปรแกรม
         </h1>
         <p className="text-sm text-zinc-500 mt-1">
-          ใครมีสิทธิ์อะไรบ้าง ในแต่ละโปรแกรม ณ ตอนนี้ — กดเข้าไปดู/จัดการรายชื่อ
-          หรือตั้งค่าสิทธิ์ละเอียดของโปรแกรมนั้น (ถ้ามี)
+          {adminTier
+            ? "ใครมีสิทธิ์อะไรบ้าง ในแต่ละโปรแกรม ณ ตอนนี้ — กดเข้าไปดู/จัดการรายชื่อ หรือตั้งค่าสิทธิ์ละเอียดของโปรแกรมนั้น (ถ้ามี)"
+            : "โปรแกรมที่คุณดูแลอยู่ — เชิญพนักงานเข้าทีมของคุณได้จากตรงนี้เลย"}
         </p>
       </header>
 
-      <Card className="mb-4 animate-fade-up delay-100">
-        <CardBody className="!py-3">
-          <p className="text-sm">
-            👑 <strong>แอดมินองค์กร {adminTierCount ?? 0} คน</strong> — เห็นและ
-            จัดการได้ทุกโปรแกรมเสมอ (Super Admin / Admin) ไม่ต้องมีสิทธิ์แยก
-            รายโปรแกรม จึงไม่นับรวมในตัวเลขด้านล่าง
-          </p>
-        </CardBody>
-      </Card>
+      {adminTier && (
+        <Card className="mb-4 animate-fade-up delay-100">
+          <CardBody className="!py-3">
+            <p className="text-sm">
+              👑 <strong>แอดมินองค์กร {adminTierCount ?? 0} คน</strong> — เห็นและ
+              จัดการได้ทุกโปรแกรมเสมอ (Super Admin / Admin) ไม่ต้องมีสิทธิ์แยก
+              รายโปรแกรม จึงไม่นับรวมในตัวเลขด้านล่าง
+            </p>
+          </CardBody>
+        </Card>
+      )}
 
       <div className="space-y-3">
         {programs.map((p) => {
@@ -187,16 +222,19 @@ export default async function PermissionsOverviewPage() {
                   </p>
                 )}
 
-                {detail && (
-                  <div className="mt-3">
+                <div className="mt-3 flex items-center gap-4">
+                  {detail && (
                     <Link
                       href={detail.href}
                       className="text-xs font-semibold text-[var(--color-brand-600)] hover:underline"
                     >
                       {detail.label} →
                     </Link>
-                  </div>
-                )}
+                  )}
+                  {!HAS_OWN_INVITE.has(p.slug) && canInvite.get(p.slug) && (
+                    <InviteProgramStaffButton moduleSlug={p.slug} programName={p.name} />
+                  )}
+                </div>
               </CardBody>
             </Card>
           );
