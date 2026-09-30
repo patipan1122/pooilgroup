@@ -1,9 +1,16 @@
 // Playland · shared wristband print helper
 //
 // Opens a dedicated 58mm-thermal popup and prints one OR several stickers in a
-// SINGLE print job. Each sticker carries the SAME band code + QR so staff can
-// match the right adult to the right child at pickup. Adult stickers are
+// SINGLE print job. Each sticker carries the SAME band code + barcode so staff
+// can match the right adult to the right child at pickup. Adult stickers are
 // labeled "ผู้ปกครอง".
+//
+// Code128 barcode (not QR) — CEO's counter scanner (2026-09-30) is a laser
+// 1D scanner that physically cannot read QR at all. The scanned/typed value
+// is just the same "PW-..." text either way (scanners act as a keyboard,
+// typing the decoded string into whatever input has focus) — see
+// components/playland/playland-app.tsx's wristband screen input — so this
+// swap only touches the printed image, no check-in/activation code changes.
 //
 // Extracted from components/playland/wristband-issue-form.tsx so both the issue
 // form and the cashier SPA share one implementation.
@@ -29,10 +36,10 @@ function stickerHtml(opts: {
   meta: string;
   role: string | null;
 }): string {
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(opts.code)}&qzone=1&margin=0`;
+  const barcodeUrl = `https://barcodeapi.org/api/128/${encodeURIComponent(opts.code)}`;
   return `<div class="sticker">
   ${opts.role ? `<div class="role">${esc(opts.role)}</div>` : ""}
-  <img src="${qrUrl}" alt="${esc(opts.code)}">
+  <img class="barcode" src="${barcodeUrl}" alt="${esc(opts.code)}">
   <div class="name">${esc(opts.title)}</div>
   ${opts.nick ? `<div class="nick">${esc(opts.nick)}</div>` : ""}
   <div class="code">${esc(opts.code)}</div>
@@ -73,7 +80,7 @@ export function printWristband(opts: PrintWristbandOpts): boolean {
   html, body { margin: 0; padding: 0; font-family: ui-sans-serif, system-ui, "IBM Plex Sans Thai", sans-serif; }
   .sticker { width: 58mm; padding: 3mm; box-sizing: border-box; text-align: center; color: #000; }
   .sticker .role { font-size: 8pt; font-weight: 700; letter-spacing: 0.08em; color: #2D6CB1; margin-bottom: 1mm; text-transform: uppercase; }
-  .sticker img { width: 40mm; height: 40mm; display: block; margin: 0 auto 1mm; }
+  .sticker img.barcode { width: 50mm; height: 20mm; display: block; margin: 0 auto 1mm; }
   .sticker .name { font-size: 11pt; font-weight: 700; line-height: 1.15; word-break: break-word; }
   .sticker .nick { font-size: 9pt; color: #444; }
   .sticker .code { font-family: ui-monospace, "IBM Plex Mono", monospace; font-size: 10pt; font-weight: 700; letter-spacing: 0.05em; margin-top: 1mm; }
