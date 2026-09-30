@@ -103,12 +103,10 @@ export function FaceCapture({ value, onChange, label = "ถ่ายรูปห
         audio: false,
       });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-        setReady(true);
-        setCameraStarted(true);
-      }
+      // `<video ref={videoRef}>` only renders once cameraStarted flips true —
+      // videoRef.current is still null right here on the first click, so the
+      // attach happens in the effect below once React mounts it.
+      setCameraStarted(true);
     } catch (e) {
       const classified = classifyError(e);
       setError(classified);
@@ -116,6 +114,14 @@ export function FaceCapture({ value, onChange, label = "ถ่ายรูปห
       console.warn("[face-capture] getUserMedia failed", classified.kind, e);
     }
   }, []);
+
+  // Attach the already-granted stream once the <video> element mounts (see note above).
+  useEffect(() => {
+    if (!cameraStarted || !streamRef.current || !videoRef.current) return;
+    const video = videoRef.current;
+    video.srcObject = streamRef.current;
+    video.play().then(() => setReady(true)).catch((e) => console.warn("[face-capture] video.play failed", e));
+  }, [cameraStarted]);
 
   function capture() {
     const video = videoRef.current;
