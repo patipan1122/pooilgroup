@@ -86,6 +86,22 @@ try {
       show('สั่งเปิดประตู', await call('setDeviceRemoteOpen'));
       break;
 
+    case 'getparam': { // node test-device.mjs getparam  → ดูว่าเครื่องนี้ตั้งเป็น "ขาเข้า" หรือ "ขาออก"
+      const r = await call('getDeviceParameter');
+      show('พารามิเตอร์เครื่อง', r);
+      const inout = r?.data?.inout ?? r?.inout;
+      if (inout !== undefined) console.log(`\n👉 เครื่องนี้ (${DEVICE_IP}) ตั้งเป็น: ${inout === 0 ? 'ขาออก (OUT)' : inout === 1 ? 'ขาเข้า (IN)' : `ค่าไม่รู้จัก (${inout})`}`);
+      break;
+    }
+
+    case 'setparam': { // node test-device.mjs setparam inout 0   (0=ขาออก, 1=ขาเข้า)
+      if (!a1 || a2 === undefined) throw new Error('ใช้: node test-device.mjs setparam inout <0=ออก|1=เข้า>');
+      const value = Number(a2);
+      show(`ตั้ง ${a1}=${value}`, await call('setDeviceParameter', { data: { [a1]: value } }));
+      console.log('เช็คซ้ำด้วย: node test-device.mjs getparam');
+      break;
+    }
+
     case 'listen': { // รับ log สแกน เข้าคอมโดยตรง
       const ip = a1 || myLanIp();
       const url = `http://${ip}:8080/record`;
@@ -119,6 +135,8 @@ try {
   node test-device.mjs delete T0001                    ลบหน้า
   node test-device.mjs open                            สั่งเปิดประตูจากคอม
   node test-device.mjs listen                          ดู log สแกนแบบ real-time
+  node test-device.mjs getparam                        เช็คว่าเครื่องนี้ตั้งเป็น ขาเข้า/ขาออก
+  node test-device.mjs setparam inout 0                ตั้งเครื่องนี้เป็นขาออก (1=ขาเข้า)
 `);
   }
 } catch (e) {
