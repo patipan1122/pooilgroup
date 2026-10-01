@@ -116,7 +116,15 @@ const server = http.createServer((req, res) => {
   let body = "";
   req.on("data", (c) => (body += c));
   req.on("end", async () => {
+    try {
+      const j = JSON.parse(body);
+      const short = JSON.stringify(j, (_k, v) => (typeof v === "string" && v.length > 80 ? `${v.slice(0, 40)}…(${v.length} ตัวอักษร)` : v));
+      log(`📥 [${deviceCode}] เหตุการณ์จากเครื่อง: ${short.slice(0, 700)}`);
+    } catch {
+      log(`📥 [${deviceCode}] เหตุการณ์จากเครื่อง (ไม่ใช่ JSON, ${body.length} ไบต์): ${body.slice(0, 200)}`);
+    }
     const reply = await relayEvent(deviceCode, body);
+    log(`📤 [${deviceCode}] เว็บตอบกลับ: ${JSON.stringify(reply).slice(0, 300)}`);
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify(reply));
   });
