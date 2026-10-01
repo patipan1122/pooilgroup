@@ -441,7 +441,10 @@ export default function PlaylandApp(props: Props) {
   const s = state;
 
   // ----- handlers -----
-  const go = (screen: Screen) => dispatch({ t: "go", screen });
+  const go = (screen: Screen) => {
+    dispatch({ t: "go", screen });
+    if (screen === "wristband") void loadStrapList(); // โหลดรายชื่อลูกค้าวันนี้ตอนเข้าหน้านี้ (ไม่ใช้ effect กัน render ซ้อน)
+  };
   const goPos = () => {
     dispatch({ t: "set", p: { chargeKidId: null } });
     go("pos");
@@ -1106,9 +1109,6 @@ export default function PlaylandApp(props: Props) {
       /* เน็ตสะดุด — กดรีเฟรชเองได้ */
     }
   }, [props.branchId]);
-  useEffect(() => {
-    if (s.screen === "wristband") void loadStrapList();
-  }, [s.screen, loadStrapList]);
   const strapIssueSelected = async () => {
     const c = strapList?.find((x) => x.sessionId === strapSel);
     if (!c) { showToast("เลือกชื่อลูกค้าก่อน"); return; }
