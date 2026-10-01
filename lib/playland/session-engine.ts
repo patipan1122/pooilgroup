@@ -29,8 +29,8 @@ type Tx = Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0];
 // registered face, with NO real-time check against our backend (see
 // acs-auto-adapter.ts header + docs/acs/README.md). So the only lever we
 // have is WHICH faces are on each device's local whitelist right now:
-//   ACTIVE (currently inside)   → NOT on the entrance device's whitelist
-//   PAUSED (stepped out, grace) → back on the entrance device's whitelist
+//   ACTIVE (currently inside)   → NOT on the entrance device, IS on the exit device
+//   PAUSED (stepped out, grace) → back on the entrance device, OFF the exit device (one exit per round)
 //   FORFEITED / COMPLETED       → off BOTH entrance and exit whitelists
 // Real devices are behind shop-LAN NAT (Vercel can't reach them directly),
 // so both add/remove go through the existing async PlaylandFaceSync queue —
@@ -68,6 +68,18 @@ async function revokeEntranceAccess(tx: Tx, orgId: string, branchId: string, mem
 async function restoreEntranceAccess(tx: Tx, orgId: string, branchId: string, memberId: string) {
   const { entrance } = await directionalDeviceIds(tx, branchId);
   if (entrance.length > 0) await queueFaceJobs(tx, orgId, entrance, memberId, "ADD");
+}
+
+/** Just stepped out — take them off the EXIT whitelist so the same face can't open the exit gate a second time this round (CEO 2026-10-01). */
+async function revokeExitAccess(tx: Tx, orgId: string, branchId: string, memberId: string) {
+  const { exit } = await directionalDeviceIds(tx, branchId);
+  if (exit.length > 0) await queueFaceJobs(tx, orgId, exit, memberId, "REMOVE");
+}
+
+/** Walked back in within grace — give the exit back so they can leave again (once). */
+async function restoreExitAccess(tx: Tx, orgId: string, branchId: string, memberId: string) {
+  const { exit } = await directionalDeviceIds(tx, branchId);
+  if (exit.length > 0) await queueFaceJobs(tx, orgId, exit, memberId, "ADD");
 }
 
 /** Visit is fully over (forfeited grace / checked out) — off every gate device until their next paid visit re-registers them. */
@@ -265,6 +277,7 @@ export async function handleFaceEvent(input: HandleFaceEventInput): Promise<Hand
           },
         });
         await revokeEntranceAccess(tx, orgId, branchId, memberId);
+        await restoreExitAccess(tx, orgId, branchId, memberId);
         const ev = await insertEvent(tx, input, memberId, session.id);
         return { eventId: ev.id, sessionId: session.id, outcome: "session_resumed", message: `resumed (+${pausedSecs}s paused)` };
       }
@@ -291,10 +304,13 @@ export async function handleFaceEvent(input: HandleFaceEventInput): Promise<Hand
           data: { status: "PAUSED", pausedAt: event.eventAt, reentryDeadlineAt: deadline },
         });
         await restoreEntranceAccess(tx, orgId, branchId, memberId);
+        await revokeExitAccess(tx, orgId, branchId, memberId);
         const ev = await insertEvent(tx, input, memberId, session.id);
         return { eventId: ev.id, sessionId: session.id, outcome: "session_paused", message: `paused · re-entry by ${deadline.toISOString()}` };
       }
-      // Already PAUSED · log only
+      // Already PAUSED · log only — also re-assert the exit-whitelist removal in case the earlier
+      // DELETE job hasn't landed on the device yet (agent poll lag), so a repeat scan can't reopen the exit.
+      await revokeExitAccess(tx, orgId, branchId, memberId);
       const ev = await insertEvent(tx, input, memberId, session.id);
       return { eventId: ev.id, sessionId: session.id, outcome: "session_already_paused", message: "already paused" };
     }
