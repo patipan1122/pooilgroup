@@ -29,6 +29,8 @@ import {
   activateWristband,
   activatePendingSession,
   exitWristband,
+  listStrapCandidates,
+  type StrapCandidate,
   type WristbandLookup,
 } from "@/lib/playland/wristband";
 import { printWristband } from "@/components/playland/print-wristband";
@@ -1089,6 +1091,44 @@ export default function PlaylandApp(props: Props) {
       dispatch({ t: "set", p: { chargeKidId: wbLookup.session.id, screen: "pos" } });
     } else {
       goPos();
+    }
+  };
+
+  // ออกสายรัด/พิมพ์ซ้ำ จากรายชื่อลูกค้าวันนี้ (จ่ายเงินแล้วรอสแกนเข้า + กำลังเล่น) — ไม่ต้องไปค้นหาสมาชิกก่อน
+  const [strapList, setStrapList] = useState<StrapCandidate[] | null>(null);
+  const [strapSel, setStrapSel] = useState<string | null>(null);
+  const loadStrapList = useCallback(async () => {
+    if (!props.branchId) return;
+    try {
+      const res = await listStrapCandidates(props.branchId);
+      if (res.ok) setStrapList(res.data);
+    } catch {
+      /* เน็ตสะดุด — กดรีเฟรชเองได้ */
+    }
+  }, [props.branchId]);
+  useEffect(() => {
+    if (s.screen === "wristband") void loadStrapList();
+  }, [s.screen, loadStrapList]);
+  const strapIssueSelected = async () => {
+    const c = strapList?.find((x) => x.sessionId === strapSel);
+    if (!c) { showToast("เลือกชื่อลูกค้าก่อน"); return; }
+    setWbBusy(true);
+    try {
+      let code = c.wristband?.code ?? null;
+      if (!code) {
+        if (c.status !== "PENDING_ENTRY") { showToast("คนนี้กำลังเล่นอยู่แต่ไม่มีสายรัด · ขอให้ผู้จัดการช่วยออกสายรัดให้"); return; }
+        const res = await issueWristband({ branchId: props.branchId, memberId: c.memberId, sessionId: c.sessionId });
+        if (!res.ok) { showToast("❌ " + res.error); return; }
+        code = res.data.code;
+      }
+      printBandSmart({ code, name: c.name, nickname: c.nickname, memberId: c.memberId, minutes: c.packageMinutes });
+      showToast(c.wristband ? "พิมพ์สายรัดซ้ำ (รหัสเดิม) · " + (c.nickname || c.name) : "ออกสายรัด " + code + " · " + (c.nickname || c.name));
+      await loadStrapList();
+      router.refresh();
+    } catch {
+      showToast("ออกสายรัดไม่สำเร็จ · ลองใหม่");
+    } finally {
+      setWbBusy(false);
     }
   };
 
@@ -2259,13 +2299,45 @@ export default function PlaylandApp(props: Props) {
                 </div>
               ) : (
                 <div style={{ background: "#fff", border: "1px dashed #d9cdb8", borderRadius: 16, padding: "26px 24px" }}>
-                  <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 18, marginBottom: 6 }}>ออกสายรัดใหม่</div>
-                  <div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 14 }}>ค้นหาสมาชิกในหน้า “สมาชิก” ก่อน แล้วกลับมาออกสายรัดให้รายที่ค้นล่าสุด หรือใส่ memberId</div>
+                  <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
+                    <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 18, flex: 1 }}>ออกสายรัด · พิมพ์ซ้ำ</div>
+                    <div onClick={() => void loadStrapList()} style={{ cursor: "pointer", color: "#2D6CB1", fontSize: 14 }}>🔄 รีเฟรช</div>
+                  </div>
+                  <div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 14 }}>เลือกชื่อลูกค้าวันนี้ · จ่ายเงินแล้วแต่ยังไม่ได้สแกนเข้า หรือกำลังเล่นอยู่</div>
+                  {strapList === null ? (
+                    <div style={{ fontSize: 14, color: "#a9978a", padding: "10px 0" }}>กำลังโหลดรายชื่อ…</div>
+                  ) : strapList.length === 0 ? (
+                    <div style={{ fontSize: 14, color: "#a9978a", padding: "10px 0 14px" }}>วันนี้ยังไม่มีลูกค้าที่จ่ายเงินแล้วรอสายรัด · รับเด็กเข้าเล่นก่อน</div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14, maxHeight: 360, overflowY: "auto" }}>
+                      {strapList.map((c) => {
+                        const sel = strapSel === c.sessionId;
+                        const badge = c.status === "PENDING_ENTRY" ? { t: "จ่ายเงินแล้ว · รอสแกนเข้า", bg: "#fdf2d6", fg: "#9a6b00" } : c.status === "ACTIVE" ? { t: "กำลังเล่น", bg: "#e3f4ea", fg: "#1F8A5B" } : { t: "พักอยู่", bg: "#eee8dc", fg: "#6b6052" };
+                        return (
+                          <div key={c.sessionId} onClick={() => setStrapSel(c.sessionId)} style={{ cursor: "pointer", display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, padding: "12px 14px", borderRadius: 12, border: sel ? "2px solid #2D6CB1" : "1px solid #ece5d8", background: sel ? "#f1f6fb" : "#fff" }}>
+                            <div style={{ flex: "1 1 180px", minWidth: 0 }}>
+                              <div style={{ fontWeight: 500, fontSize: 17, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.nickname || c.name}</div>
+                              <div style={{ fontSize: 13, color: "#8a7f70" }}>{c.packageMinutes > 0 ? c.packageMinutes + " นาที" : "รายวัน"} · {c.wristband ? "สายรัด " + c.wristband.code : "ยังไม่มีสายรัด"}</div>
+                            </div>
+                            <span style={{ fontSize: 12.5, padding: "4px 10px", borderRadius: 20, background: badge.bg, color: badge.fg, whiteSpace: "nowrap" }}>{badge.t}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div onClick={strapIssueSelected} style={{ cursor: strapSel && !wbBusy ? "pointer" : "default", opacity: strapSel && !wbBusy ? 1 : 0.5, background: "#1F8A5B", color: "#fff", borderRadius: 12, padding: "15px 22px", textAlign: "center", fontSize: 16, fontFamily: MITR, fontWeight: 500 }}>
+                    {wbBusy ? "กำลังทำ…" : strapList?.find((x) => x.sessionId === strapSel)?.wristband ? "พิมพ์สายรัดซ้ำ (รหัสเดิม)" : "ออก + พิมพ์สายรัด"}
+                  </div>
+                  <div style={{ fontSize: 12.5, color: "#a9978a", marginTop: 8 }}>พิมพ์ซ้ำได้ แต่รหัสเดิมสแกนเข้าได้รอบเดียว</div>
+                  <details style={{ marginTop: 16 }}>
+                    <summary style={{ cursor: "pointer", color: "#2D6CB1", fontSize: 14 }}>หาไม่เจอ? ค้นหาสมาชิกเอง</summary>
+                    <div style={{ fontSize: 14, color: "#8a7f70", margin: "10px 0" }}>ค้นหาสมาชิกในหน้า “สมาชิก” ก่อน แล้วกลับมาออกสายรัดให้รายที่ค้นล่าสุด หรือใส่ memberId</div>
                   <div style={{ display: "flex", gap: 8 }}>
                     <input value={wbIssueMemberId} onChange={(e) => setWbIssueMemberId(e.target.value)} placeholder={memResults[0] ? `รายล่าสุด: ${memResults[0].name}` : "memberId"} style={{ ...inputStyle, flex: 1 }} />
                     <div onClick={wbIssue} style={{ cursor: "pointer", background: "#1F8A5B", color: "#fff", borderRadius: 12, padding: "14px 22px", fontSize: 16, fontFamily: MITR, fontWeight: 500, whiteSpace: "nowrap" }}>{wbBusy ? "..." : "ออก + พิมพ์"}</div>
                   </div>
-                  <div onClick={() => go("members")} style={{ cursor: "pointer", color: "#2D6CB1", fontSize: 14, marginTop: 12 }}>→ ไปค้นหาสมาชิก</div>
+                    <div onClick={() => go("members")} style={{ cursor: "pointer", color: "#2D6CB1", fontSize: 14, marginTop: 12 }}>→ ไปค้นหาสมาชิก</div>
+                  </details>
                 </div>
               )}
             </div>

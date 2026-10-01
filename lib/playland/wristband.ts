@@ -47,6 +47,64 @@ export async function requireOpenShift(orgId: string, branchId: string, cashierU
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// LIST · ลูกค้าวันนี้ที่ต้องออก/พิมพ์สายรัด (จ่ายเงินแล้วรอสแกนเข้า + กำลังเล่น/พักอยู่)
+// หน้า "ออกสายรัดใหม่" เลือกชื่อจากรายการนี้ แทนการต้องไปค้นหาสมาชิกแล้วกลับมา (CEO 2026-10-01)
+// ────────────────────────────────────────────────────────────────────────────
+export interface StrapCandidate {
+  sessionId: string;
+  memberId: string;
+  name: string;
+  nickname: string | null;
+  packageMinutes: number;
+  status: "PENDING_ENTRY" | "ACTIVE" | "PAUSED";
+  wristband: { id: string; code: string; status: string } | null;
+}
+
+export async function listStrapCandidates(branchId: string): Promise<ActionResult<StrapCandidate[]>> {
+  const session = await requireSession();
+  if (!canPlaylandCashier(session.user.role)) return err("ไม่มีสิทธิ์");
+  if (!(await verifyBranchAssignment(branchId, session.user.org_id, session.user.id, session.user.role))) return err("คุณไม่ได้รับมอบหมายให้ทำงานสาขานี้");
+
+  // เริ่มวัน = 00:00 เวลาไทย (UTC+7) · รอสแกนเข้า (PENDING_ENTRY) นับเฉพาะของวันนี้ กันของค้างเก่า
+  const BKK = 7 * 3600_000;
+  const bkk = new Date(Date.now() + BKK);
+  const startOfDay = new Date(Date.UTC(bkk.getUTCFullYear(), bkk.getUTCMonth(), bkk.getUTCDate()) - BKK);
+
+  const rows = await prisma.playlandSession.findMany({
+    where: {
+      orgId: session.user.org_id,
+      branchId,
+      OR: [{ status: "PENDING_ENTRY", createdAt: { gte: startOfDay } }, { status: { in: ["ACTIVE", "PAUSED"] } }],
+    },
+    orderBy: { createdAt: "desc" },
+    take: 60,
+    select: {
+      id: true,
+      memberId: true,
+      packageMinutes: true,
+      status: true,
+      member: { select: { name: true, nickname: true } },
+      wristbands: { where: { status: { in: ["ISSUED", "ACTIVE"] } }, orderBy: { issuedAt: "desc" }, take: 1, select: { id: true, code: true, status: true } },
+    },
+  });
+
+  return {
+    ok: true,
+    data: rows
+      .filter((r) => r.status === "PENDING_ENTRY" || r.status === "ACTIVE" || r.status === "PAUSED")
+      .map((r) => ({
+        sessionId: r.id,
+        memberId: r.memberId,
+        name: r.member.name,
+        nickname: r.member.nickname,
+        packageMinutes: r.packageMinutes,
+        status: r.status as StrapCandidate["status"],
+        wristband: r.wristbands[0] ?? null,
+      })),
+  };
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // ISSUE · cashier hands a paid wristband to a member
 // ────────────────────────────────────────────────────────────────────────────
 export async function issueWristband(input: {
