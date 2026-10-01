@@ -35,6 +35,7 @@ import {
 } from "@/lib/playland/wristband";
 import { printWristband } from "@/components/playland/print-wristband";
 import { queueWristbandOnK2 } from "@/components/playland/print-wristband-k2";
+import { preloadWristbandAssets } from "@/lib/playland/wristband-bitmap";
 import { printReceipt } from "@/components/playland/print-receipt";
 import { FaceCapture } from "@/components/playland/face-capture";
 import { BarcodeScanBox } from "@/components/playland/barcode-scan-box";
@@ -441,6 +442,11 @@ export default function PlaylandApp(props: Props) {
   const s = state;
 
   // ----- handlers -----
+  // โหลดฟอนต์+โลโก้สายรัดไว้ก่อน → กดพิมพ์ครั้งแรกไม่ต้องรอโหลด
+  useEffect(() => {
+    if (props.branchId) preloadWristbandAssets();
+  }, [props.branchId]);
+
   const go = (screen: Screen) => {
     dispatch({ t: "go", screen });
     if (screen === "wristband") void loadStrapList(); // โหลดรายชื่อลูกค้าวันนี้ตอนเข้าหน้านี้ (ไม่ใช้ effect กัน render ซ้อน)
@@ -818,7 +824,7 @@ export default function PlaylandApp(props: Props) {
     const adults = s.ckAdults;
     const payMethod = PAY_MAP[s.ckPay];
 
-    const buildReceipt = (bandCode: string | null, kind: Receipt["kind"] = "checkin"): Receipt => ({
+    const buildReceipt = (bandCode: string | null, kind: Receipt["kind"] = "checkin", mid: string | null = s.ckMemberId): Receipt => ({
       name,
       no: randReceiptNo(),
       lines: [{ label: "ค่าเล่น " + pkg.label, amount: pkg.price }],
@@ -827,7 +833,7 @@ export default function PlaylandApp(props: Props) {
       adultCount: adults,
       nickname: s.ckNickname || null,
       minutes: pkg.mins,
-      memberId: s.ckMemberId,
+      memberId: mid,
       kind,
     });
 
@@ -882,7 +888,7 @@ export default function PlaylandApp(props: Props) {
         }
         // D-A2 (CEO 2026-09-29): ยังไม่เริ่มเวลา — จ่ายเงินแล้วรอสแกนที่ประตู (หน้าสายรัด → "เปิด gate · เริ่มเล่น")
         //   จึงไม่เพิ่มเข้าบอร์ด "กำลังเล่น" (s.kids) ตรงนี้ ปล่อยให้ตอนสแกนที่ประตูเป็นคนเพิ่มแทน
-        const paidReceipt = buildReceipt(bandCode, "checkin_pending");
+        const paidReceipt = buildReceipt(bandCode, "checkin_pending", memberId);
         printReceiptFor(paidReceipt);
         dispatch({ t: "paidPendingReceipt", receipt: paidReceipt });
         showToast("รับเงินแล้ว · รอสแกนสายรัดที่ประตูเพื่อเริ่มเวลา " + name);

@@ -15,7 +15,10 @@ export const BITMAP_BYTES = ROWS * BYTES_PER_ROW;
 
 const LABEL_TYPE = 2;
 const DENSITY = 4;
-const ROW_PACING_MS = 15;
+const ROW_PACING_MS = Number(process.env.K2_ROW_PACING_MS || 15); // หน่วงหลังส่งแพ็กเก็ตแถวมีข้อมูล (ยังไม่พิสูจน์ว่าลดได้ ห้ามลดโดยไม่พิมพ์ทดสอบจริง)
+// K2_RLE=1 → ส่งแบบบีบอัด (เร็วกว่าราว 3 เท่า) · ปิดไว้จนกว่าจะพิมพ์ทดสอบจริงยืนยันว่าภาพเหมือนเดิมเป๊ะ
+const USE_RLE = process.env.K2_RLE === "1";
+const BLANK_PACING_MS = 2; // แพ็กเก็ตแถวว่างเล็กมาก
 const PAGE_TIMEOUT_MS = 60_000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -49,6 +52,33 @@ function frame(type, data = []) {
 }
 
 const u16 = (n) => [(n >> 8) & 0xff, n & 0xff];
+
+// บีบอัดแบบเดียวกับไลบรารีต้นแบบ (niimbluelib): แถวติดกันที่เหมือนกัน → แพ็กเก็ตเดียว + จำนวนซ้ำ (≤255)
+// แถวว่างทั้งแถว → แพ็กเก็ตแถวว่าง 0x84 [ตำแหน่ง, จำนวนซ้ำ] · แถวมีจุด → 0x85 [ตำแหน่ง, 0,0,0, จำนวนซ้ำ, ข้อมูล 25 ไบต์]
+// สายรัดส่วนใหญ่ (ฟ้าล้วน ~2/3 ของความยาว) เป็นแถวว่าง และแท่งบาร์โค้ด/ตัวอักษรมีแถวซ้ำเยอะ → ส่งน้อยลงมาก ไม่ต้องรอหน่วงทีละ 1,648 แถว
+// วิธีเดิม (พิสูจน์แล้วว่าพิมพ์ถูก): ส่งทุกแถวทีละแถว · ใช้เมื่อ K2_RLE ไม่ได้เปิด
+export function encodeRowsPlain(bitmap) {
+  const packets = [];
+  for (let y = 0; y < ROWS; y++) {
+    const row = bitmap.subarray(y * BYTES_PER_ROW, (y + 1) * BYTES_PER_ROW);
+    packets.push({ blank: false, rows: 1, frame: frame(0x85, [...u16(y), 0, 0, 0, 1, ...row]) });
+  }
+  return packets;
+}
+
+export function encodeRows(bitmap) {
+  const packets = [];
+  let y = 0;
+  while (y < ROWS) {
+    const row = bitmap.subarray(y * BYTES_PER_ROW, (y + 1) * BYTES_PER_ROW);
+    let n = 1;
+    while (y + n < ROWS && n < 255 && row.equals(bitmap.subarray((y + n) * BYTES_PER_ROW, (y + n + 1) * BYTES_PER_ROW))) n++;
+    const blank = row.every((b) => b === 0);
+    packets.push({ blank, rows: n, frame: blank ? frame(0x84, [...u16(y), n]) : frame(0x85, [...u16(y), 0, 0, 0, n, ...row]) });
+    y += n;
+  }
+  return packets;
+}
 
 // อ่านกรอบข้อมูลจากสาย (อาจมาเป็นชิ้นๆ / มีขยะนำหน้า)
 class Link {
@@ -141,7 +171,7 @@ export async function printWristbandBitmap(bitmap, { serialPath, log = () => {} 
 
   const link = new Link(port);
   try {
-    await sleep(150);
+    await sleep(60);
     link.queue.length = 0;
 
     await link.txrx(frame(0x23, [LABEL_TYPE]), 0x33, "ชนิดกระดาษ");
@@ -153,16 +183,16 @@ export async function printWristbandBitmap(bitmap, { serialPath, log = () => {} 
     await link.txrx(frame(0x13, [...u16(ROWS), ...u16(COLS), ...u16(1), ...u16(0), 0, 0, 0, ...u16(0)]), 0x14, "ขนาดหน้า");
 
     const started = Date.now();
-    for (let y = 0; y < ROWS; y++) {
-      const row = bitmap.subarray(y * BYTES_PER_ROW, (y + 1) * BYTES_PER_ROW);
-      await link.send(frame(0x85, [...u16(y), 0, 0, 0, 1, ...row]));
-      await sleep(ROW_PACING_MS);
-      if (y % 100 === 99) {
+    const packets = USE_RLE ? encodeRows(bitmap) : encodeRowsPlain(bitmap);
+    for (let i = 0; i < packets.length; i++) {
+      await link.send(packets[i].frame);
+      await sleep(packets[i].blank ? BLANK_PACING_MS : ROW_PACING_MS);
+      if (i % 50 === 49) {
         link.throwIfPrintError();
         link.queue.length = 0; // ทิ้ง check-line ที่เครื่องส่งมาระหว่างทาง
       }
     }
-    log(`ส่งข้อมูล ${ROWS} แถวใน ${((Date.now() - started) / 1000).toFixed(1)} วิ`);
+    log(`ส่งข้อมูล ${ROWS} แถว (${packets.length} แพ็กเก็ตหลังบีบอัด) ใน ${((Date.now() - started) / 1000).toFixed(1)} วิ`);
 
     await link.txrx(frame(0xe3, [1]), 0xe4, "จบหน้า");
 
@@ -185,7 +215,7 @@ export async function printWristbandBitmap(bitmap, { serialPath, log = () => {} 
       await sleep(300);
     }
     await link.send(frame(0xdc, [1])).catch(() => {});
-    await sleep(300);
+    await sleep(120);
   } finally {
     await new Promise((resolve) => port.close(() => resolve()));
   }

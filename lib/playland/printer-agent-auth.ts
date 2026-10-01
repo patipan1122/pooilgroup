@@ -24,6 +24,7 @@ export interface AuthedPrinter {
   orgId: string;
   branchId: string;
   code: string;
+  lastSeenAt: Date | null;
 }
 
 // รหัสเครื่องไม่มี/ผิด/รหัสลับผิด → 401 เหมือนกันหมด (ไม่บอกว่ามีเครื่องนี้อยู่จริงไหม)
@@ -35,8 +36,8 @@ export async function authenticatePrinter(req: NextRequest): Promise<{ printer: 
 
   const printer = await prisma.playlandPrinter.findUnique({
     where: { code },
-    select: { id: true, orgId: true, branchId: true, code: true, secretHash: true, enabled: true },
+    select: { id: true, orgId: true, branchId: true, code: true, secretHash: true, enabled: true, lastSeenAt: true },
   });
   if (!printer || !printer.enabled || !secretMatches(secret, printer.secretHash)) return deny;
-  return { printer: { id: printer.id, orgId: printer.orgId, branchId: printer.branchId, code: printer.code } };
+  return { printer: { id: printer.id, orgId: printer.orgId, branchId: printer.branchId, code: printer.code, lastSeenAt: printer.lastSeenAt } };
 }

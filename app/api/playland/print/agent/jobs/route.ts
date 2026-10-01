@@ -13,6 +13,7 @@ export const runtime = "nodejs";
 
 const LEASE_SECONDS = 120; // พิมพ์จริง ~45 วิ · เผื่อไว้ 2.5 เท่า
 const MAX_ATTEMPTS = 3;
+const HOUSEKEEPING_MS = 10_000; // ความถี่เขียน heartbeat/คืนงานค้าง (หน้าต่างออนไลน์ฝั่งแคชเชียร์ = 45 วิ)
 
 interface ClaimedRow {
   id: string;
@@ -27,19 +28,22 @@ export async function GET(req: NextRequest) {
   if ("error" in auth) return auth.error;
   const { printer } = auth;
 
-  await prisma.playlandPrinter.update({ where: { id: printer.id }, data: { lastSeenAt: new Date() } });
+  // agent ถามคิวทุก ~1 วิ → เขียน DB (heartbeat + ตรวจงานค้าง) ทุก 10 วิพอ ส่วนการรับงานเป็น query เดียวที่เบา
+  const stale = !printer.lastSeenAt || Date.now() - printer.lastSeenAt.getTime() > HOUSEKEEPING_MS;
+  if (stale) {
+    await prisma.playlandPrinter.update({ where: { id: printer.id }, data: { lastSeenAt: new Date() } });
+    await prisma.$executeRaw`
+      UPDATE playland.print_jobs
+      SET status = (CASE WHEN attempts >= ${MAX_ATTEMPTS} THEN 'FAILED' ELSE 'PENDING' END)::playland."PlaylandPrintJobStatus",
+          error_message = CASE WHEN attempts >= ${MAX_ATTEMPTS} THEN 'agent หยุดตอบระหว่างพิมพ์' ELSE error_message END,
+          updated_at = now()
+      WHERE printer_id = ${printer.id}::uuid
+        AND status = 'PRINTING'::playland."PlaylandPrintJobStatus"
+        AND last_attempt_at < now() - make_interval(secs => ${LEASE_SECONDS})`;
+  }
 
   // ?heartbeat=1 = แค่บอกว่ายังออนไลน์ (agent กำลังพิมพ์อยู่ ห้ามรับงานเพิ่ม)
   if (req.nextUrl.searchParams.get("heartbeat")) return NextResponse.json({ ok: true, job: null });
-
-  await prisma.$executeRaw`
-    UPDATE playland.print_jobs
-    SET status = (CASE WHEN attempts >= ${MAX_ATTEMPTS} THEN 'FAILED' ELSE 'PENDING' END)::playland."PlaylandPrintJobStatus",
-        error_message = CASE WHEN attempts >= ${MAX_ATTEMPTS} THEN 'agent หยุดตอบระหว่างพิมพ์' ELSE error_message END,
-        updated_at = now()
-    WHERE printer_id = ${printer.id}::uuid
-      AND status = 'PRINTING'::playland."PlaylandPrintJobStatus"
-      AND last_attempt_at < now() - make_interval(secs => ${LEASE_SECONDS})`;
 
   const rows = await prisma.$queryRaw<ClaimedRow[]>`
     UPDATE playland.print_jobs

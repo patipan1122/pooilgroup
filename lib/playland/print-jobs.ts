@@ -12,7 +12,7 @@ import { WRISTBAND_BITMAP_BYTES } from "./wristband-bitmap-spec";
 
 export type PrintActionResult<T = void> = { ok: true; data: T } | { ok: false; error: string; code?: "NO_PRINTER" | "PRINTER_OFFLINE" | "QUEUE_FULL" | "BAD_BITMAP" };
 
-const ONLINE_WINDOW_MS = 45_000; // agent ถามคิวทุก ~3 วิ · เงียบเกินนี้ = ออฟไลน์
+const ONLINE_WINDOW_MS = 45_000; // agent ถามคิวทุก ~1 วิ (เขียน heartbeat ทุก 10 วิ) · เงียบเกินนี้ = ออฟไลน์
 const MAX_PENDING_PER_PRINTER = 20;
 
 function fail(error: string, code?: "NO_PRINTER" | "PRINTER_OFFLINE" | "QUEUE_FULL" | "BAD_BITMAP") {
@@ -49,7 +49,12 @@ export async function enqueueWristbandPrint(input: {
 }): Promise<PrintActionResult<{ jobId: string }>> {
   const session = await requireSession();
   if (!canPlaylandCashier(session.user.role)) return fail("ไม่มีสิทธิ์");
-  if (!(await verifyBranchAssignment(input.branchId, session.user.org_id, session.user.id, session.user.role))) return fail("คุณไม่ได้รับมอบหมายให้ทำงานสาขานี้");
+  // ตรวจสิทธิ์สาขา + หาเครื่องพิมพ์พร้อมกัน (ไม่พึ่งกัน · ลดรอบเดินทางไปฐานข้อมูล)
+  const [assigned, printer] = await Promise.all([
+    verifyBranchAssignment(input.branchId, session.user.org_id, session.user.id, session.user.role),
+    activePrinter(session.user.org_id, input.branchId),
+  ]);
+  if (!assigned) return fail("คุณไม่ได้รับมอบหมายให้ทำงานสาขานี้");
 
   // บิตแมปต้องเป๊ะ 41,200 ไบต์ (1648 แถว x 25) และมีจุดดำจริง — กันภาพว่าง/พังออกเครื่อง เสียสติกเกอร์
   const bytes = Buffer.from(input.bitmapBase64, "base64");
@@ -64,7 +69,6 @@ export async function enqueueWristbandPrint(input: {
   }
   if (black < 500) return fail("บิตแมปว่างเปล่า", "BAD_BITMAP");
 
-  const printer = await activePrinter(session.user.org_id, input.branchId);
   if (!printer) return fail("สาขานี้ยังไม่มีเครื่องพิมพ์สายรัด", "NO_PRINTER");
   if (!isOnline(printer.lastSeenAt)) return fail("เครื่องพิมพ์ออฟไลน์ (โปรแกรมหน้าร้านไม่ตอบ)", "PRINTER_OFFLINE");
 

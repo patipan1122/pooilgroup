@@ -190,6 +190,12 @@ function breakLines(ctx: CanvasRenderingContext2D, text: string, availW: number,
   return lines;
 }
 
+/** โหลดฟอนต์+โลโก้ไว้ล่วงหน้า (เรียกตอนเปิดหน้าแคชเชียร์) → พิมพ์ครั้งแรกไม่ต้องรอโหลด */
+export function preloadWristbandAssets(assetBase = ""): void {
+  if (typeof document === "undefined") return;
+  void Promise.all([ensureFont(assetBase), loadImage(`${assetBase}${LOGO_URL}`)]).catch(() => {});
+}
+
 export async function renderWristbandBitmap(input: WristbandBitmapInput): Promise<WristbandBitmap> {
   if (typeof document === "undefined") throw new Error("renderWristbandBitmap ใช้ได้เฉพาะบนเบราว์เซอร์");
   const base = input.assetBase ?? "";
@@ -211,9 +217,11 @@ export async function renderWristbandBitmap(input: WristbandBitmapInput): Promis
   const right = L.padX0 + L.padW;
 
   // โลโก้ (ซ้ายบน)
+  const drawn: { name: string; x: number; y: number; w: number; h: number; min: number }[] = [];
   const logoW = (logo.width / logo.height) * L.logoH;
   ctx.imageSmoothingQuality = "high";
   ctx.drawImage(logo, L.padX0, L.logoY, logoW, L.logoH);
+  drawn.push({ name: "โลโก้", x: L.padX0, y: L.logoY, w: logoW, h: L.logoH, min: 200 });
 
   // บรรทัดข้อมูล: "30 นาที | 1 ต.ค. 69" ชิดขวาบน
   const infoParts = [formatDurationTh(input.durationMinutes), formatDateTh(input.date)].filter(Boolean);
@@ -225,14 +233,19 @@ export async function renderWristbandBitmap(input: WristbandBitmapInput): Promis
     infoPx -= 1;
     ctx.font = `700 ${infoPx}px ${FONT_FAMILY}`;
   }
-  ctx.textAlign = "right";
-  ctx.fillText(infoText, right, L.infoCenterY);
+  // คำนวณตำแหน่งชิดขวาเอง ห้ามใช้ ctx.textAlign="right": บน iPhone (Safari) ข้อความถูกวาดออกนอกขอบภาพ เหลือแค่ตัวแรก (CEO 2026-10-01)
+  ctx.textAlign = "left";
+  const infoW = ctx.measureText(infoText).width;
+  const infoX = right - infoW;
+  ctx.fillText(infoText, infoX, L.infoCenterY);
+  if (infoText) drawn.push({ name: "ระยะเวลา/วันที่", x: infoX, y: L.infoCenterY - infoPx / 2, w: infoW, h: infoPx, min: 150 });
 
   // บาร์โค้ด Code128 (9 ตัวท้ายของรหัส) ชิดขวา
   const barcodeData = wristbandBarcodeData(input.code);
   const modules = encodeCode128B(barcodeData);
   const barW = modules.length * L.barModule;
   const barX = right - barW;
+  drawn.push({ name: "บาร์โค้ด", x: barX, y: L.barY, w: barW, h: L.barH, min: 1500 });
   for (let i = 0; i < modules.length; ) {
     if (modules[i] === "1") {
       let j = i;
@@ -255,6 +268,8 @@ export async function renderWristbandBitmap(input: WristbandBitmapInput): Promis
     cx += widths[i] + gap;
   });
 
+  drawn.push({ name: "รหัสใต้บาร์โค้ด", x: barX, y: L.codeCenterY - L.codePx / 2, w: barW, h: L.codePx, min: 80 });
+
   // ชื่อ (ซ้ายล่าง) ย่อ/ตัด 2 บรรทัด/ตัดท้ายให้พอดีเสมอ ไม่ชนบาร์โค้ด
   const nameAvail = barX - L.nameBarGap - L.padX0;
   const nl = layoutName(ctx, input.name, nameAvail);
@@ -269,6 +284,7 @@ export async function renderWristbandBitmap(input: WristbandBitmapInput): Promis
     baseline += l.desc + L.nameLineGap;
   });
   ctx.textBaseline = "middle";
+  drawn.push({ name: "ชื่อ", x: L.padX0, y: L.nameTop, w: nameAvail, h: L.nameBoxH, min: 150 });
 
   // บีบเป็นขาว-ดำล้วน (หัวพิมพ์ความร้อนเป็น 1 บิต)
   const img = ctx.getImageData(0, 0, W, H);
@@ -280,6 +296,18 @@ export async function renderWristbandBitmap(input: WristbandBitmapInput): Promis
     d[p + 3] = 255;
   }
   ctx.putImageData(img, 0, 0);
+
+  // ตรวจตัวเอง: ทุกส่วนต้องมีจุดดำจริงและอยู่ในกรอบพื้นที่พิมพ์ — กันสายรัดพิมพ์ไม่ครบเสียสติกเกอร์ (เจอจริงบน iPhone: บรรทัดวันที่หาย)
+  const right0 = L.padX0;
+  const right1 = L.padX0 + L.padW;
+  for (const r of drawn) {
+    if (r.x < right0 - 2 || r.x + r.w > right1 + 2) throw new Error(`วาดสายรัดผิดตำแหน่ง: ${r.name} (${Math.round(r.x)}–${Math.round(r.x + r.w)})`);
+    let black = 0;
+    const x0 = Math.max(0, Math.floor(r.x)), x1 = Math.min(W, Math.ceil(r.x + r.w));
+    const y0 = Math.max(0, Math.floor(r.y)), y1 = Math.min(H, Math.ceil(r.y + r.h));
+    for (let yy = y0; yy < y1; yy++) for (let xx = x0; xx < x1; xx++) if (d[(yy * W + xx) * 4] === 0) black++;
+    if (black < r.min) throw new Error(`วาดสายรัดไม่ครบ: ${r.name} (มีจุดดำ ${black} จุด)`);
+  }
 
   // หมุน 90° ตามเข็ม: ขอบซ้ายของแนวนอน → แถวบนสุดที่พิมพ์ออกก่อน
   const port = document.createElement("canvas");

@@ -54,7 +54,7 @@ const PRINTERS = (env.PRINTERS || "")
     const [code, secret] = s.split(":");
     return { code, secret };
   });
-const PRINT_POLL_INTERVAL_MS = Number(env.PRINT_POLL_INTERVAL_MS || 3000);
+const PRINT_POLL_INTERVAL_MS = Number(env.PRINT_POLL_INTERVAL_MS || 1000);
 const K2_SERIAL_PATH = env.K2_SERIAL_PATH || undefined; // ไม่ใส่ = หาพอร์ต K2 เอง
 
 if (DEVICES.length === 0) {
