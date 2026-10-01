@@ -351,7 +351,7 @@ function reducer(s: State, a: Action): State {
         ckPkg: null,
         ckMethod: "wristband",
         ckPendingSessionId: null,
-        ckAdults: 1,
+        ckAdults: 0,
       };
     case "checkinReceipt":
       return {
@@ -366,7 +366,7 @@ function reducer(s: State, a: Action): State {
         ckPkg: null,
         ckMethod: "wristband",
         ckPendingSessionId: null,
-        ckAdults: 1,
+        ckAdults: 0,
         screen: "receipt",
       };
     case "paidPendingReceipt":
@@ -382,7 +382,7 @@ function reducer(s: State, a: Action): State {
         ckPkg: null,
         ckMethod: "wristband",
         ckPendingSessionId: null,
-        ckAdults: 1,
+        ckAdults: 0,
         screen: "receipt",
       };
     case "posReceipt":
@@ -417,7 +417,7 @@ export default function PlaylandApp(props: Props) {
     ckPay: "CASH",
     ckMethod: "wristband",
     ckPendingSessionId: null,
-    ckAdults: 1,
+    ckAdults: 0,
     receipt: null,
     toast: null,
   });
@@ -500,18 +500,17 @@ export default function PlaylandApp(props: Props) {
       .map((l) => ({ productId: l.id, quantity: l.qty }));
     const usingRealProducts = props.products.length > 0 && realItems.length === lines.length;
 
-    const showReceipt = () =>
-      dispatch({
-        t: "posReceipt",
-        receipt: {
-          name: kid ? kid.name : "ลูกค้า",
-          no: randReceiptNo(),
-          lines: lines.map((l) => ({ label: l.name + " ×" + l.qty, amount: l.price * l.qty })),
-          total,
-          kind: "pos",
-        },
+    const showReceipt = (autoPrint = false) => {
+      const receipt: Receipt = {
+        name: kid ? kid.name : "ลูกค้า",
+        no: randReceiptNo(),
+        lines: lines.map((l) => ({ label: l.name + " ×" + l.qty, amount: l.price * l.qty })),
         total,
-      });
+        kind: "pos",
+      };
+      if (autoPrint) printReceiptFor(receipt);
+      dispatch({ t: "posReceipt", receipt, total });
+    };
 
     if (usingRealProducts) {
       // เก็บเงินจริงก่อน → สำเร็จค่อยโชว์ใบเสร็จ "รับเงินแล้ว" (เดิมโชว์ก่อน await · พังก็เงียบ)
@@ -525,7 +524,7 @@ export default function PlaylandApp(props: Props) {
           sessionId: kid && isRealId(kid.id) ? kid.id : undefined,
         });
         if (res.ok) {
-          showReceipt();
+          showReceipt(true);
           showToast("รับเงิน ฿" + total + " แล้ว");
           router.refresh();
         } else {
@@ -557,17 +556,15 @@ export default function PlaylandApp(props: Props) {
     const rate = props.overtimeRatePerMinuteCents ?? DEFAULT_OVERTIME_RATE_PER_MIN_CENTS;
     const ot = kid.dayPass ? { minutes: 0, cents: 0 } : overtimeFromSec(kid.sec, rate);
     // ใช้ค่าปรับจาก server เป็นหลัก (authoritative) — ส่ง otCents มาตอน build ใบเสร็จ
-    const complete = (otCents: number) => {
+    const complete = (otCents: number, autoPrint = false) => {
       const otBaht = Math.round(otCents / 100);
       const lines = [
         ...kid.charges,
         ...(otBaht > 0 ? [{ label: `ค่าปรับเกินเวลา ${ot.minutes} นาที`, amount: otBaht }] : []),
       ];
-      dispatch({
-        t: "completeCheckout",
-        kidId,
-        receipt: { name: kid.name, no: randReceiptNo(), lines, total: baseTotal + otBaht, kind: "checkout" },
-      });
+      const receipt: Receipt = { name: kid.name, no: randReceiptNo(), lines, total: baseTotal + otBaht, kind: "checkout" };
+      if (autoPrint) printReceiptFor(receipt);
+      dispatch({ t: "completeCheckout", kidId, receipt });
       showToast(
         kid.name + " เช็คเอาท์แล้ว" + (otBaht > 0 ? ` · เก็บค่าปรับ ฿${otBaht}` : "") + " · คืนสายรัด",
       );
@@ -579,7 +576,7 @@ export default function PlaylandApp(props: Props) {
       try {
         const res = await checkOutSession({ sessionId: kidId, overtimePaymentMethod: PAY_MAP[coPay], pickedUpByName: coPickedUpBy.trim() || undefined });
         if (res.ok) {
-          complete(res.data.overtimeCents);
+          complete(res.data.overtimeCents, true);
           setCoPickedUpBy(""); // เคลียร์ชื่อผู้มารับ พร้อมสำหรับเด็กคนถัดไป
           router.refresh();
         } else {
@@ -717,6 +714,25 @@ export default function PlaylandApp(props: Props) {
       setFaceSyncPhase("failed");
       showToast("❌ ลงทะเบียนหน้าไม่สำเร็จ · ลองใหม่หรือพิมพ์สายรัดแทน");
     }
+  };
+
+  // ใบเสร็จ: ข้อความท้ายใบตามประเภท · พิมพ์อัตโนมัติทุกครั้งที่จ่ายเงิน + ปุ่ม "พิมพ์ใบเสร็จซ้ำ" ใช้ฟังก์ชันเดียวกัน
+  const receiptNote = (r: Receipt): string | undefined => {
+    switch (r.kind) {
+      case "checkin":
+      case "checkin_pending":
+        return r.bandCode ? "เอาสายรัดไปสแกนที่ประตูเพื่อเริ่มเวลา · สายรัด 1 เส้นต่อ 1 รอบ" : undefined;
+      case "checkin_pending_face":
+        return "สแกนหน้าที่ประตูเพื่อเริ่มเวลา · ไม่ต้องใช้สายรัด";
+      case "checkout":
+        return "คืนสายรัดแล้ว · ขอบคุณที่ใช้บริการ";
+      default:
+        return undefined;
+    }
+  };
+  const printReceiptFor = (r: Receipt, isReprint = false): void => {
+    const ok = printReceipt({ no: r.no, name: r.name, lines: r.lines, total: r.total, note: receiptNote(r), branchName: props.branchName ?? undefined, branchPhone: props.branchPhone ?? undefined });
+    if (!ok) showToast(isReprint ? "เบราว์เซอร์บล็อก popup · อนุญาต popup แล้วลองใหม่" : "⚠️ เบราว์เซอร์บล็อกการพิมพ์ใบเสร็จ · กด 'พิมพ์ใบเสร็จซ้ำ' ที่ใบเสร็จ");
   };
 
   // พิมพ์สายรัดเด็ก: สาขามีเครื่อง K2 (และ agent ออนไลน์) → เข้าคิวพิมพ์ที่ K2 · ไม่มี/ออฟไลน์ → popup แบบเดิมทันที
@@ -861,7 +877,9 @@ export default function PlaylandApp(props: Props) {
         }
         // D-A2 (CEO 2026-09-29): ยังไม่เริ่มเวลา — จ่ายเงินแล้วรอสแกนที่ประตู (หน้าสายรัด → "เปิด gate · เริ่มเล่น")
         //   จึงไม่เพิ่มเข้าบอร์ด "กำลังเล่น" (s.kids) ตรงนี้ ปล่อยให้ตอนสแกนที่ประตูเป็นคนเพิ่มแทน
-        dispatch({ t: "paidPendingReceipt", receipt: buildReceipt(bandCode, "checkin_pending") });
+        const paidReceipt = buildReceipt(bandCode, "checkin_pending");
+        printReceiptFor(paidReceipt);
+        dispatch({ t: "paidPendingReceipt", receipt: paidReceipt });
         showToast("รับเงินแล้ว · รอสแกนสายรัดที่ประตูเพื่อเริ่มเวลา " + name);
         router.refresh();
         return;
@@ -902,8 +920,7 @@ export default function PlaylandApp(props: Props) {
   const reprintReceipt = () => {
     const r = s.receipt;
     if (!r) return;
-    const ok = printReceipt({ no: r.no, name: r.name, lines: r.lines, total: r.total, note: "สแกนหน้าที่ประตูเพื่อเริ่มเวลา · ไม่ต้องใช้สายรัด", branchName: props.branchName ?? undefined, branchPhone: props.branchPhone ?? undefined });
-    if (!ok) showToast("เบราว์เซอร์บล็อก popup · อนุญาต popup แล้วลองใหม่");
+    printReceiptFor(r, true);
   };
 
   // ----- start check-in for an existing member (from members/search screens) -----
@@ -1951,19 +1968,22 @@ export default function PlaylandApp(props: Props) {
                   )}
                 </div>
               </div>
-              <div style={{ display: "flex", gap: 12, width: "100%", marginTop: 20 }}>
-                {(rc?.kind === "checkin" || rc?.kind === "checkin_pending") && rc?.bandCode ? (
-                  <div onClick={reprintBand} style={{ cursor: "pointer", flex: 1, background: "#fff", border: "1px solid #ece5d8", borderRadius: 13, padding: 15, textAlign: "center", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 12, width: "100%", marginTop: 20 }}>
+                {(rc?.kind === "checkin" || rc?.kind === "checkin_pending") && rc?.bandCode && (
+                  <div onClick={reprintBand} style={{ cursor: "pointer", flex: "1 1 150px", background: "#fff", border: "1px solid #ece5d8", borderRadius: 13, padding: 15, textAlign: "center", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b6052" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><path d="M6 14h12v8H6z" /></svg>
                     พิมพ์สายรัดซ้ำ
                   </div>
-                ) : rc?.kind === "checkin_pending_face" ? (
-                  <div onClick={reprintReceipt} style={{ cursor: "pointer", flex: 1, background: "#fff", border: "1px solid #ece5d8", borderRadius: 13, padding: 15, textAlign: "center", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+
+                )}
+                {rc && (
+                  <div onClick={reprintReceipt} style={{ cursor: "pointer", flex: "1 1 150px", background: "#fff", border: "1px solid #ece5d8", borderRadius: 13, padding: 15, textAlign: "center", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b6052" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><path d="M6 14h12v8H6z" /></svg>
                     พิมพ์ใบเสร็จซ้ำ
                   </div>
-                ) : null}
-                <div onClick={() => go("home")} style={{ cursor: "pointer", flex: 1.2, background: "#2D6CB1", color: "#fff", borderRadius: 13, padding: 15, textAlign: "center", fontSize: 16, fontFamily: MITR, fontWeight: 500 }}>เสร็จ</div>
+
+                )}
+                <div onClick={() => go("home")} style={{ cursor: "pointer", flex: "1.2 1 150px", background: "#2D6CB1", color: "#fff", borderRadius: 13, padding: 15, textAlign: "center", fontSize: 16, fontFamily: MITR, fontWeight: 500 }}>เสร็จ</div>
               </div>
             </div>
           </div>
