@@ -17,6 +17,7 @@ import { verifyBranchOrg, verifyBranchAssignment, verifyMemberOrg } from "./guar
 import { newSaleCode } from "./codes";
 import { revalidatePath } from "next/cache";
 import crypto from "node:crypto";
+import { normalizeWristbandCode, WRISTBAND_PREFIX, WRISTBAND_CODE_ALPHABET } from "./wristband-code";
 
 export type ActionResult<T = void> = { ok: true; data: T } | { ok: false; error: string };
 function err(msg: string) { return { ok: false as const, error: msg }; }
@@ -24,11 +25,10 @@ function err(msg: string) { return { ok: false as const, error: msg }; }
 // ────────────────────────────────────────────────────────────────────────────
 // Code generation · 12 chars · case-insensitive lookup but stored upper
 // ────────────────────────────────────────────────────────────────────────────
-const CODE_ALPHABET = "ACDEFHJKLMNPQRTUVWXY3479";   // unambiguous (no 0/O · 1/I · etc)
 function generateWristbandCode(): string {
   const bytes = crypto.randomBytes(9);
-  let out = "PW-";
-  for (let i = 0; i < 9; i++) out += CODE_ALPHABET[bytes[i] % CODE_ALPHABET.length];
+  let out = WRISTBAND_PREFIX;
+  for (let i = 0; i < 9; i++) out += WRISTBAND_CODE_ALPHABET[bytes[i] % WRISTBAND_CODE_ALPHABET.length];
   return out;
 }
 
@@ -142,7 +142,7 @@ export async function lookupWristband(rawCode: string): Promise<ActionResult<Wri
   const session = await requireSession();
   if (!canPlaylandCashier(session.user.role)) return err("ไม่มีสิทธิ์");
 
-  const code = rawCode.trim().toUpperCase().replace(/\s/g, "");
+  const code = normalizeWristbandCode(rawCode);
   if (!code) return err("กรอก code ก่อน");
 
   const w = await prisma.playlandWristband.findFirst({
@@ -225,7 +225,7 @@ export async function activateWristband(input: {
   const session = await requireSession();
   if (!canPlaylandCashier(session.user.role)) return err("ไม่มีสิทธิ์");
 
-  const code = input.code.trim().toUpperCase();
+  const code = normalizeWristbandCode(input.code);
   const w = await prisma.playlandWristband.findFirst({
     where: { code, orgId: session.user.org_id, status: "ISSUED" },
   });
@@ -333,7 +333,7 @@ export async function activatePendingSession(code: string): Promise<ActionResult
   const session = await requireSession();
   if (!canPlaylandCashier(session.user.role)) return err("ไม่มีสิทธิ์");
 
-  const upper = code.trim().toUpperCase();
+  const upper = normalizeWristbandCode(code);
   const w = await prisma.playlandWristband.findFirst({
     where: { code: upper, orgId: session.user.org_id, status: "ISSUED" },
     include: {
@@ -396,7 +396,7 @@ export async function activatePendingSession(code: string): Promise<ActionResult
 export async function exitWristband(code: string): Promise<ActionResult> {
   const session = await requireSession();
   if (!canPlaylandCashier(session.user.role)) return err("ไม่มีสิทธิ์");
-  const upper = code.trim().toUpperCase();
+  const upper = normalizeWristbandCode(code);
 
   const w = await prisma.playlandWristband.findFirst({
     where: { code: upper, orgId: session.user.org_id, status: "ACTIVE" },
@@ -470,7 +470,7 @@ export async function syncOfflineScans(input: {
   let synced = 0;
   for (const s of input.scans.slice(0, 500)) {
     const w = await prisma.playlandWristband.findFirst({
-      where: { code: s.code.trim().toUpperCase(), orgId: session.user.org_id },
+      where: { code: normalizeWristbandCode(s.code), orgId: session.user.org_id },
       select: { id: true },
     });
     if (!w) continue;
@@ -496,7 +496,7 @@ export async function markWristbandLost(code: string, notes?: string): Promise<A
   const session = await requireSession();
   if (!canPlaylandCashier(session.user.role)) return err("ไม่มีสิทธิ์");
   const w = await prisma.playlandWristband.findFirst({
-    where: { code: code.trim().toUpperCase(), orgId: session.user.org_id },
+    where: { code: normalizeWristbandCode(code), orgId: session.user.org_id },
   });
   if (!w) return err("ไม่พบ wristband");
   await prisma.playlandWristband.update({ where: { id: w.id }, data: { status: "LOST", notes: notes ?? w.notes } });

@@ -32,6 +32,7 @@ import {
   type WristbandLookup,
 } from "@/lib/playland/wristband";
 import { printWristband } from "@/components/playland/print-wristband";
+import { queueWristbandOnK2 } from "@/components/playland/print-wristband-k2";
 import { printReceipt } from "@/components/playland/print-receipt";
 import { FaceCapture } from "@/components/playland/face-capture";
 import { BarcodeScanBox } from "@/components/playland/barcode-scan-box";
@@ -170,6 +171,10 @@ interface Receipt {
   total: number;
   bandCode?: string | null; // when a wristband was printed
   adultCount?: number;
+  /** ไว้พิมพ์สายรัดซ้ำที่เครื่อง K2 (ชื่อเล่น/นาทีแพ็กเกจ/สมาชิก) */
+  nickname?: string | null;
+  minutes?: number | null;
+  memberId?: string | null;
   kind?: "checkin" | "checkin_pending" | "checkin_pending_face" | "pos" | "checkout"; // controls receipt copy
 }
 
@@ -714,6 +719,28 @@ export default function PlaylandApp(props: Props) {
     }
   };
 
+  // พิมพ์สายรัดเด็ก: สาขามีเครื่อง K2 (และ agent ออนไลน์) → เข้าคิวพิมพ์ที่ K2 · ไม่มี/ออฟไลน์ → popup แบบเดิมทันที
+  // ไม่บล็อกหน้าจอ: เข้าคิวเสร็จคืนทันที ส่วนรอผลพิมพ์จริง (~45 วิ) แจ้งเป็น toast เบื้องหลัง
+  const printBandSmart = (o: { code: string; name: string; nickname?: string | null; adultCount?: number; memberId?: string | null; minutes?: number | null }) => {
+    const popup = (adultsOnly: boolean) => {
+      const ok = printWristband({ code: o.code, memberName: o.name, nickname: o.nickname ?? null, adultCount: o.adultCount ?? 0, skipChild: adultsOnly });
+      if (!ok) showToast("⚠️ เบราว์เซอร์บล็อกการพิมพ์ · กด 'พิมพ์สายรัดซ้ำ' ที่ใบเสร็จ");
+    };
+    if (!props.branchId) { popup(false); return; }
+    void (async () => {
+      const q = await queueWristbandOnK2({ branchId: props.branchId, code: o.code, displayName: o.nickname || o.name, memberId: o.memberId ?? null, durationMinutes: o.minutes ?? null });
+      if (!q.queued) {
+        if (q.reason === "ERROR" || q.reason === "QUEUE_FULL") showToast("⚠️ ส่งเข้าเครื่อง K2 ไม่สำเร็จ (" + q.message + ") · พิมพ์แบบเดิมแทน");
+        popup(false);
+        return;
+      }
+      showToast("🖨️ ส่งสายรัดเข้าเครื่องพิมพ์ K2 แล้ว · รอสักครู่");
+      if ((o.adultCount ?? 0) > 0) popup(true); // สติกเกอร์ผู้ปกครองยังพิมพ์แบบเดิม (สต็อก K2 เป็นสายรัดเด็ก)
+      const r = await q.waitForResult();
+      showToast(r.ok ? "✅ พิมพ์สายรัด " + (o.nickname || o.name) + " เสร็จแล้ว" : "❌ เครื่องพิมพ์สายรัดมีปัญหา: " + r.message + " · แก้แล้วกด 'พิมพ์สายรัดซ้ำ' ที่ใบเสร็จ");
+    })();
+  };
+
   // Fallback: หน้ายังไม่ยืนยัน (เครื่อง/agent ที่ร้านมีปัญหา) → พิมพ์สายรัดแทนได้เลย
   // session จ่ายเงินไว้แล้ว (PENDING_ENTRY) — แค่ผูกสายรัดเข้ากับ session เดิม ไม่เก็บเงินซ้ำ
   const fallbackToWristband = async () => {
@@ -725,8 +752,7 @@ export default function PlaylandApp(props: Props) {
       const wb = await issueWristband({ branchId: props.branchId, memberId: s.ckMemberId, sessionId: s.ckPendingSessionId });
       if (wb.ok) bandCode = wb.data.code;
       if (bandCode) {
-        const printed = printWristband({ code: bandCode, memberName: name, nickname: s.ckNickname || null, adultCount: s.ckAdults });
-        if (!printed) showToast("⚠️ เบราว์เซอร์บล็อกการพิมพ์ · กด 'พิมพ์สายรัดซ้ำ' ที่ใบเสร็จ");
+        printBandSmart({ code: bandCode, name, nickname: s.ckNickname || null, adultCount: s.ckAdults, memberId: s.ckMemberId, minutes: s.ckPkg?.mins ?? null });
       }
       const pkg = s.ckPkg;
       const receipt: Receipt = {
@@ -736,6 +762,9 @@ export default function PlaylandApp(props: Props) {
         total: pkg ? pkg.price : 0,
         bandCode,
         adultCount: s.ckAdults,
+        nickname: s.ckNickname || null,
+        minutes: pkg?.mins ?? null,
+        memberId: s.ckMemberId,
         kind: "checkin_pending",
       };
       dispatch({ t: "paidPendingReceipt", receipt });
@@ -775,6 +804,9 @@ export default function PlaylandApp(props: Props) {
       total: pkg.price,
       bandCode,
       adultCount: adults,
+      nickname: s.ckNickname || null,
+      minutes: pkg.mins,
+      memberId: s.ckMemberId,
       kind,
     });
 
@@ -825,8 +857,7 @@ export default function PlaylandApp(props: Props) {
         }
         if (bandCode) {
           // CEO: หลังคิดเงินเสร็จ "บังคับ" ปริ้นสายรัด · ถ้า popup ถูกบล็อก แจ้งให้กดพิมพ์ซ้ำ
-          const printed = printWristband({ code: bandCode, memberName: name, nickname: s.ckNickname || null, adultCount: adults });
-          if (!printed) showToast("⚠️ เบราว์เซอร์บล็อกการพิมพ์ · กด 'พิมพ์สายรัดซ้ำ' ที่ใบเสร็จ");
+          printBandSmart({ code: bandCode, name, nickname: s.ckNickname || null, adultCount: adults, memberId, minutes: pkg.mins });
         }
         // D-A2 (CEO 2026-09-29): ยังไม่เริ่มเวลา — จ่ายเงินแล้วรอสแกนที่ประตู (หน้าสายรัด → "เปิด gate · เริ่มเล่น")
         //   จึงไม่เพิ่มเข้าบอร์ด "กำลังเล่น" (s.kids) ตรงนี้ ปล่อยให้ตอนสแกนที่ประตูเป็นคนเพิ่มแทน
@@ -865,8 +896,7 @@ export default function PlaylandApp(props: Props) {
   const reprintBand = () => {
     const r = s.receipt;
     if (!r || !r.bandCode) return;
-    const ok = printWristband({ code: r.bandCode, memberName: r.name, adultCount: r.adultCount ?? 0 });
-    if (!ok) showToast("เบราว์เซอร์บล็อก popup · อนุญาต popup แล้วลองใหม่");
+    printBandSmart({ code: r.bandCode, name: r.name, nickname: r.nickname ?? null, adultCount: r.adultCount ?? 0, memberId: r.memberId ?? null, minutes: r.minutes ?? null });
   };
 
   const reprintReceipt = () => {
@@ -1055,7 +1085,7 @@ export default function PlaylandApp(props: Props) {
       const res = await issueWristband({ branchId: props.branchId, memberId });
       if (res.ok) {
         const m = memResults.find((x) => x.id === memberId);
-        printWristband({ code: res.data.code, memberName: m?.name ?? "สมาชิก", nickname: m?.nickname ?? null });
+        printBandSmart({ code: res.data.code, name: m?.name ?? "สมาชิก", nickname: m?.nickname ?? null, memberId, minutes: null });
         showToast("ออกสายรัด " + res.data.code + " · พิมพ์แล้ว");
         router.refresh();
       } else showToast(res.error);
@@ -2069,8 +2099,8 @@ export default function PlaylandApp(props: Props) {
               {/* เครื่องพิมพ์ */}
               <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: 22 }}>
                 <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 18, marginBottom: 6 }}>🖨️ เครื่องพิมพ์สายรัด / ใบเสร็จ</div>
-                <div style={{ fontSize: 15, color: "#8a7f70", marginBottom: 14, lineHeight: 1.6 }}>ถ้าพิมพ์ไม่ออก: เปิดอนุญาต popup ของเบราว์เซอร์ · เลือกเครื่องพิมพ์ให้ถูก · ตั้งขนาดกระดาษให้ตรงสายรัด</div>
-                <button onClick={() => printWristband({ code: "TEST-PRINT", memberName: "ทดสอบเครื่องพิมพ์", nickname: null })} style={{ cursor: "pointer", background: "#2D6CB1", color: "#fff", border: "none", borderRadius: 12, padding: "12px 22px", fontSize: 16, fontFamily: MITR }}>ทดสอบพิมพ์สายรัด</button>
+                <div style={{ fontSize: 15, color: "#8a7f70", marginBottom: 14, lineHeight: 1.6 }}>ถ้าสาขานี้มีเครื่องพิมพ์สายรัด K2 (โปรแกรมหน้าร้านออนไลน์) จะพิมพ์ที่ K2 · ไม่มีก็พิมพ์ผ่านเบราว์เซอร์: เปิดอนุญาต popup · เลือกเครื่องพิมพ์ให้ถูก · ตั้งขนาดกระดาษให้ตรงสายรัด</div>
+                <button onClick={() => printBandSmart({ code: "TEST-PRINT", name: "ทดสอบเครื่องพิมพ์", nickname: null, minutes: 30 })} style={{ cursor: "pointer", background: "#2D6CB1", color: "#fff", border: "none", borderRadius: 12, padding: "12px 22px", fontSize: 16, fontFamily: MITR }}>ทดสอบพิมพ์สายรัด</button>
               </div>
               {/* วิธีใช้ */}
               <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: 22 }}>

@@ -9,7 +9,8 @@
 //   1) รับ log สแกนจากเครื่อง (LAN, HTTP) → ส่งต่อ webhook จริงที่มีอยู่แล้ว
 //      (/api/playland/acs/event) แบบ HTTPS → ส่งคำตอบจากเว็บกลับไปที่เครื่อง
 //   2) ถามคิว "ต้องเพิ่ม/ลบหน้าใครไหม" ทุก N วินาที (/api/playland/acs/agent/face-sync)
-//      แล้วไปทำที่เครื่องจริงผ่าน LAN จากนั้นรายงานผลกลับ
+//      แล้วไปทำที่เครื่องจริงผ่าน LAN จากนั้นรายงานผลกลับ//   3) (ถ้าตั้ง PRINTERS) ถามคิว "มีสายรัดให้พิมพ์ไหม" (/api/playland/print/agent/jobs)
+//      แล้วสั่งเครื่องพิมพ์ NIIMBOT K2 ที่ต่อ USB กับเครื่องนี้ จากนั้นรายงานผล (/print/agent/result)
 //
 // รัน: node --env-file=.env agent.js   (ต้องมี .env — ดู .env.example)
 
@@ -42,6 +43,19 @@ const DEVICES = (env.DEVICES || "")
   });
 
 const log = (...a) => console.log(new Date().toISOString(), ...a);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// PRINTERS="K2-TEST-01:<รหัสลับ>"  (รหัสเครื่อง:รหัสลับ ตรงกับตาราง playland.printers ใน DB)
+const PRINTERS = (env.PRINTERS || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean)
+  .map((s) => {
+    const [code, secret] = s.split(":");
+    return { code, secret };
+  });
+const PRINT_POLL_INTERVAL_MS = Number(env.PRINT_POLL_INTERVAL_MS || 3000);
+const K2_SERIAL_PATH = env.K2_SERIAL_PATH || undefined; // ไม่ใส่ = หาพอร์ต K2 เอง
 
 if (DEVICES.length === 0) {
   console.error("❌ ไม่พบ DEVICES ใน .env — ดู .env.example");
@@ -175,9 +189,80 @@ async function processFaceSyncQueue(device) {
   }
 }
 
+// ---------- หน้าที่ 3: คิวพิมพ์สายรัด (NIIMBOT K2 ต่อ USB กับเครื่องนี้) ----------
+let printBusy = false;
+
+function printerFetch(printer, path, init = {}) {
+  return fetch(`${CLOUD_BASE_URL}${path}`, {
+    ...init,
+    headers: { ...(init.headers || {}), "x-printer-code": printer.code, "x-printer-secret": printer.secret },
+    signal: AbortSignal.timeout(8_000),
+  });
+}
+
+async function processPrintQueue(printer, k2) {
+  if (printBusy) {
+    // กำลังพิมพ์อยู่: ไม่รับงานใหม่ แต่ยังบอกเว็บว่าออนไลน์ (ไม่งั้นแคชเชียร์เห็นเครื่องดับระหว่างพิมพ์ ~45 วิ)
+    printerFetch(printer, "/api/playland/print/agent/jobs?heartbeat=1").catch(() => {});
+    return;
+  }
+  printBusy = true;
+  try {
+    let job;
+    try {
+      const res = await printerFetch(printer, "/api/playland/print/agent/jobs");
+      if (!res.ok) {
+        log(`⚠️ [${printer.code}] poll คิวพิมพ์ไม่สำเร็จ HTTP ${res.status}`);
+        return;
+      }
+      ({ job } = await res.json());
+    } catch (e) {
+      log(`⚠️ [${printer.code}] poll คิวพิมพ์ไม่สำเร็จ:`, e.message);
+      return;
+    }
+    if (!job) return;
+
+    log(`🖨️ [${printer.code}] รับงานพิมพ์ ${job.jobId} (ครั้งที่ ${job.attempt}) ${JSON.stringify(job.meta ?? {})}`);
+    const beat = setInterval(() => printerFetch(printer, "/api/playland/print/agent/jobs?heartbeat=1").catch(() => {}), 5_000);
+    let ok = false;
+    let error;
+    try {
+      await k2.printWristbandBitmap(Buffer.from(job.bitmapBase64, "base64"), { serialPath: K2_SERIAL_PATH, log: (m) => log(`   ${m}`) });
+      ok = true;
+    } catch (e) {
+      error = e.message;
+    }
+    clearInterval(beat);
+    log(ok ? `✅ [${printer.code}] พิมพ์งาน ${job.jobId} สำเร็จ` : `❌ [${printer.code}] พิมพ์งาน ${job.jobId} ล้มเหลว: ${error}`);
+
+    // รายงานผลให้ได้ (งานพิมพ์ออกไปแล้ว ถ้าลืมรายงาน จะถูกคิวส่งกลับมาพิมพ์ซ้ำ)
+    for (let i = 0; i < 4; i++) {
+      try {
+        const r = await printerFetch(printer, "/api/playland/print/agent/result", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jobId: job.jobId, ok, error }),
+        });
+        if (r.ok) break;
+      } catch (e) {
+        log(`⚠️ [${printer.code}] รายงานผลงาน ${job.jobId} ไม่สำเร็จ (ครั้งที่ ${i + 1}):`, e.message);
+      }
+      await sleep(2_000);
+    }
+  } finally {
+    printBusy = false;
+  }
+}
+
 // ---------- start ----------
 server.listen(AGENT_PORT, () => log(`🚀 playland-agent ฟังอยู่ที่ http://${AGENT_IP}:${AGENT_PORT} (${DEVICES.length} เครื่อง)`));
 
 for (const d of DEVICES) bindCallback(d);
 setInterval(() => DEVICES.forEach(bindCallback), REBIND_INTERVAL_MS);
 setInterval(() => DEVICES.forEach(processFaceSyncQueue), POLL_INTERVAL_MS);
+
+if (PRINTERS.length > 0) {
+  const k2 = await import("./k2.js"); // โหลด serialport เฉพาะเครื่องที่ตั้งเครื่องพิมพ์ไว้
+  log(`🖨️ เปิดคิวพิมพ์สายรัด: ${PRINTERS.map((p) => p.code).join(", ")}`);
+  setInterval(() => PRINTERS.forEach((p) => processPrintQueue(p, k2)), PRINT_POLL_INTERVAL_MS);
+}

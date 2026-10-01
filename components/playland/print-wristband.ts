@@ -27,6 +27,8 @@ export interface PrintWristbandOpts {
   issuedAt?: Date;
   /** how many ADULT/guardian stickers to print in addition to the 1 child sticker */
   adultCount?: number;
+  /** ข้ามสติกเกอร์เด็ก (เด็กพิมพ์ที่เครื่อง K2 แล้ว) — พิมพ์เฉพาะสติกเกอร์ผู้ปกครอง */
+  skipChild?: boolean;
 }
 
 function stickerHtml(opts: {
@@ -58,9 +60,9 @@ export function printWristband(opts: PrintWristbandOpts): boolean {
   const meta = `${opts.memberCode ?? ""}${opts.memberCode ? " · " : ""}${dateStr}`;
   const adults = Math.max(0, opts.adultCount ?? 0);
 
-  const stickers: string[] = [
-    stickerHtml({ code: opts.code, title: opts.memberName, nick: opts.nickname ?? null, meta, role: "เด็ก" }),
-  ];
+  const stickers: string[] = opts.skipChild
+    ? []
+    : [stickerHtml({ code: opts.code, title: opts.memberName, nick: opts.nickname ?? null, meta, role: "เด็ก" })];
   for (let i = 0; i < adults; i++) {
     stickers.push(
       stickerHtml({

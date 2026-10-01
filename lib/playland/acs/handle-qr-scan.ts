@@ -19,6 +19,7 @@
 //   • status === RETURNED / LOST → ❌ deny
 
 import { prisma } from "@/lib/prisma";
+import { normalizeWristbandCode } from "../wristband-code";
 
 export interface QRScanOutcome {
   /** true = tell device to open gate · false = deny */
@@ -39,7 +40,7 @@ export async function handleQRScan(input: {
   webhookId: string;
   eventAt: Date;
 }): Promise<QRScanOutcome> {
-  const code = input.qrCode.trim().toUpperCase();
+  const code = normalizeWristbandCode(input.qrCode);
 
   const w = await prisma.playlandWristband.findFirst({
     where: { code, orgId: input.orgId },

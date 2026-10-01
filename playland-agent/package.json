@@ -6,5 +6,10 @@
   "scripts": {
     "start": "node --env-file=.env agent.js"
   },
-  "engines": { "node": ">=20.6" }
+  "engines": {
+    "node": ">=20.6"
+  },
+  "dependencies": {
+    "serialport": "^13.0.0"
+  }
 }

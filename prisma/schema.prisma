@@ -5389,6 +5389,62 @@ model PlaylandFaceSync {
   @@schema("playland")
 }
 
+// ---------- 18b. Label printers + print queue (NIIMBOT K2 wristband printer) ----------
+// ไม่ใช้ PlaylandDevice เพราะโค้ดเดิมถือว่าทุก device ที่ไม่ใช่ vendor "mock" คือประตู (ส่ง face-sync ไปให้)
+enum PlaylandPrintJobStatus {
+  PENDING // รอ agent มารับ
+  PRINTING // agent รับไปแล้ว กำลังพิมพ์
+  DONE
+  FAILED
+
+  @@schema("playland")
+}
+
+model PlaylandPrinter {
+  id         String    @id @default(uuid()) @db.Uuid
+  orgId      String    @map("org_id") @db.Uuid
+  branchId   String    @map("branch_id") @db.Uuid
+  code       String    @unique
+  name       String
+  model      String    @default("niimbot-k2")
+  secretHash String    @map("secret_hash")
+  enabled    Boolean   @default(true)
+  lastSeenAt DateTime? @map("last_seen_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  jobs PlaylandPrintJob[]
+
+  @@index([orgId, branchId])
+  @@map("printers")
+  @@schema("playland")
+}
+
+model PlaylandPrintJob {
+  id              String                 @id @default(uuid()) @db.Uuid
+  orgId           String                 @map("org_id") @db.Uuid
+  branchId        String                 @map("branch_id") @db.Uuid
+  printerId       String                 @map("printer_id") @db.Uuid
+  kind            String                 @default("WRISTBAND")
+  status          PlaylandPrintJobStatus @default(PENDING)
+  bitmapBase64    String                 @map("bitmap_base64")
+  meta            Json?
+  attempts        Int                    @default(0)
+  lastAttemptAt   DateTime?              @map("last_attempt_at") @db.Timestamptz(6)
+  printedAt       DateTime?              @map("printed_at") @db.Timestamptz(6)
+  errorMessage    String?                @map("error_message")
+  createdByUserId String?                @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  printer PlaylandPrinter @relation(fields: [printerId], references: [id], onDelete: Cascade)
+
+  @@index([printerId, status, createdAt])
+  @@index([orgId, createdAt])
+  @@map("print_jobs")
+  @@schema("playland")
+}
+
 // ---------- 19. Audit Log (separate from Pool's AuditLog to keep playland-scoped) ----------
 model PlaylandAuditLog {
   id          String   @id @default(uuid()) @db.Uuid

@@ -6,6 +6,8 @@
 //
 // Browser-only · all functions guard against SSR (typeof indexedDB).
 
+import { normalizeWristbandCode } from "./wristband-code";
+
 const DB_NAME = "playland-offline";
 const DB_VERSION = 1;
 const STORE_WRISTBANDS = "wristbands";   // keyPath: code
@@ -73,7 +75,7 @@ export async function cacheWristbands(list: CachedWristband[]): Promise<void> {
 export async function lookupCached(code: string): Promise<CachedWristband | null> {
   if (typeof indexedDB === "undefined") return null;
   try {
-    const w = await tx<CachedWristband | undefined>(STORE_WRISTBANDS, "readonly", (s) => s.get(code.trim().toUpperCase()));
+    const w = await tx<CachedWristband | undefined>(STORE_WRISTBANDS, "readonly", (s) => s.get(normalizeWristbandCode(code)));
     return w ?? null;
   } catch {
     return null;

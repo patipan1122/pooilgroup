@@ -22,6 +22,7 @@ import { putObject } from "@/lib/r2/upload";
 import { getAdapter } from "./acs/mock-adapter";
 import { revalidatePath } from "next/cache";
 import crypto from "node:crypto";
+import { normalizeWristbandCode } from "./wristband-code";
 
 export type ActionResult<T = void> = { ok: true; data: T } | { ok: false; error: string };
 function err(msg: string) { return { ok: false as const, error: msg }; }
@@ -72,7 +73,7 @@ export async function manualGateOverride(input: {
   let wristbandId: string | null = null;
   if (input.wristbandCode?.trim()) {
     const w = await prisma.playlandWristband.findFirst({
-      where: { code: input.wristbandCode.trim().toUpperCase(), orgId: session.user.org_id },
+      where: { code: normalizeWristbandCode(input.wristbandCode), orgId: session.user.org_id },
       select: { id: true },
     });
     wristbandId = w?.id ?? null;
@@ -114,7 +115,7 @@ export async function manualGateOverride(input: {
         reason: input.reason,
         reasonNote: input.reasonNote ?? null,
         snapshotUrl,
-        wristbandCode: input.wristbandCode?.trim()?.toUpperCase() ?? null,
+        wristbandCode: input.wristbandCode ? normalizeWristbandCode(input.wristbandCode) : null,
         deviceId: device?.deviceId ?? null,
       },
       after: { gateOpenAttempted: Boolean(device) },
