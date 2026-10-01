@@ -14,8 +14,10 @@ import { wristbandBarcodeData } from "./wristband-code";
 import { WRISTBAND_BITMAP_BYTES, WRISTBAND_BYTES_PER_ROW, WRISTBAND_DOTS_ACROSS, WRISTBAND_DOTS_ALONG } from "./wristband-bitmap-spec";
 
 const LAYOUT = {
-  padX0: 984, // ขอบซ้ายพื้นที่พิมพ์บนแผ่นขาว (≈123 มม.)
-  padW: 640, // กว้างพื้นที่พิมพ์ (80 มม.)
+  // แผ่นขาวเริ่มที่ ~117.5 มม. ในรอบวัด แต่ ~128 มม. ในอีกใบ (ตำแหน่งเริ่มพิมพ์เทียบแผ่นขาวเลื่อนได้ ~10 มม. เมื่อฉีกสายรัดทำให้กระดาษขยับ)
+  // → ใช้เฉพาะช่วง 130–205 มม. ที่เป็นแผ่นขาวในทุกกรณีที่เจอ
+  padX0: 1040, // ≈130 มม.
+  padW: 600, // 75 มม. (สิ้นสุด ≈205 มม. ก่อนจบพื้นที่พิมพ์ 206 มม.)
   logoY: 40,
   logoH: 44,
   infoCenterY: 54,
