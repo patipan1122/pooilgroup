@@ -9,9 +9,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
-import { isProgramAdminTier } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { exportDocumentToDrive } from "@/lib/docuflow/drive-export";
+import { userCanAdminModule } from "@/lib/auth/module-access";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +33,7 @@ const REASON_STATUS: Record<string, number> = {
 
 export async function POST(_req: NextRequest, ctx: RouteContext) {
   const session = await requireSession();
-  if (!isProgramAdminTier(session.user.role)) {
+  if (!(await userCanAdminModule(session.user, "docuflow"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { id } = await ctx.params;

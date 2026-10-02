@@ -12,17 +12,17 @@
 
 import { ArrowLeft } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { requireProgramAdminTier } from "@/lib/auth/role-guards";
 import { listAllDocumentGroupsForAdmin } from "@/lib/docuflow/document-groups";
 import { DfButton, DfEyebrow, DfPageHeader } from "@/components/docuflow/df-ui";
 import { DfTopBanner } from "@/components/docuflow/df-top-banner";
 import { DocumentGroupManager } from "@/components/docuflow/document-group-manager";
+import { requireModuleAdmin } from "@/lib/auth/module-access";
 
 export const dynamic = "force-dynamic";
 
 export default async function DocumentGroupsSettingsPage() {
   const session = await requireSession();
-  requireProgramAdminTier(session.user.role);
+  await requireModuleAdmin(session.user, "docuflow");
   const orgId = session.user.org_id;
 
   const documentGroups = await listAllDocumentGroupsForAdmin(orgId);

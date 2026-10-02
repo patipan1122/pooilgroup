@@ -3,7 +3,9 @@
 // DELETE /api/docuflow/[id]/share?branchId — remove a single share
 // ────────────────────────────────────────────────────────────────────
 // Capability E · Cross-branch Document Sharing
-//   - requireExecutiveRole for read · requireProgramAdminTier for write
+//   - requireModuleView for read · requireModuleAdmin for write (2026-09-30:
+//     grant-aware wrappers around requireExecutiveRole/requireProgramAdminTier
+//     — see lib/auth/module-access.ts)
 //   - Multi-tenant orgId scope ทุก query
 //   - skipDuplicates on bulk add (link table has @@unique(documentId, branchId))
 //   - Audit DOCUFLOW_SHARE on every mutation
@@ -13,12 +15,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
-import {
-  requireExecutiveRole,
-  requireProgramAdminTier,
-} from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit/log";
+import { requireModuleAdmin, requireModuleView } from "@/lib/auth/module-access";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +34,7 @@ const PostSchema = z.object({
 
 export async function GET(_req: NextRequest, ctx: RouteContext) {
   const session = await requireSession();
-  requireExecutiveRole(session.user.role);
+  await requireModuleView(session.user, "docuflow");
   const orgId = session.user.org_id;
   const { id } = await ctx.params;
 
@@ -84,7 +83,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
 
 export async function POST(req: NextRequest, ctx: RouteContext) {
   const session = await requireSession();
-  requireProgramAdminTier(session.user.role);
+  await requireModuleAdmin(session.user, "docuflow");
   const orgId = session.user.org_id;
   const { id } = await ctx.params;
 
@@ -173,7 +172,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
 
 export async function DELETE(req: NextRequest, ctx: RouteContext) {
   const session = await requireSession();
-  requireProgramAdminTier(session.user.role);
+  await requireModuleAdmin(session.user, "docuflow");
   const orgId = session.user.org_id;
   const { id } = await ctx.params;
 

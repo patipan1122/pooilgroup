@@ -29,12 +29,12 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
-import { isProgramAdminTier } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit/log";
 import { deleteObject, getObject, putObject } from "@/lib/r2/upload";
 import { embedSignatures } from "@/lib/docuflow/signature";
 import { saveMySignature } from "@/lib/docuflow/my-signature";
+import { userCanAdminModule } from "@/lib/auth/module-access";
 
 export const dynamic = "force-dynamic";
 
@@ -140,7 +140,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
         { status: 403 },
       );
     }
-  } else if (!isProgramAdminTier(session.user.role)) {
+  } else if (!(await userCanAdminModule(session.user, "docuflow"))) {
     return NextResponse.json(
       { error: "คุณไม่ได้รับสิทธิ์เซ็นจุดนี้" },
       { status: 403 },

@@ -12,28 +12,26 @@
 // permission เดี่ยวๆ).
 //
 // คอลัมน์สิทธิ์ 3 คอลัมน์ในตารางนี้ผูกกับ gate จริงในโค้ด (ไม่ใช่ของสมมติ):
-//   - "ดูเอกสาร/รายงาน"      → isExecutiveRole()  (lib/auth/role-guards.ts)
-//   - "อัปโหลด/จัดการ/ตั้งค่า" → isProgramAdminTier() (เกตทุกหน้าที่เขียนข้อมูล)
+//   - "ดูเอกสาร/รายงาน"      → มี user_modules grant ที่ active สำหรับ docuflow
+//     (userCanViewModule() — lib/auth/module-access.ts)
+//   - "อัปโหลด/จัดการ/ตั้งค่า" → userIsModuleAdmin() (เกตทุกหน้าที่เขียนข้อมูล
+//     ผ่าน requireModuleAdmin()/userCanAdminModule())
 //   - "เชิญพนักงานเข้าโปรแกรมนี้" → userIsModuleAdmin() + canAssignRole() — กฎ
 //     เดียวกับที่ inviteProgramStaff ใช้ตัดสินใจจริง
-// (grep เจอใน app/(admin)/docuflow/**/page.tsx และ app/api/docuflow/**
-// — ดู "REAL AMBIGUITY" note ในรายงานสรุปงาน)
 //
-// พบช่องโหว่จริงระหว่างที่ค้นคว้า (ไม่ใช่ของที่ต้องแก้ในงานนี้ แต่ต้องบอก
-// ตรงๆ): requireExecutiveRole ไม่รวม role "staff"/"driver" เลย — และ
-// inviteProgramStaff มอบตำแหน่ง "staff" เสมอ → พนักงานที่เชิญผ่านหน้านี้
-// จะเปิดหน้า DocuFlow ไหนก็ไม่ได้เลยจนกว่าจะแก้เกตนี้ (ดู note ข้างปุ่มเชิญ
-// ด้านล่าง + รายงานสรุปงาน).
+// 2026-09-30 FIXED (เดิมเป็นช่องโหว่ที่ค้นพบตอนสร้างหน้านี้): requireExecutiveRole/
+// isProgramAdminTier เดิมเช็คแค่ org-wide role เท่านั้น ไม่เห็น user_modules grant
+// เลย — พนักงานที่เชิญผ่านปุ่มด้านล่าง (ตำแหน่ง "staff" เสมอ) เปิดหน้า DocuFlow
+// ไหนก็ไม่ได้เลย. แก้โดยเพิ่ม requireModuleView/requireModuleAdmin +
+// userCanViewModule/userCanAdminModule (lib/auth/module-access.ts) — OR-condition
+// เพิ่มเติมจาก grant เฉพาะโปรแกรมนี้ ไม่แตะ role-guards.ts เดิมหรือโมดูลอื่นเลย.
+// ดู postmortems/staff-invite-grant-access-gate-2026-09-30.md
 // ────────────────────────────────────────────────────────────────────
 
 import { Check, Users as UsersIcon } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import {
-  requireProgramAdminTier,
-  isExecutiveRole,
-  isProgramAdminTier,
-  roleRank,
-} from "@/lib/auth/role-guards";
+import { roleRank } from "@/lib/auth/role-guards";
+import { requireModuleAdmin } from "@/lib/auth/module-access";
 import type { DbUser } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { MODULES } from "@/lib/modules";
@@ -111,7 +109,7 @@ const TAB_META: Record<
   },
   staff_driver: {
     label: "พนักงานเฉพาะโปรแกรมนี้",
-    summary: "เชิญผ่านปุ่มด้านล่างได้ · ระบบสิทธิ์การเข้าดูยังไม่รองรับตำแหน่งนี้ (ดูหมายเหตุ)",
+    summary: "เชิญผ่านปุ่มด้านล่างได้ · ดูเอกสารและรายงานของโปรแกรมนี้ได้ทันที",
   },
 };
 
@@ -121,7 +119,7 @@ export default async function DocuFlowUsersPermissionsPage({
   searchParams: Promise<{ role?: string }>;
 }) {
   const session = await requireSession();
-  requireProgramAdminTier(session.user.role);
+  await requireModuleAdmin(session.user, "docuflow");
   const orgId = session.user.org_id;
   const callerIsSuperAdmin = session.user.role === "super_admin";
 
@@ -201,8 +199,13 @@ export default async function DocuFlowUsersPermissionsPage({
       orgRole,
       moduleRole,
       tab: tabGroupOf(orgRole, false),
-      canView: isExecutiveRole(orgRole),
-      canManage: isProgramAdminTier(orgRole),
+      // 2026-09-30 fix: holding ANY active grant row here (this loop only
+      // iterates docuflow grant rows) now IS the view-access signal — see
+      // requireModuleAdmin/userCanViewModule in lib/auth/module-access.ts.
+      // canManage mirrors userIsModuleAdmin()'s own logic exactly
+      // (isModuleAdminSignal, computed above).
+      canView: true,
+      canManage: isModuleAdminSignal,
       canInviteOthers: isModuleAdminSignal && roleRank(orgRole) > roleRank("staff"),
     });
   }
@@ -265,16 +268,16 @@ export default async function DocuFlowUsersPermissionsPage({
           display: "flex",
           gap: 10,
           alignItems: "flex-start",
-          background: "var(--df-warn-soft)",
-          borderColor: "var(--df-warn)",
+          background: "var(--df-success-soft)",
+          borderColor: "var(--df-success)",
         }}
       >
-        <UsersIcon size={16} style={{ color: "var(--df-warn)", flexShrink: 0, marginTop: 2 }} />
+        <UsersIcon size={16} style={{ color: "var(--df-success)", flexShrink: 0, marginTop: 2 }} />
         <p style={{ fontSize: 12.5, color: "var(--df-ink-2)", margin: 0, lineHeight: 1.6 }}>
           <b>หมายเหตุ:</b> พนักงานที่เชิญผ่านปุ่ม &ldquo;เชิญพนักงาน&rdquo; จะได้ตำแหน่ง
-          &ldquo;พนักงาน&rdquo; เสมอ (ต่ำกว่าคุณเสมอ กันไม่ให้แต่งตั้งคนระดับเดียวกัน) — ตอนนี้ระบบสิทธิ์
-          การเข้าดูของ DocuFlow ยังไม่เปิดให้ตำแหน่ง &ldquo;พนักงาน&rdquo; เข้าดูหน้าเอกสารได้จริง
-          (ต้องเป็นระดับผู้จัดการขึ้นไป) — เชิญได้ แต่คนที่ถูกเชิญจะยังเข้าใช้งานจริงไม่ได้จนกว่าจะแก้ไขจุดนี้เพิ่ม
+          &ldquo;พนักงาน&rdquo; เสมอ (ต่ำกว่าคุณเสมอ กันไม่ให้แต่งตั้งคนระดับเดียวกัน) — เปิดดูเอกสาร/รายงานของ
+          DocuFlow ได้ทันทีที่รับคำเชิญ ถ้าต้องการให้อัปโหลด/จัดการ/ตั้งค่าได้ด้วย ให้ปรับตำแหน่งในตารางด้านล่างเป็น
+          &ldquo;แอดมิน&rdquo;
         </p>
       </DfCard>
 

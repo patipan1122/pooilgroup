@@ -11,7 +11,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireSession } from "@/lib/auth/session";
-import { isProgramAdminTier } from "@/lib/auth/role-guards";
 import { audit } from "@/lib/audit/log";
 import {
   updateDocumentType,
@@ -19,6 +18,7 @@ import {
 } from "@/lib/docuflow/document-types";
 import { prisma } from "@/lib/prisma";
 import { zUUID } from "@/lib/zod-helpers";
+import { userCanAdminModule } from "@/lib/auth/module-access";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +39,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await requireSession();
-  if (!isProgramAdminTier(session.user.role)) {
+  if (!(await userCanAdminModule(session.user, "docuflow"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -115,7 +115,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await requireSession();
-  if (!isProgramAdminTier(session.user.role)) {
+  if (!(await userCanAdminModule(session.user, "docuflow"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

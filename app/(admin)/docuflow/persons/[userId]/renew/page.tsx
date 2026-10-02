@@ -5,11 +5,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { requireProgramAdminTier } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { PERSON_DOC_TYPE_LABEL } from "../../types";
 import { RenewDocForm } from "@/components/docuflow/renew-doc-form";
 import { thaiDateLong } from "@/lib/utils/format";
+import { requireModuleAdmin } from "@/lib/auth/module-access";
 import {
   DfCard,
   DfEyebrow,
@@ -27,7 +27,7 @@ export default async function PersonDocRenewPage({
   searchParams: Promise<{ type?: string }>;
 }) {
   const session = await requireSession();
-  requireProgramAdminTier(session.user.role);
+  await requireModuleAdmin(session.user, "docuflow");
 
   const { userId } = await params;
   const sp = await searchParams;

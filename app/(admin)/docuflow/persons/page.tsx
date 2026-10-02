@@ -5,7 +5,6 @@
 import Link from "next/link";
 import { UserCircle2, ArrowLeft, Users, AlertTriangle, FileText } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { requireProgramAdminTier } from "@/lib/auth/role-guards";
 import { Section } from "@/components/ui/section";
 import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +36,7 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 import { PERSON_DOC_TYPES } from "./types";
+import { requireModuleAdmin } from "@/lib/auth/module-access";
 
 interface PersonRowVm {
   userId: string;
@@ -75,7 +75,7 @@ const WORST_BADGE: Record<
 
 export default async function DocuFlowPersonsPage() {
   const session = await requireSession();
-  requireProgramAdminTier(session.user.role);
+  await requireModuleAdmin(session.user, "docuflow");
   const orgId = session.user.org_id;
 
   // Pull all active users + their person docs

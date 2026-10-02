@@ -22,7 +22,6 @@ import {
   Sparkles,
 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { requireExecutiveRole } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { thaiDateLong, bkkRelative } from "@/lib/utils/format";
 import {
@@ -35,6 +34,7 @@ import {
   DfStatCard,
 } from "@/components/docuflow/df-ui";
 import { DfTopBanner } from "@/components/docuflow/df-top-banner";
+import { requireModuleView } from "@/lib/auth/module-access";
 
 export const dynamic = "force-dynamic";
 
@@ -123,7 +123,7 @@ export default async function DocuFlowAuditPage({
   searchParams: Promise<SP>;
 }) {
   const session = await requireSession();
-  requireExecutiveRole(session.user.role);
+  await requireModuleView(session.user, "docuflow");
   const orgId = session.user.org_id;
   const sp = await searchParams;
 

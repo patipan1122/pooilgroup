@@ -5,7 +5,6 @@
 import Link from "next/link";
 import { Truck, Plus, ArrowLeft, AlertTriangle, FileText } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { requireExecutiveRole } from "@/lib/auth/role-guards";
 import { Section } from "@/components/ui/section";
 import { Card, CardBody } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -32,7 +31,7 @@ import {
   type CanonicalVehicleDocument,
   type ExpiryStatus,
 } from "@/lib/vehicles/data";
-import { userIsModuleAdmin } from "@/lib/auth/module-access";
+import { userIsModuleAdmin, requireModuleView } from "@/lib/auth/module-access";
 import { VehicleCard, type VehicleCardVm } from "@/components/docuflow/vehicle-card";
 import { prisma } from "@/lib/prisma";
 
@@ -78,7 +77,7 @@ export default async function DocuFlowVehiclesPage({
   }>;
 }) {
   const session = await requireSession();
-  requireExecutiveRole(session.user.role);
+  await requireModuleView(session.user, "docuflow");
   const sp = await searchParams;
   const orgId = session.user.org_id;
 

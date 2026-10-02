@@ -9,10 +9,10 @@ import { notFound } from "next/navigation";
 import { headers } from "next/headers";
 import { ArrowLeft, PenSquare, History, Lock } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { requireProgramAdminTier } from "@/lib/auth/role-guards";
 import { loadDocumentById } from "@/lib/docuflow/data";
 import { getSignedDownloadUrl } from "@/lib/docuflow/r2";
 import { prisma } from "@/lib/prisma";
+import { requireModuleAdmin } from "@/lib/auth/module-access";
 import {
   SignaturePlacementEditor,
   type PlacementVm,
@@ -35,7 +35,7 @@ export default async function SignaturePlacementPage({
 }) {
   const { id } = await params;
   const session = await requireSession();
-  requireProgramAdminTier(session.user.role);
+  await requireModuleAdmin(session.user, "docuflow");
   const orgId = session.user.org_id;
 
   const doc = await loadDocumentById(orgId, id);

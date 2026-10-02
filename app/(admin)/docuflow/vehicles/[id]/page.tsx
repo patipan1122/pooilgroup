@@ -5,8 +5,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { FileText, RefreshCw, ArrowLeft } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { requireExecutiveRole } from "@/lib/auth/role-guards";
-import { userIsModuleAdmin } from "@/lib/auth/module-access";
+import { userIsModuleAdmin, requireModuleView } from "@/lib/auth/module-access";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { BackButton } from "@/components/ui/back-button";
@@ -59,7 +58,7 @@ export default async function VehicleDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const session = await requireSession();
-  requireExecutiveRole(session.user.role);
+  await requireModuleView(session.user, "docuflow");
   const { id } = await params;
   const orgId = session.user.org_id;
 

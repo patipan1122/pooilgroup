@@ -14,12 +14,12 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
-import { isProgramAdminTier } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit/log";
 import { buildDocumentKey } from "@/lib/docuflow/r2";
 import { deleteObject, putObject } from "@/lib/r2/upload";
 import { validateDocumentMime } from "@/lib/docuflow/mime-validate";
+import { userCanAdminModule } from "@/lib/auth/module-access";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
   }
 
   const session = await requireSession();
-  if (!isProgramAdminTier(session.user.role)) {
+  if (!(await userCanAdminModule(session.user, "docuflow"))) {
     return NextResponse.json(
       { error: "Forbidden — admin tier only" },
       { status: 403 },

@@ -25,7 +25,6 @@
 
 import { ArrowLeft, Bell, Mail, MessageCircle, Smartphone, Info } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { requireProgramAdminTier } from "@/lib/auth/role-guards";
 import {
   DfButton,
   DfCard,
@@ -35,6 +34,7 @@ import {
   DfSection,
 } from "@/components/docuflow/df-ui";
 import { DfTopBanner } from "@/components/docuflow/df-top-banner";
+import { requireModuleAdmin } from "@/lib/auth/module-access";
 
 export const dynamic = "force-dynamic";
 
@@ -81,7 +81,7 @@ const REMINDER_DAYS = ["90 วันก่อนหมดอายุ", "30 ว�
 
 export default async function NotificationSettingsPage() {
   const session = await requireSession();
-  requireProgramAdminTier(session.user.role);
+  await requireModuleAdmin(session.user, "docuflow");
 
   return (
     <div

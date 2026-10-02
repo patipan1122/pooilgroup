@@ -15,7 +15,7 @@ import { MODULES, isModuleDisabled } from "@/lib/modules";
 // Single source of truth for admin-tier role membership lives in role-guards.
 // Re-exported here so existing import sites (`@/lib/auth/module-access`) keep
 // working — see feedback rule on module isolation / single source of truth.
-import { isAdminTier } from "./role-guards";
+import { isAdminTier, isExecutiveRole, isProgramAdminTier } from "./role-guards";
 
 export { isAdminTier };
 
@@ -251,4 +251,101 @@ export async function assertModuleEnabled(slug: ModuleSlug): Promise<void> {
   if (isAdminTier(session.user.role)) return;
   const ok = await userHasModuleAccess(session.user, slug);
   if (!ok) redirect("/403");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Module-scoped capability gates (2026-09-30) — additive OR-composition on
+// top of the existing org-wide role gates in role-guards.ts
+// (requireExecutiveRole / requireProgramAdminTier), extended so a
+// user_modules GRANT can substitute for org-wide role tier, scoped to
+// exactly the one module being gated.
+//
+// Why this exists: `inviteProgramStaff()` (lib/auth/program-invite.ts) mints
+// a plain org-role "staff" user + a user_modules grant for one program. But
+// EXECUTIVE_ROLES (role-guards.ts) excludes staff/driver entirely, and
+// isProgramAdminTier() only ever checks org-wide role tier — neither
+// consults the grant. Net effect: a freshly-invited staff member could not
+// open a single page of the program they were just invited to, and even a
+// module-admin-promoted staff (user_modules.role='admin') could not use
+// that program's write actions.
+//
+// This is the SAME composition pattern already used ad-hoc at ~15
+// RentSpace/ChairOps/ClawHub call sites — see the "ALREADY-CORRECT-COMPOSED"
+// entries in lib/auth/role-gate-known-exceptions.ts, e.g.
+// `isAdminTier(role) || (await userIsModuleAdmin(user, "rentspace"))` — just
+// centralized here as a named, reusable pair instead of copy-pasted inline
+// at every call site (a copy-pasted rule drifts — see
+// [[feedback-one-rule-two-copies-drifts-2026-09-23]]).
+//
+// Deliberately does NOT touch role-guards.ts itself or any call site that
+// isn't explicitly switched to use these — every existing
+// requireExecutiveRole(role) / isProgramAdminTier(role) call anywhere in the
+// app keeps its EXACT current behavior until a module opts in. Wired into
+// DocuFlow's call sites as of this fix (2026-09-30); the other 15 programs
+// that also use `inviteProgramStaff()` have the identical latent gap and can
+// adopt the same one-line swap per call site when prioritized.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * View-tier check for one module's pages — true for the existing
+ * EXECUTIVE_ROLES tier (no extra query), OR any active user_modules grant
+ * (member or admin) for `module`. Lets a plain invited staff member view the
+ * ONE program they were granted, without widening EXECUTIVE_ROLES itself.
+ */
+export async function userCanViewModule(
+  user: DbUser,
+  module: ModuleSlug,
+): Promise<boolean> {
+  if (isExecutiveRole(user.role)) return true;
+  return userHasModuleAccess(user, module);
+}
+
+/** Redirect-on-fail wrapper around userCanViewModule.
+ *
+ * Deliberately redirects to /403, NOT requireExecutiveRole's own
+ * "/cashhub/my-branches" target: that target assumes the blocked user
+ * already has CashHub access (true historically — requireExecutiveRole's
+ * only callers were CashHub itself, or DocuFlow users who happened to also
+ * be cashhub-entitled). A user invited into a non-CashHub program via
+ * inviteProgramStaff() has NO cashhub grant at all, so redirecting them to a
+ * CashHub page would just trip CashHub's own module-entry gate and bounce
+ * them again to /403 anyway — found via real click-through testing
+ * (2026-09-30), not assumed. /403 gets there directly, no double-bounce. */
+export async function requireModuleView(
+  user: DbUser,
+  module: ModuleSlug,
+): Promise<void> {
+  if (!(await userCanViewModule(user, module))) {
+    redirect("/403");
+  }
+}
+
+/**
+ * Write/admin-tier check for one module — true for the existing
+ * isProgramAdminTier tier (no extra query), OR userIsModuleAdmin (already
+ * covers program_admin-with-any-grant AND a staff/branch_manager hand-picked
+ * as this module's admin via user_modules.role='admin').
+ */
+export async function userCanAdminModule(
+  user: DbUser,
+  module: ModuleSlug,
+): Promise<boolean> {
+  if (isProgramAdminTier(user.role)) return true;
+  return userIsModuleAdmin(user, module);
+}
+
+/** Redirect-on-fail wrapper around userCanAdminModule.
+ *
+ * Deliberately /403, not requireProgramAdminTier's "/cashhub/heatmap" target
+ * — same reasoning as requireModuleView above (found via real click-through
+ * testing 2026-09-30): a module-scoped invited staff member commonly has no
+ * cashhub grant, so that target is a guaranteed second bounce to /403 for
+ * them. /403 gets there directly. */
+export async function requireModuleAdmin(
+  user: DbUser,
+  module: ModuleSlug,
+): Promise<void> {
+  if (!(await userCanAdminModule(user, module))) {
+    redirect("/403");
+  }
 }

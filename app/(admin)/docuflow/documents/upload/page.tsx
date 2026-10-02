@@ -6,7 +6,6 @@
 
 import { Sparkles, FileText } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { requireProgramAdminTier } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { BUSINESS_TYPE_LIST } from "@/constants/business-types";
 import { listDocumentTypesForUpload } from "@/lib/docuflow/document-types";
@@ -21,6 +20,7 @@ import {
   DfPill,
 } from "@/components/docuflow/df-ui";
 import { DfTopBanner } from "@/components/docuflow/df-top-banner";
+import { requireModuleAdmin } from "@/lib/auth/module-access";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +30,7 @@ interface PageProps {
 
 export default async function DocumentUploadPage({ searchParams }: PageProps) {
   const session = await requireSession();
-  requireProgramAdminTier(session.user.role);
+  await requireModuleAdmin(session.user, "docuflow");
   const orgId = session.user.org_id;
   const { businessType } = await searchParams;
 

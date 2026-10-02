@@ -18,7 +18,6 @@ import {
   Download,
 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { requireExecutiveRole } from "@/lib/auth/role-guards";
 import { loadRenewals } from "@/lib/docuflow/data";
 import type { ExpiryStatus } from "@/lib/docuflow/expiry";
 import { prisma } from "@/lib/prisma";
@@ -34,6 +33,7 @@ import {
   DfStatCard,
 } from "@/components/docuflow/df-ui";
 import { DfTopBanner } from "@/components/docuflow/df-top-banner";
+import { requireModuleView } from "@/lib/auth/module-access";
 
 export const dynamic = "force-dynamic";
 
@@ -88,7 +88,7 @@ export default async function ExpiryDashboardPage({
   searchParams: Promise<SP>;
 }) {
   const session = await requireSession();
-  requireExecutiveRole(session.user.role);
+  await requireModuleView(session.user, "docuflow");
   const orgId = session.user.org_id;
   const sp = await searchParams;
 

@@ -4,12 +4,12 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { requireProgramAdminTier } from "@/lib/auth/role-guards";
 import { thaiDateLong } from "@/lib/utils/format";
 import { loadBranches } from "@/lib/cashhub/data";
 import { prisma } from "@/lib/prisma";
 import { VEHICLE_TYPES } from "@/lib/vehicles/data";
 import { NewVehicleForm } from "./new-vehicle-form";
+import { requireModuleAdmin } from "@/lib/auth/module-access";
 import {
   DfCard,
   DfEyebrow,
@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
 
 export default async function NewVehiclePage() {
   const session = await requireSession();
-  requireProgramAdminTier(session.user.role);
+  await requireModuleAdmin(session.user, "docuflow");
   const orgId = session.user.org_id;
 
   const [branches, companies] = await Promise.all([

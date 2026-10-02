@@ -25,8 +25,7 @@ import {
   Settings,
 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { requireExecutiveRole } from "@/lib/auth/role-guards";
-import { userIsModuleAdmin } from "@/lib/auth/module-access";
+import { userIsModuleAdmin, requireModuleView } from "@/lib/auth/module-access";
 import { prisma } from "@/lib/prisma";
 import {
   loadDocuments,
@@ -118,7 +117,7 @@ export default async function DocumentsListPage({
   searchParams: Promise<SP>;
 }) {
   const session = await requireSession();
-  requireExecutiveRole(session.user.role);
+  await requireModuleView(session.user, "docuflow");
   const sp = await searchParams;
   const orgId = session.user.org_id;
   const adminTier = await userIsModuleAdmin(session.user, "docuflow");

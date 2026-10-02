@@ -3,16 +3,16 @@
 
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth/session";
-import { isExecutiveRole } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { getSignedDownloadUrl } from "@/lib/docuflow/r2";
+import { userCanViewModule } from "@/lib/auth/module-access";
 
 export async function GET(
   _req: Request,
   ctx: { params: Promise<{ id: string }> },
 ) {
   const session = await requireSession();
-  if (!isExecutiveRole(session.user.role)) {
+  if (!(await userCanViewModule(session.user, "docuflow"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { id } = await ctx.params;

@@ -15,7 +15,6 @@ import {
   Calendar as CalendarIcon,
 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { requireExecutiveRole } from "@/lib/auth/role-guards";
 import { loadRenewals } from "@/lib/docuflow/data";
 import { thaiDateLong } from "@/lib/utils/format";
 import {
@@ -26,6 +25,7 @@ import {
   DfPill,
 } from "@/components/docuflow/df-ui";
 import { DfTopBanner } from "@/components/docuflow/df-top-banner";
+import { requireModuleView } from "@/lib/auth/module-access";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +42,7 @@ export default async function CalendarPage({
   searchParams: Promise<SP>;
 }) {
   const session = await requireSession();
-  requireExecutiveRole(session.user.role);
+  await requireModuleView(session.user, "docuflow");
   const orgId = session.user.org_id;
 
   const sp = await searchParams;

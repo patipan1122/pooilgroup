@@ -25,8 +25,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { requireExecutiveRole } from "@/lib/auth/role-guards";
-import { userIsModuleAdmin } from "@/lib/auth/module-access";
+import { userIsModuleAdmin, requireModuleView } from "@/lib/auth/module-access";
 import { loadRenewals } from "@/lib/docuflow/data";
 import { prisma } from "@/lib/prisma";
 import { thaiDateLong, bkkRelative } from "@/lib/utils/format";
@@ -46,7 +45,7 @@ export const dynamic = "force-dynamic";
 
 export default async function DocuFlowOverviewPage() {
   const session = await requireSession();
-  requireExecutiveRole(session.user.role);
+  await requireModuleView(session.user, "docuflow");
   const orgId = session.user.org_id;
   const adminTier = await userIsModuleAdmin(session.user, "docuflow");
   const today = new Date();

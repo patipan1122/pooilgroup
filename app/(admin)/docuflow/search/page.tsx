@@ -19,7 +19,6 @@ import {
   Download,
 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { requireExecutiveRole } from "@/lib/auth/role-guards";
 import { SearchInterface } from "@/components/docuflow/search-interface";
 import {
   DfButton,
@@ -28,6 +27,7 @@ import {
   DfPill,
 } from "@/components/docuflow/df-ui";
 import { DfTopBanner } from "@/components/docuflow/df-top-banner";
+import { requireModuleView } from "@/lib/auth/module-access";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +48,7 @@ const AI_TEMPLATES = [
 
 export default async function DocuFlowSearchPage() {
   const session = await requireSession();
-  requireExecutiveRole(session.user.role);
+  await requireModuleView(session.user, "docuflow");
 
   return (
     <div

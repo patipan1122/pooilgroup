@@ -21,8 +21,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { requireExecutiveRole } from "@/lib/auth/role-guards";
-import { userIsModuleAdmin } from "@/lib/auth/module-access";
+import { userIsModuleAdmin, requireModuleView } from "@/lib/auth/module-access";
 import { loadDocuments } from "@/lib/docuflow/data";
 import { BUSINESS_TYPES } from "@/constants/business-types";
 import {
@@ -96,7 +95,7 @@ function matchCanonical(
 
 export default async function DocuFlowChecklistPage() {
   const session = await requireSession();
-  requireExecutiveRole(session.user.role);
+  await requireModuleView(session.user, "docuflow");
   const orgId = session.user.org_id;
   const adminTier = await userIsModuleAdmin(session.user, "docuflow");
 

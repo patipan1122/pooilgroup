@@ -15,6 +15,12 @@
 // Using requireAdminTier here would have made Settings the one DocuFlow
 // admin page a docuflow program_admin can't reach. Matching the REAL
 // convention, not the stale plan text.
+//
+// 2026-09-30: now called via requireModuleAdmin(user, "docuflow")
+// (lib/auth/module-access.ts) — same requireProgramAdminTier check PLUS an
+// OR-fallback to userIsModuleAdmin() so a staff/branch_manager hand-picked
+// as this module's admin (user_modules.role='admin') can reach it too, not
+// just org-tier program_admin.
 // ────────────────────────────────────────────────────────────────────
 
 import Link from "next/link";
@@ -34,7 +40,6 @@ import {
   FolderKanban,
 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { requireProgramAdminTier } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { getDriveConnection } from "@/lib/chairops/storage/drive";
 import {
@@ -46,12 +51,13 @@ import {
   DfStatCard,
 } from "@/components/docuflow/df-ui";
 import { DfTopBanner } from "@/components/docuflow/df-top-banner";
+import { requireModuleAdmin } from "@/lib/auth/module-access";
 
 export const dynamic = "force-dynamic";
 
 export default async function DocuFlowSettingsPage() {
   const session = await requireSession();
-  requireProgramAdminTier(session.user.role);
+  await requireModuleAdmin(session.user, "docuflow");
   const orgId = session.user.org_id;
 
   const [activeCount, inactiveCount, activeGroupCount, driveConn] = await Promise.all([

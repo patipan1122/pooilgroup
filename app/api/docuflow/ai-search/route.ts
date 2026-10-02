@@ -8,10 +8,10 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { requireSession } from "@/lib/auth/session";
 import { checkAiBudget, recordAiUsage } from "@/lib/ai/cost-cap";
-import { isExecutiveRole } from "@/lib/auth/role-guards";
 import { audit } from "@/lib/audit/log";
 import { runAiSearch } from "@/lib/docuflow/ai-search";
 import { adminClient } from "@/lib/db/server";
+import { userCanViewModule } from "@/lib/auth/module-access";
 
 // Rate limit window — 10 calls per minute per (orgId, userId)
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
   const session = await requireSession();
 
   // Guard — read endpoint, executive tier only (super_admin/org_admin/admin/area_manager/viewer)
-  if (!isExecutiveRole(session.user.role)) {
+  if (!(await userCanViewModule(session.user, "docuflow"))) {
     return NextResponse.json(
       { error: "ไม่มีสิทธิ์ใช้ AI Search" },
       { status: 403 },

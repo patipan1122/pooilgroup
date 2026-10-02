@@ -14,9 +14,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
-import { isProgramAdminTier, isExecutiveRole } from "@/lib/auth/role-guards";
 import { audit } from "@/lib/audit/log";
 import { loadRenewalChain } from "@/lib/docuflow/renewal-history";
+import { userCanAdminModule, userCanViewModule } from "@/lib/auth/module-access";
 import {
   extractDocumentMetadata,
   loadCachedMetadataMap,
@@ -37,7 +37,7 @@ const IdSchema = zUUID();
 
 export async function GET(_req: NextRequest, ctx: RouteContext) {
   const session = await requireSession();
-  if (!isExecutiveRole(session.user.role)) {
+  if (!(await userCanViewModule(session.user, "docuflow"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -81,7 +81,7 @@ const PostBodySchema = z
 
 export async function POST(req: NextRequest, ctx: RouteContext) {
   const session = await requireSession();
-  if (!isProgramAdminTier(session.user.role)) {
+  if (!(await userCanAdminModule(session.user, "docuflow"))) {
     return NextResponse.json(
       { error: "Forbidden — admin tier only" },
       { status: 403 },

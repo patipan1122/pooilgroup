@@ -21,12 +21,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
-import {
-  requireProgramAdminTier,
-  requireExecutiveRole,
-} from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit/log";
+import { requireModuleAdmin, requireModuleView } from "@/lib/auth/module-access";
 
 export const dynamic = "force-dynamic";
 
@@ -88,7 +85,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
   const session = await requireSession();
   // Placement metadata exposes signerUserId / signedImageKey / signedFileKey for
   // potentially sensitive admin-tier documents — restrict to executive roles.
-  requireExecutiveRole(session.user.role);
+  await requireModuleView(session.user, "docuflow");
   const { id: documentId } = await ctx.params;
   if (!IdSchema.safeParse(documentId).success) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
@@ -150,7 +147,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
 
 export async function POST(req: NextRequest, ctx: RouteContext) {
   const session = await requireSession();
-  requireProgramAdminTier(session.user.role);
+  await requireModuleAdmin(session.user, "docuflow");
 
   const { id: documentId } = await ctx.params;
   if (!IdSchema.safeParse(documentId).success) {
@@ -249,7 +246,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
 
 export async function PATCH(req: NextRequest, ctx: RouteContext) {
   const session = await requireSession();
-  requireProgramAdminTier(session.user.role);
+  await requireModuleAdmin(session.user, "docuflow");
 
   const { id: documentId } = await ctx.params;
   if (!IdSchema.safeParse(documentId).success) {
@@ -353,7 +350,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
 export async function DELETE(req: NextRequest, ctx: RouteContext) {
   const session = await requireSession();
-  requireProgramAdminTier(session.user.role);
+  await requireModuleAdmin(session.user, "docuflow");
 
   const { id: documentId } = await ctx.params;
   if (!IdSchema.safeParse(documentId).success) {

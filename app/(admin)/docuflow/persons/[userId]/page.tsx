@@ -6,7 +6,6 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { FileText, RefreshCw, UserCircle2, ArrowLeft } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { requireProgramAdminTier } from "@/lib/auth/role-guards";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { BackButton } from "@/components/ui/back-button";
@@ -14,6 +13,7 @@ import { Section } from "@/components/ui/section";
 import { thaiDateLong } from "@/lib/utils/format";
 import { prisma } from "@/lib/prisma";
 import { classifyExpiry, type ExpiryStatus } from "@/lib/vehicles/data";
+import { requireModuleAdmin } from "@/lib/auth/module-access";
 import {
   DfEyebrow,
   DfPill,
@@ -72,7 +72,7 @@ export default async function PersonDocDetailPage({
   params: Promise<{ userId: string }>;
 }) {
   const session = await requireSession();
-  requireProgramAdminTier(session.user.role);
+  await requireModuleAdmin(session.user, "docuflow");
   const { userId } = await params;
   const orgId = session.user.org_id;
 

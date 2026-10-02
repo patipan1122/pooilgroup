@@ -6,12 +6,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
-import {
-  isProgramAdminTier,
-  isExecutiveRole,
-} from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit/log";
+import { userCanAdminModule, userCanViewModule } from "@/lib/auth/module-access";
 
 const CreateVehicleSchema = z.object({
   licensePlate: z.string().min(1).max(32),
@@ -24,7 +21,7 @@ const CreateVehicleSchema = z.object({
 
 export async function POST(req: Request) {
   const session = await requireSession();
-  if (!isProgramAdminTier(session.user.role)) {
+  if (!(await userCanAdminModule(session.user, "docuflow"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -98,7 +95,7 @@ const ListSchema = z.object({
 
 export async function GET(req: Request) {
   const session = await requireSession();
-  if (!isExecutiveRole(session.user.role)) {
+  if (!(await userCanViewModule(session.user, "docuflow"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

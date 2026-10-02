@@ -13,9 +13,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
-import { requireProgramAdminTier } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit/log";
+import { requireModuleAdmin } from "@/lib/auth/module-access";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +27,7 @@ const IdSchema = zUUID();
 
 export async function POST(_req: NextRequest, ctx: RouteContext) {
   const session = await requireSession();
-  requireProgramAdminTier(session.user.role);
+  await requireModuleAdmin(session.user, "docuflow");
 
   const { id: documentId, placementId } = await ctx.params;
   if (

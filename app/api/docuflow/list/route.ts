@@ -20,8 +20,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { zUUID } from "@/lib/zod-helpers";
 import { requireSession } from "@/lib/auth/session";
-import { isExecutiveRole } from "@/lib/auth/role-guards";
 import { loadDocuments } from "@/lib/docuflow/data";
+import { userCanViewModule } from "@/lib/auth/module-access";
 
 export const dynamic = "force-dynamic";
 
@@ -50,7 +50,7 @@ const QuerySchema = z.object({
 
 export async function GET(req: NextRequest) {
   const session = await requireSession();
-  if (!isExecutiveRole(session.user.role)) {
+  if (!(await userCanViewModule(session.user, "docuflow"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
