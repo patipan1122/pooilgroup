@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export default async function CategoriesPage() {
   const session = await requireSession();
-  requireRepairAdmin(session.user.role);
+  await requireRepairAdmin(session.user);
   const cats = await listCategories(session.user.org_id);
 
   const urgentCount = cats.filter((c) => c.defaultUrgency === "URGENT").length;

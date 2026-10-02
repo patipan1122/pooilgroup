@@ -7,6 +7,7 @@
 
 import { redirect } from "next/navigation";
 import type { DbUser } from "@/lib/auth/session";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 
 type Role = DbUser["role"];
 
@@ -30,12 +31,38 @@ export const CAFE_ADMIN_ROLES: Role[] = [
 export function requireCafeAccess(role: Role): void {
   if (!CAFE_ROLES.includes(role)) redirect("/home");
 }
-export function requireCafeManager(role: Role): void {
-  if (!CAFE_MANAGER_ROLES.includes(role)) redirect("/cafeorder");
+
+/**
+ * Manage-tier check — true for CAFE_MANAGER_ROLES (no extra query), OR
+ * userIsModuleAdmin (covers a plain `staff` member hand-picked as this
+ * program's admin via user_modules.role='admin', granted by
+ * inviteProgramStaff()). CAFE_MANAGER_ROLES does NOT include "staff" at all
+ * (unlike Repairs/Playland), so without this fallback a staff+admin-grant
+ * combo would fail even basic menu management — not just the stricter
+ * CAFE_ADMIN_ROLES tier below. Same additive OR-composition pattern as
+ * lib/auth/module-access.ts's userCanAdminModule, grant-scoped to
+ * "cafeorder" only. A member-tier (non-admin) grant, or zero grant, sees no
+ * change — userIsModuleAdmin only matches user_modules.role==='admin'.
+ */
+export async function canCafeManage(user: DbUser): Promise<boolean> {
+  if (CAFE_MANAGER_ROLES.includes(user.role)) return true;
+  return userIsModuleAdmin(user, "cafeorder");
 }
-export function requireCafeAdmin(role: Role): void {
-  if (!CAFE_ADMIN_ROLES.includes(role)) redirect("/cafeorder");
+export async function requireCafeManager(user: DbUser): Promise<void> {
+  if (!(await canCafeManage(user))) redirect("/cafeorder");
 }
 
-export const canCafeManage = (role: Role) => CAFE_MANAGER_ROLES.includes(role);
-export const canCafeAdmin = (role: Role) => CAFE_ADMIN_ROLES.includes(role);
+/**
+ * Admin-tier check — true for CAFE_ADMIN_ROLES, OR userIsModuleAdmin. Same
+ * composition as canCafeManage above, for the stricter tier (points policy,
+ * staff permissions, delete master) — not yet wired to any call site as of
+ * this fix (no settings/points-policy page exists yet), fixed here so a
+ * future call site is correct from day one.
+ */
+export async function canCafeAdmin(user: DbUser): Promise<boolean> {
+  if (CAFE_ADMIN_ROLES.includes(user.role)) return true;
+  return userIsModuleAdmin(user, "cafeorder");
+}
+export async function requireCafeAdmin(user: DbUser): Promise<void> {
+  if (!(await canCafeAdmin(user))) redirect("/cafeorder");
+}

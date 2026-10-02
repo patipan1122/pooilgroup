@@ -17,7 +17,7 @@ type Result<T = unknown> = { ok: true; data?: T } | { ok: false; error: string }
 
 async function requireManager(): Promise<{ orgId: string; userId: string }> {
   const session = await requireSession();
-  if (!canCafeManage(session.user.role)) throw new Error("ไม่มีสิทธิ์จัดการเมนู");
+  if (!(await canCafeManage(session.user))) throw new Error("ไม่มีสิทธิ์จัดการเมนู");
   return { orgId: session.user.org_id, userId: session.user.id };
 }
 

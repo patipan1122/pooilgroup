@@ -278,7 +278,7 @@ export async function changeStatus(input: z.input<typeof ChangeStatusSchema>): P
   }
 
   // Special case: CLOSED is admin-only
-  if (to === "CLOSED" && !canRepairAdmin(session.user.role)) {
+  if (to === "CLOSED" && !(await canRepairAdmin(session.user))) {
     return { ok: false, error: "ปิดถาวรได้เฉพาะ admin" };
   }
 
@@ -835,7 +835,7 @@ export async function createTechnician(input: z.input<typeof CreateTechnicianSch
   const parsed = CreateTechnicianSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
   const session = await requireSession();
-  if (!canRepairAdmin(session.user.role)) return { ok: false, error: "ไม่มีสิทธิ์" };
+  if (!(await canRepairAdmin(session.user))) return { ok: false, error: "ไม่มีสิทธิ์" };
   const d = parsed.data;
 
   const tech = await prisma.repairTechnician.create({
@@ -866,7 +866,7 @@ export async function createTechnician(input: z.input<typeof CreateTechnicianSch
 
 export async function toggleTechnicianActive(input: { id: string }): Promise<{ ok: boolean; error?: string }> {
   const session = await requireSession();
-  if (!canRepairAdmin(session.user.role)) return { ok: false, error: "ไม่มีสิทธิ์" };
+  if (!(await canRepairAdmin(session.user))) return { ok: false, error: "ไม่มีสิทธิ์" };
   const tech = await prisma.repairTechnician.findFirst({
     where: { id: input.id, orgId: session.user.org_id },
   });
@@ -921,7 +921,7 @@ export async function createCategory(input: z.input<typeof CreateCategorySchema>
   const parsed = CreateCategorySchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
   const session = await requireSession();
-  if (!canRepairAdmin(session.user.role)) return { ok: false, error: "ไม่มีสิทธิ์" };
+  if (!(await canRepairAdmin(session.user))) return { ok: false, error: "ไม่มีสิทธิ์" };
 
   let createdId: string | null = null;
   try {

@@ -83,6 +83,7 @@ export default async function RepairsTriagePage({
     listCompanies(orgId),
     countNewSince(orgId, 24, companyId),
   ]);
+  const canAdmin = await canRepairAdmin(session.user);
 
   const openCount =
     statusCounts.NEW + statusCounts.ACK + statusCounts.IN_PROGRESS + statusCounts.WAITING_PARTS;
@@ -117,7 +118,7 @@ export default async function RepairsTriagePage({
         currentCategory={params.category ?? null}
         currentQuery={params.q ?? ""}
         canWrite={canRepairWrite(session.user.role)}
-        canAdmin={canRepairAdmin(session.user.role)}
+        canAdmin={canAdmin}
       />
     </>
   );

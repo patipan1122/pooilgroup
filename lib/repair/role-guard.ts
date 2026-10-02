@@ -6,6 +6,7 @@
 //     (own technician profile). Enforced inside actions, not in the guard.
 import { redirect } from "next/navigation";
 import type { DbUser } from "@/lib/auth/session";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 
 // `program_admin` = scoped admin granted via user_modules. The /repairs layout
 // gates entry on an active user_modules `repairs` grant FIRST, so listing it
@@ -59,18 +60,30 @@ export function requireRepairWrite(role: DbUser["role"]): void {
   }
 }
 
-export function requireRepairAdmin(role: DbUser["role"]): void {
-  if (!REPAIR_ADMIN_ROLES.includes(role)) {
+/**
+ * Admin-tier check for one module — true for REPAIR_ADMIN_ROLES (no extra
+ * query), OR userIsModuleAdmin (covers a staff member hand-picked as this
+ * program's admin via user_modules.role='admin', granted by
+ * inviteProgramStaff()). Grant-scoped to "repairs" only — same additive
+ * OR-composition already established in lib/auth/module-access.ts's
+ * userCanAdminModule / requireModuleAdmin, applied here because Repairs has
+ * its own local role-array system instead of using role-guards.ts directly.
+ * Staff with a member-tier (non-admin) grant, or zero grant, see no change —
+ * REPAIR_ROLES (view) and REPAIR_WRITE_ROLES already cover them separately.
+ */
+export async function canRepairAdmin(user: DbUser): Promise<boolean> {
+  if (REPAIR_ADMIN_ROLES.includes(user.role)) return true;
+  return userIsModuleAdmin(user, "repairs");
+}
+
+export async function requireRepairAdmin(user: DbUser): Promise<void> {
+  if (!(await canRepairAdmin(user))) {
     redirect("/repairs");
   }
 }
 
 export function canRepairWrite(role: DbUser["role"]): boolean {
   return REPAIR_WRITE_ROLES.includes(role);
-}
-
-export function canRepairAdmin(role: DbUser["role"]): boolean {
-  return REPAIR_ADMIN_ROLES.includes(role);
 }
 
 /** Can this user act on this specific ticket (admin tier OR assigned tech)? */

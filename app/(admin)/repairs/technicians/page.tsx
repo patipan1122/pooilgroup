@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export default async function TechniciansPage() {
   const session = await requireSession();
-  requireRepairAdmin(session.user.role);
+  await requireRepairAdmin(session.user);
   const orgId = session.user.org_id;
 
   const [techs, workload] = await Promise.all([

@@ -29,6 +29,7 @@ export default async function RepairDetailPage({
     listTechnicians(session.user.org_id),
   ]);
   if (!ticket) notFound();
+  const canAdmin = await canRepairAdmin(session.user);
 
   return (
     <>
@@ -61,7 +62,7 @@ export default async function RepairDetailPage({
             ticket={ticket}
             technicians={technicians}
             canWrite={canRepairWrite(session.user.role)}
-            canAdmin={canRepairAdmin(session.user.role)}
+            canAdmin={canAdmin}
           />
         </div>
       </div>

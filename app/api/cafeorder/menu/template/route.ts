@@ -25,7 +25,7 @@ function itemRow(m: SeedMenu): (string | number)[] {
 
 export async function GET(req: NextRequest) {
   const session = await requireSession();
-  if (!canCafeManage(session.user.role)) {
+  if (!(await canCafeManage(session.user))) {
     return NextResponse.json({ error: "ไม่มีสิทธิ์" }, { status: 403 });
   }
   const brand = req.nextUrl.searchParams.get("brand") === "punthai" ? "punthai" : "amazon";

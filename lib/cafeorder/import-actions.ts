@@ -11,7 +11,7 @@ import { parseWorkbook, previewImport, commitImport, type ImportPreview, type Co
 
 async function requireManagerOrg(): Promise<string> {
   const session = await requireSession();
-  if (!canCafeManage(session.user.role)) throw new Error("ไม่มีสิทธิ์นำเข้าเมนู");
+  if (!(await canCafeManage(session.user))) throw new Error("ไม่มีสิทธิ์นำเข้าเมนู");
   return session.user.org_id;
 }
 
