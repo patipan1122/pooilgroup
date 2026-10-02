@@ -29,6 +29,8 @@ export interface ACSEvent {
   faceId: string | null;
   /** Raw QR text from QR scanner (only set when type === "qr_scan"). */
   qrCode: string | null;
+  /** เลขบัตร (icNum) เมื่อเครื่องรายงานการอ่านบัตร/บาร์โค้ดจาก USB (IdentifyType 3) · สายรัดเลข 10 หลักใช้ช่องทางนี้ */
+  cardNo?: string | null;
   type: ACSEventType;
   direction: ACSDirection;
   /** 0-100 confidence score · null if N/A. */

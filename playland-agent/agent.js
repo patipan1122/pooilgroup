@@ -147,7 +147,29 @@ async function processFaceSyncQueue(device) {
     let ok = false;
     let error;
     try {
-      if (job.type === "REGISTER") {
+      if (job.type === "REGISTER" && job.icno) {
+        // สายรัดเลข 10 หลัก: ลงรายชื่อแบบเลขบัตร ไม่ต้องใช้รูปหน้า · ลบรายการเดิมของคนนี้ก่อน (ออกสายรัดใหม่ → เลขเก่าต้องใช้ไม่ได้)
+        // หมดอายุเองใน 2 วัน เป็นตาข่ายนิรภัยเผื่อคำสั่งลบไม่ถึงเครื่อง
+        const today = new Date().toLocaleDateString("sv-SE");
+        const end = new Date(Date.now() + 2 * 864e5).toLocaleDateString("sv-SE");
+        await deviceCall(device, "deleteDeviceWhiteList", { data: { employee_number: job.memberId, usertype: "white" } }).catch(() => {});
+        const add = await deviceCall(device, "addDeviceWhiteList", {
+          totalnum: 1,
+          currentnum: 1,
+          data: {
+            usertype: "white",
+            employee_number: job.memberId,
+            name: job.name || job.memberId,
+            icno: job.icno,
+            peoplestartdate: today,
+            peopleenddate: end,
+            passAlgo: true,
+            TimeGroupId: 0,
+          },
+        });
+        if (add.result !== 0) throw new Error(add.message || "addDeviceWhiteList(icno) failed");
+        ok = true;
+      } else if (job.type === "REGISTER") {
         if (!job.photoBase64) throw new Error("ไม่มีรูป (R2 อ่านไม่ได้)");
         const today = new Date().toLocaleDateString("sv-SE");
         const nextYear = new Date(Date.now() + 365 * 864e5).toLocaleDateString("sv-SE");

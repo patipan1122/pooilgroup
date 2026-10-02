@@ -116,7 +116,12 @@ export const acsAutoAdapter: ACSAdapter = {
       : typeof r.resultStatus === "string" ? Number(r.resultStatus) : 1;
     const inout = typeof r.inout === "number" ? r.inout
       : typeof r.inout === "string" ? Number(r.inout) : 1;
-    const identifyType = typeof r.IdentifyType === "number" ? r.IdentifyType : 0;
+    // เครื่องจริงส่ง IdentifyType เป็นสตริง ("3") — ต้องแปลงเป็นเลขก่อนเทียบ ไม่งั้นทุกชนิดกลายเป็น 0
+    const identifyType = typeof r.IdentifyType === "number" ? r.IdentifyType
+      : typeof r.IdentifyType === "string" ? Number(r.IdentifyType) : 0;
+    // IdentifyType 3 = อ่านบัตร IC · เครื่องรับบาร์โค้ดจากเครื่องสแกน USB เป็น "เลขบัตร" (เฉพาะตัวเลข ≤10 หลัก)
+    const icNum = typeof r.icNum === "string" ? r.icNum.trim() : typeof r.icNum === "number" ? String(r.icNum) : "";
+    const cardNo = identifyType === 3 && /^\d{1,10}$/.test(icNum) ? icNum : null;
 
     // QR scan detection · field name TBC by Lily (likely qrCode/qr/barcode/QRCode)
     const qrCode =
@@ -129,7 +134,7 @@ export const acsAutoAdapter: ACSAdapter = {
     // Map type: QR scan wins · then face match outcomes
     let type: ACSEvent["type"];
     if (qrCode) type = "qr_scan";
-    else if (resultStatus === 0) type = "stranger";
+    else if (resultStatus === 0) type = cardNo ? "unrecognized" : "stranger"; // เลขบัตรที่ไม่อยู่ในรายชื่อ ≠ คนแปลกหน้า
     else if (identifyType === 1) type = "stranger";  // blacklist hit
     else type = "recognized";
 
@@ -161,6 +166,7 @@ export const acsAutoAdapter: ACSAdapter = {
       webhookId: id,
       faceId: type === "recognized" ? employeeNumber : null,
       qrCode,
+      cardNo,
       type,
       direction: inout === 0 ? "out" : inout === 1 ? "in" : "unknown",
       confidence: null,                         // doc doesn't expose match score in event

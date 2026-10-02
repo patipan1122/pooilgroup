@@ -9,7 +9,7 @@
 //  - ไม่พิมพ์ "เวลาออก" (เวลาเริ่มนับจริงคือตอนสแกนเข้าประตู ไม่ใช่ตอนพิมพ์)
 // ตัวเลขตำแหน่ง/สเกลทั้งหมดอยู่ใน LAYOUT ด้านล่างที่เดียว
 
-import { encodeCode128B } from "./code128";
+import { encodeCode128 } from "./code128";
 import { wristbandBarcodeData } from "./wristband-code";
 import { WRISTBAND_BITMAP_BYTES, WRISTBAND_BYTES_PER_ROW, WRISTBAND_DOTS_ACROSS, WRISTBAND_DOTS_ALONG } from "./wristband-bitmap-spec";
 
@@ -242,15 +242,17 @@ export async function renderWristbandBitmap(input: WristbandBitmapInput): Promis
 
   // บาร์โค้ด Code128 (9 ตัวท้ายของรหัส) ชิดขวา
   const barcodeData = wristbandBarcodeData(input.code);
-  const modules = encodeCode128B(barcodeData);
-  const barW = modules.length * L.barModule;
+  const modules = encodeCode128(barcodeData);
+  // บาร์โค้ดสั้น (เลข 10 หลัก = 90 โมดูล) ใช้โมดูล 3 จุดให้แท่งหนาอ่านง่ายขึ้น · ไม่เกิน 34 มม. (272 จุด) เหมือนเดิม
+  const barModule = Math.min(3, Math.max(2, Math.floor(272 / modules.length)));
+  const barW = modules.length * barModule;
   const barX = right - barW;
   drawn.push({ name: "บาร์โค้ด", x: barX, y: L.barY, w: barW, h: L.barH, min: 1500 });
   for (let i = 0; i < modules.length; ) {
     if (modules[i] === "1") {
       let j = i;
       while (j < modules.length && modules[j] === "1") j++;
-      ctx.fillRect(barX + i * L.barModule, L.barY, (j - i) * L.barModule, L.barH);
+      ctx.fillRect(barX + i * barModule, L.barY, (j - i) * barModule, L.barH);
       i = j;
     } else i++;
   }

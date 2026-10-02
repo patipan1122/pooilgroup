@@ -1,4 +1,4 @@
-// Code128 (subset B · ASCII 32-126) → สตริงโมดูล "1"=แท่งดำ "0"=ช่องว่าง · ไม่มี dependency
+// Code128 (subset B · ASCII 32-126 และ subset C · ตัวเลขล้วนจำนวนคู่) → สตริงโมดูล "1"=แท่งดำ "0"=ช่องว่าง · ไม่มี dependency
 // ตารางแพทเทิร์นมาตรฐาน 106 ค่า + STOP · ยืนยันตรงกับ python-barcode ทุกบิต (ดู __tests__/code128.run.ts)
 // ไม่รวม quiet zone (ผู้วาดต้องเว้นขอบซ้าย-ขวา ≥ 10 โมดูล)
 
@@ -48,4 +48,25 @@ export function encodeCode128B(text: string): string {
   }
   out += PATTERNS[sum % 103] + STOP;
   return out;
+}
+
+const START_C = 105;
+
+// ตัวเลขล้วน (จำนวนคู่) → subset C: 2 หลักต่อ 1 สัญลักษณ์ · สั้นกว่า subset B เกือบครึ่ง (10 หลัก = 90 โมดูล เทียบ 145)
+export function encodeCode128C(digits: string): string {
+  if (!/^\d+$/.test(digits) || digits.length % 2 !== 0) throw new Error("Code128C: ต้องเป็นตัวเลขล้วนจำนวนหลักเป็นคู่");
+  let sum = START_C;
+  let out = PATTERNS[START_C];
+  for (let i = 0; i < digits.length; i += 2) {
+    const value = Number(digits.slice(i, i + 2));
+    sum += value * (i / 2 + 1);
+    out += PATTERNS[value];
+  }
+  out += PATTERNS[sum % 103] + STOP;
+  return out;
+}
+
+/** เลือก subset ให้เอง: ตัวเลขล้วนจำนวนคู่ ≥ 4 หลัก → C · นอกนั้น → B */
+export function encodeCode128(text: string): string {
+  return /^\d{4,}$/.test(text) && text.length % 2 === 0 ? encodeCode128C(text) : encodeCode128B(text);
 }

@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getObject } from "@/lib/r2/upload";
+import { wristbandGateNumber } from "@/lib/playland/wristband-code";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -66,8 +67,26 @@ export async function GET(req: NextRequest) {
   const payload = await Promise.all(
     jobs.map(async (job) => {
       const isDelete = job.status === "DELETE_PENDING";
+
+      // สมาชิกที่ถือสายรัดเลข 10 หลัก (เซสชันยังไม่จบ) → ลงรายชื่อแบบ "เลขบัตร" ไม่ต้องใช้รูปหน้า
+      // (ถ้าไม่มีสายรัดแบบนี้ = สมาชิกเลือกสแกนหน้า → เดินทางเดิมด้วยรูปหน้า)
+      let icno: string | null = null;
+      if (!isDelete) {
+        const wb = await prisma.playlandWristband.findFirst({
+          where: {
+            memberId: job.member.id,
+            status: { in: ["ISSUED", "ACTIVE"] },
+            code: { startsWith: "PW-" },
+            session: { status: { in: ["PENDING_ENTRY", "ACTIVE", "PAUSED"] } },
+          },
+          orderBy: { createdAt: "desc" },
+          select: { code: true },
+        });
+        icno = wb ? wristbandGateNumber(wb.code) : null;
+      }
+
       let photoBase64: string | null = null;
-      if (!isDelete && job.member.photoR2Path) {
+      if (!isDelete && !icno && job.member.photoR2Path) {
         try {
           photoBase64 = (await getObject(job.member.photoR2Path)).toString("base64");
         } catch (e) {
@@ -80,6 +99,7 @@ export async function GET(req: NextRequest) {
         memberId: job.member.id,
         name: job.member.name,
         photoBase64,
+        icno,
       };
     }),
   );

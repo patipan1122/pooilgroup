@@ -7,8 +7,8 @@
 //   scan at gate → ACTIVE (opens session if not already)
 //   scan again → picker: ออก (RETURNED) / ขายของ (POS_CHARGE)
 //
-// QR code = 12-char short alphanumeric · easy to print on small square
-// Format: prefix `PW-` + 9 random chars · e.g. `PW-A3F9K2BC7`
+// รหัสสายรัด: prefix `PW-` + เลข 10 หลักสุ่ม (แบบใหม่ · เครื่องสแกนหน้าประตูอ่านบาร์โค้ดจาก USB เป็น "เลขบัตร" รับเฉพาะตัวเลข)
+// e.g. `PW-1258881673` · รหัสตัวอักษรแบบเก่า `PW-A3F9K2BC7` ยังใช้ที่เคาน์เตอร์ได้ แต่ประตูไม่รองรับ
 
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
@@ -17,7 +17,8 @@ import { verifyBranchOrg, verifyBranchAssignment, verifyMemberOrg } from "./guar
 import { newSaleCode } from "./codes";
 import { revalidatePath } from "next/cache";
 import crypto from "node:crypto";
-import { normalizeWristbandCode, WRISTBAND_PREFIX, WRISTBAND_CODE_ALPHABET } from "./wristband-code";
+import { normalizeWristbandCode, wristbandGateNumber, WRISTBAND_PREFIX, WRISTBAND_NUMERIC_MIN, WRISTBAND_NUMERIC_MAX } from "./wristband-code";
+import { grantGateAccess, revokeAllGateAccess } from "./session-engine";
 
 export type ActionResult<T = void> = { ok: true; data: T } | { ok: false; error: string };
 function err(msg: string) { return { ok: false as const, error: msg }; }
@@ -26,10 +27,8 @@ function err(msg: string) { return { ok: false as const, error: msg }; }
 // Code generation · 12 chars · case-insensitive lookup but stored upper
 // ────────────────────────────────────────────────────────────────────────────
 function generateWristbandCode(): string {
-  const bytes = crypto.randomBytes(9);
-  let out = WRISTBAND_PREFIX;
-  for (let i = 0; i < 9; i++) out += WRISTBAND_CODE_ALPHABET[bytes[i] % WRISTBAND_CODE_ALPHABET.length];
-  return out;
+  // crypto.randomInt = สุ่มแบบไม่เอนเอียง · ช่วงเลขต้องไม่ขึ้นต้นด้วย 0 และไม่เกิน 32 บิต (กฎอยู่ที่ wristband-code.ts)
+  return WRISTBAND_PREFIX + String(crypto.randomInt(WRISTBAND_NUMERIC_MIN, WRISTBAND_NUMERIC_MAX + 1));
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -133,7 +132,7 @@ export async function issueWristband(input: {
     if (!pending) return err("session ที่จะผูกสายรัดนี้ไม่พบ หรือสถานะเปลี่ยนไปแล้ว");
   }
 
-  // Retry-on-collision (extremely rare with 24^9 ≈ 2.6 trillion combos)
+  // Retry-on-collision (3.3 พันล้านเลข · ชนกันยากมากในสายรัดที่ยังใช้งานอยู่ไม่กี่ร้อยเส้น)
   let code = generateWristbandCode();
   for (let attempt = 0; attempt < 3; attempt++) {
     const existing = await prisma.playlandWristband.findUnique({ where: { code }, select: { id: true } });
@@ -161,6 +160,16 @@ export async function issueWristband(input: {
       after: { code, memberId: input.memberId },
     },
   });
+
+  // จ่ายเงินแล้ว + สายรัดเลข 10 หลัก → ใส่เลขเข้ารายชื่อเครื่องประตู (agent ส่งเข้าเครื่องภายในไม่กี่วินาที · ระหว่างนั้นสายรัดกำลังพิมพ์อยู่)
+  // ล้มเหลวไม่ทำให้การออกสายรัดพัง: สายรัดยังใช้ที่เคาน์เตอร์ได้ แค่ประตูยังไม่รู้จัก → log ไว้ให้ตามได้
+  if (input.sessionId && wristbandGateNumber(code)) {
+    try {
+      await prisma.$transaction((tx) => grantGateAccess(tx, session.user.org_id, input.branchId, input.memberId, "both"));
+    } catch (e) {
+      console.error("[playland/wristband] grantGateAccess failed", e);
+    }
+  }
 
   revalidatePath("/playland/wristbands");
   revalidatePath("/playland");
@@ -362,6 +371,14 @@ export async function activateWristband(input: {
     return s;
   });
 
+  if (wristbandGateNumber(w.code)) {
+    try {
+      await prisma.$transaction((tx) => grantGateAccess(tx, session.user.org_id, w.branchId, w.memberId!, "exit"));
+    } catch (e) {
+      console.error("[playland/wristband] grantGateAccess(exit) failed", e);
+    }
+  }
+
   await prisma.playlandAuditLog.create({
     data: {
       orgId: session.user.org_id, branchId: w.branchId, actorUserId: session.user.id, actorRole: session.user.role,
@@ -482,6 +499,15 @@ export async function exitWristband(code: string): Promise<ActionResult> {
     });
   });
 
+  // ปิดเซสชันถาวรแล้ว → เอาเลขสายรัดออกจากรายชื่อเครื่องประตูทุกตัว
+  if (w.memberId && wristbandGateNumber(w.code)) {
+    try {
+      await prisma.$transaction((tx) => revokeAllGateAccess(tx, session.user.org_id, w.branchId, w.memberId!));
+    } catch (e) {
+      console.error("[playland/wristband] revokeAllGateAccess(exit) failed", e);
+    }
+  }
+
   await prisma.playlandAuditLog.create({
     data: {
       orgId: session.user.org_id, branchId: w.branchId, actorUserId: session.user.id, actorRole: session.user.role,
@@ -558,6 +584,14 @@ export async function markWristbandLost(code: string, notes?: string): Promise<A
   });
   if (!w) return err("ไม่พบ wristband");
   await prisma.playlandWristband.update({ where: { id: w.id }, data: { status: "LOST", notes: notes ?? w.notes } });
+  // สายรัดหาย → เอาออกจากรายชื่อเครื่องประตูทันที (กันคนเก็บได้เอาไปสแกนเข้า) · ถ้าออกเส้นใหม่ให้ ระบบจะลงรายชื่อใหม่เอง
+  if (w.memberId && wristbandGateNumber(w.code)) {
+    try {
+      await prisma.$transaction((tx) => revokeAllGateAccess(tx, session.user.org_id, w.branchId, w.memberId!));
+    } catch (e) {
+      console.error("[playland/wristband] revokeAllGateAccess(lost) failed", e);
+    }
+  }
   await prisma.playlandAuditLog.create({
     data: {
       orgId: session.user.org_id, branchId: w.branchId, actorUserId: session.user.id, actorRole: session.user.role,

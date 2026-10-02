@@ -16,6 +16,7 @@
 import { prisma } from "@/lib/prisma";
 import type { PrismaClient } from "@/lib/generated/prisma/client";
 import type { ACSEvent } from "./acs/types";
+import { WRISTBAND_PREFIX } from "./wristband-code";
 
 const REENTRY_GRACE_MINUTES = 15;
 const WARN_BEFORE_EXPIRE_MINUTES = 10;
@@ -89,6 +90,18 @@ export async function revokeAllGateAccess(tx: Tx, orgId: string, branchId: strin
   if (all.length > 0) await queueFaceJobs(tx, orgId, all, memberId, "REMOVE");
 }
 
+/**
+ * ออกสายรัดเลข 10 หลักให้ session ที่จ่ายแล้ว → ใส่ "กุญแจ" เข้ารายชื่อเครื่องประตู (ทั้งทางเข้า+ทางออก · เหมือนการลงทะเบียนหน้า)
+ * ตัวเลขจริงถูกอ่านตอน agent ส่งงานเข้าเครื่อง (/api/playland/acs/agent/face-sync) · ที่นี่แค่ต่อคิว
+ * which="exit" = ใช้กับสายรัดที่แคชเชียร์เปิดเวลาแล้ว (เดินเข้าไปแล้ว ไม่ต้องใช้ทางเข้า)
+ */
+export async function grantGateAccess(tx: Tx, orgId: string, branchId: string, memberId: string, which: "both" | "exit" = "both") {
+  const { entrance, exit } = await directionalDeviceIds(tx, branchId);
+  const ids = which === "exit" ? exit : [...entrance, ...exit];
+  if (ids.length > 0) await queueFaceJobs(tx, orgId, ids, memberId, "ADD");
+  return ids.length;
+}
+
 export interface HandleFaceEventInput {
   orgId: string;
   branchId: string;
@@ -115,9 +128,52 @@ export interface HandleFaceEventResult {
 
 /** Process an ACS event end-to-end inside a transaction. Idempotent via webhookId UNIQUE. */
 export async function handleFaceEvent(input: HandleFaceEventInput): Promise<HandleFaceEventResult> {
-  const { orgId, branchId, deviceId, event } = input;
+  const { orgId, event } = input;
 
   return prisma.$transaction(async (tx) => {
+    // สแกนบาร์โค้ดสายรัดที่เครื่องประตู (เครื่องรายงานเป็น "เลขบัตร" IdentifyType 3) → หาสายรัดจากเลข 10 หลัก
+    const cardWristband = event.cardNo
+      ? await tx.playlandWristband.findFirst({
+          where: { orgId, code: WRISTBAND_PREFIX + event.cardNo },
+          select: { id: true, memberId: true, status: true },
+        })
+      : null;
+    const result = await processEvent(tx, input, cardWristband);
+    if (cardWristband && result.outcome !== "duplicate") await recordWristbandGateScan(tx, orgId, cardWristband, input, result);
+    return result;
+  });
+}
+
+type CardWristband = { id: string; memberId: string | null; status: string };
+
+async function recordWristbandGateScan(tx: Tx, orgId: string, wb: CardWristband, input: HandleFaceEventInput, result: HandleFaceEventResult) {
+  const { event, deviceId } = input;
+  const entered = result.outcome === "session_created" || result.outcome === "session_resumed";
+  const exited = result.outcome === "session_paused";
+  const now = new Date();
+  await tx.playlandWristbandScan.create({
+    data: {
+      orgId,
+      wristbandId: wb.id,
+      scanType: event.direction === "out" ? "GATE_OUT" : "GATE_IN",
+      outcome: entered || exited ? "ok" : "blocked",
+      metadata: { sessionId: result.sessionId, engineOutcome: result.outcome, deviceId },
+    },
+  });
+  await tx.playlandWristband.update({
+    where: { id: wb.id },
+    data:
+      entered && wb.status === "ISSUED"
+        ? { status: "ACTIVE", activatedAt: now, lastScanAt: now, ...(result.sessionId ? { sessionId: result.sessionId } : {}) }
+        : { lastScanAt: now },
+  });
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function processEvent(tx: Tx, input: HandleFaceEventInput, cardWristband: CardWristband | null): Promise<HandleFaceEventResult> {
+  const { orgId, branchId, deviceId, event } = input;
+  {
     // ---- 1. Idempotency check (webhookId UNIQUE prevents double-process) ----
     const existing = await tx.playlandFaceEvent.findUnique({ where: { webhookId: event.webhookId } });
     if (existing) {
@@ -138,6 +194,12 @@ export async function handleFaceEvent(input: HandleFaceEventInput): Promise<Hand
       });
       memberId = m?.id ?? null;
     }
+    // สายรัดเลข 10 หลัก: หาสมาชิกจากสายรัดโดยตรง · สำรอง = employee_number ที่เครื่องส่งกลับมา (คือ id สมาชิก ตอนเราลงรายชื่อ)
+    if (!memberId && cardWristband?.memberId) memberId = cardWristband.memberId;
+    if (!memberId && event.cardNo && event.faceId && UUID_RE.test(event.faceId)) {
+      const m = await tx.playlandMember.findFirst({ where: { id: event.faceId, orgId, branchId, deletedAt: null }, select: { id: true } });
+      memberId = m?.id ?? null;
+    }
 
     // ---- 3. Branch by event type ----
     if (event.type === "heartbeat") {
@@ -145,6 +207,12 @@ export async function handleFaceEvent(input: HandleFaceEventInput): Promise<Hand
       await tx.playlandDevice.update({ where: { id: deviceId }, data: { lastSeenAt: new Date() } });
       const ev = await insertEvent(tx, input, null, null);
       return { eventId: ev.id, sessionId: null, outcome: "logged_only", message: "heartbeat ack" };
+    }
+
+    // เครื่องปฏิเสธบาร์โค้ด (เลขไม่อยู่ในรายชื่อ เช่น สแกนซ้ำหลังเข้าแล้ว) → เก็บบันทึกอย่างเดียว ไม่ยิงแจ้งเตือน "คนแปลกหน้า"
+    if (event.cardNo && event.type !== "recognized") {
+      const ev = await insertEvent(tx, input, memberId, null);
+      return { eventId: ev.id, sessionId: null, outcome: "unrecognized", message: "card scan denied by device (not on its whitelist)" };
     }
 
     if (event.type === "stranger" || (event.type === "unrecognized" && !memberId)) {
@@ -318,7 +386,7 @@ export async function handleFaceEvent(input: HandleFaceEventInput): Promise<Hand
     // Unknown direction · just log
     const ev = await insertEvent(tx, input, memberId, session?.id ?? null);
     return { eventId: ev.id, sessionId: session?.id ?? null, outcome: "logged_only", message: "unknown direction" };
-  });
+  }
 }
 
 async function insertEvent(
