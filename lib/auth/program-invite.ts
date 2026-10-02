@@ -44,6 +44,22 @@ export async function inviteProgramStaff(input: {
   if (moduleSlug === "costctrl") {
     return { ok: false, error: "ศูนย์ควบคุมต้นทุนสงวนสิทธิ์ไว้ที่ super_admin เท่านั้น" };
   }
+  // Ledger's web pages gate via requireRole() with explicit role lists that
+  // never include "staff" (deliberate — front-line roles must not see
+  // org-wide budgets/P&L, lib/auth/role-guards.ts). A generic staff-tier
+  // invite here would create a user_modules grant that no Ledger page
+  // actually honors — a silently useless invite (2026-10-02 investigation).
+  // Real front-line access for Ledger goes through its own LINE-native
+  // ledgerLineMember flow (app/(admin)/ledger/settings/members), not this
+  // generic path. Block here until a Ledger-specific invite integration is
+  // built as its own piece of work.
+  if (moduleSlug === "ledger") {
+    return {
+      ok: false,
+      error:
+        "Ledger ยังไม่รองรับการเชิญผ่านช่องทางนี้ — ใช้หน้า \"ตั้งค่า > ทีมงาน\" ในโปรแกรม Ledger แทน",
+    };
+  }
 
   const session = await requireSession();
   if (!(await userIsModuleAdmin(session.user, moduleSlug))) {
