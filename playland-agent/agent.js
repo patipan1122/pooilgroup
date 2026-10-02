@@ -21,7 +21,7 @@ const env = process.env;
 const CLOUD_BASE_URL = (env.CLOUD_BASE_URL || "https://pooilgroup.vercel.app").replace(/\/$/, "");
 const AGENT_PORT = Number(env.AGENT_PORT || 8080);
 const POLL_INTERVAL_MS = Number(env.POLL_INTERVAL_MS || 5000);
-const REBIND_INTERVAL_MS = Number(env.REBIND_INTERVAL_MS || 10 * 60_000); // กันเครื่อง reboot แล้วลืม callback
+const REBIND_INTERVAL_MS = Number(env.REBIND_INTERVAL_MS || 2 * 60_000); // กันเครื่อง reboot / IP ของคอมนี้เปลี่ยนแล้วลืม callback
 const DEVICE_PORT = Number(env.DEVICE_PORT || 8091);
 
 function myLanIp() {
@@ -30,7 +30,26 @@ function myLanIp() {
   }
   return "127.0.0.1";
 }
-const AGENT_IP = env.AGENT_IP || myLanIp();
+// IP ของคอมเครื่องนี้ที่ "เครื่องประตูเข้าถึงได้": เลือกตัวที่อยู่วงเดียวกับเครื่องนั้น (3 ชุดแรกตรงกัน) · คำนวณใหม่ทุกครั้งที่ผูก callback
+// เพื่อให้ IP คอมเปลี่ยน (DHCP/ต่อ wifi ใหม่) แล้วหายเองภายในรอบ rebind ถัดไป · ไม่มีวงที่ตรง → ใช้ AGENT_IP ใน .env หรือ IP แรกที่เจอ
+function agentIpFor(deviceIp) {
+  const prefix = String(deviceIp).split(".").slice(0, 3).join(".");
+  for (const list of Object.values(os.networkInterfaces())) {
+    for (const a of list) if (a.family === "IPv4" && !a.internal && a.address.startsWith(prefix + ".")) return a.address;
+  }
+  return env.AGENT_IP || myLanIp();
+}
+
+// เครื่องประตูไม่ตอบ (ปิดอยู่/คนละวง/สายหลุด) = ปัญหาชั่วคราว → งานต้องค้างรอลองใหม่ ห้ามรายงานว่า "ล้มเหลว" (ล้มเหลว = ไม่ถูกส่งซ้ำอีก)
+function isNetworkError(e) {
+  const code = e?.cause?.code ?? e?.code;
+  return (
+    e?.name === "TimeoutError" ||
+    e?.name === "AbortError" ||
+    (e instanceof TypeError && /fetch failed/i.test(e.message)) ||
+    ["ECONNREFUSED", "ECONNRESET", "EHOSTUNREACH", "ENETUNREACH", "ETIMEDOUT", "EAI_AGAIN"].includes(code)
+  );
+}
 
 // DEVICES="T77QR6301FZS:192.168.1.10:123456:<secret>,T77QR6305CZS:192.168.1.11:123456:<secret>"
 const DEVICES = (env.DEVICES || "")
@@ -75,7 +94,7 @@ async function deviceCall(device, path, body = {}) {
 
 // ---------- ตั้งให้เครื่องส่ง log มาที่ agent นี้ ----------
 async function bindCallback(device) {
-  const platformIp = `http://${AGENT_IP}:${AGENT_PORT}/relay/${device.deviceCode}`;
+  const platformIp = `http://${agentIpFor(device.ip)}:${AGENT_PORT}/relay/${device.deviceCode}`;
   try {
     await deviceCall(device, "deviceLogin");
     const r = await deviceCall(device, "setIdentifyCallBck", { platformEnable: 1, platformIp });
@@ -199,6 +218,10 @@ async function processFaceSyncQueue(device) {
         ok = true;
       }
     } catch (e) {
+      if (isNetworkError(e)) {
+        log(`⏳ [${device.deviceCode}] เครื่องไม่ตอบ (${job.type} ${job.memberId}) — คงงานไว้ จะลองใหม่ในรอบถัดไป: ${e.message}`);
+        continue;
+      }
       error = e.message;
     }
 
@@ -285,7 +308,7 @@ async function processPrintQueue(printer, k2) {
 }
 
 // ---------- start ----------
-server.listen(AGENT_PORT, () => log(`🚀 playland-agent ฟังอยู่ที่ http://${AGENT_IP}:${AGENT_PORT} (${DEVICES.length} เครื่อง)`));
+server.listen(AGENT_PORT, () => log(`🚀 playland-agent ฟังอยู่พอร์ต ${AGENT_PORT} (${DEVICES.length} เครื่อง · IP ที่ให้เครื่องส่งเหตุการณ์มา: ${DEVICES.map((d) => `${d.deviceCode}→${agentIpFor(d.ip)}`).join(", ")})`));
 
 for (const d of DEVICES) bindCallback(d);
 setInterval(() => DEVICES.forEach(bindCallback), REBIND_INTERVAL_MS);
