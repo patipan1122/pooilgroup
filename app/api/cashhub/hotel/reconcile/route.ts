@@ -2,7 +2,7 @@
 // body = { branchId, from, to } → นักบัญชีกระทบกับ statement ในหน้า bank-recon → หน้า hotel ขึ้นเขียว
 import { NextResponse, type NextRequest } from "next/server";
 import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
-import { isProgramAdminTier } from "@/lib/auth/role-guards";
+import { userCanAdminModule } from "@/lib/auth/module-access";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import {
@@ -14,11 +14,15 @@ import {
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
-  const gate = await cashHubApiGuard({ executive: true });
+  // 2026-10-02: dropped { executive: true } — isProgramAdminTier(role) always implies
+  // isExecutiveRole(role), so this was a no-op pre-check for role-based callers; the real
+  // authorization line is the module-admin check below, now also letting a staff
+  // hand-picked as cashhub's module admin through (same pattern as the DocuFlow fix).
+  const gate = await cashHubApiGuard();
   if (gate.error) return gate.error;
   const session = gate.session;
   // 2026-09-19: ส่งเข้า ledger_revenue_entry ภายใน ไม่แตะ TRCloud → program_admin ทำได้
-  if (!isProgramAdminTier(session.user.role))
+  if (!(await userCanAdminModule(session.user, "cashhub")))
     return NextResponse.json({ error: "เฉพาะ admin/program_admin ส่งเข้า reconcile ได้" }, { status: 403 });
 
   let body: { branchId?: string; from?: string; to?: string };

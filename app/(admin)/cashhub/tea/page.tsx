@@ -3,7 +3,8 @@
 //   (รวมทุกสาขา วันที่×สาขา + เจาะรายสาขา) แล้ว (ภายหลัง) อัปไฟล์ Foodstory มาเทียบว่าตรงกับ POS ไหม.
 //   project codes 8 สาขา validated สด — ดู memory cashhub-tea-foodstory-iv-pull-2026-06-14.
 import { requireSession } from "@/lib/auth/session";
-import { requireExecutiveRole, isExecutiveRole, isSuperAdmin, isProgramAdminTier } from "@/lib/auth/role-guards";
+import { requireExecutiveRole, isExecutiveRole, isSuperAdmin } from "@/lib/auth/role-guards";
+import { userCanAdminModule } from "@/lib/auth/module-access";
 import { adminClient } from "@/lib/db/server";
 import { BackButton } from "@/components/ui/back-button";
 import { SectionPill } from "@/components/cashhub/redesign/section-pill";
@@ -38,7 +39,10 @@ export default async function TeaSalesPage({ searchParams }: { searchParams: SP 
   // (เอกสารบัญชี/ภาษี — ยังคง super_admin เท่านั้น) กับ (2) ตั้งค่าบัญชี + ส่งเข้า reconcile
   // ภายใน (ไม่แตะ TRCloud) ที่ CEO อนุมัติให้ program_admin ทำได้แล้ว (2026-09-19)
   const canManageTrcloud = isSuperAdmin(session.user.role); // ส่ง IV เข้า TRCloud = super_admin เท่านั้น
-  const canSendReconcile = isProgramAdminTier(session.user.role); // ตั้งค่าบัญชี + ส่งเข้า reconcile
+  // ตั้งค่าบัญชี + ส่งเข้า reconcile — program_admin ทำได้ (2026-09-19), และ 2026-10-02: staff
+  // ที่ถูกตั้งเป็น module admin ของ cashhub ก็ทำได้เหมือนกัน (ยังไม่มีผลจริงตอนนี้เพราะหน้านี้
+  // ยังต้อง requireExecutiveRole ผ่านก่อน — เตรียมไว้ให้สอดคล้องกัน)
+  const canSendReconcile = await userCanAdminModule(session.user, "cashhub");
 
   // ประวัติการอัปไฟล์ Foodstory (ผู้ที่อัปได้เห็นได้) — อ่านจาก audit_logs ไม่ผูกกับเดือนที่เลือก
   const importHistory = canPull ? await loadTeaImportHistory(admin, orgId, 20) : [];

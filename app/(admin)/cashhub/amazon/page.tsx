@@ -4,7 +4,8 @@
 //   recipe พิสูจน์แล้ว (IV 1048468). human-confirm ก่อนสร้าง. pilot=ชุมชนหัวทะเล (5157).
 //   ดู docs/WORKSHOP_cashhub-amazon-pos-iv.md
 import { requireSession } from "@/lib/auth/session";
-import { requireExecutiveRole, isSuperAdmin, isProgramAdminTier } from "@/lib/auth/role-guards";
+import { requireExecutiveRole, isSuperAdmin } from "@/lib/auth/role-guards";
+import { userCanAdminModule } from "@/lib/auth/module-access";
 import { adminClient } from "@/lib/db/server";
 import { BackButton } from "@/components/ui/back-button";
 import { SectionPill } from "@/components/cashhub/redesign/section-pill";
@@ -61,7 +62,10 @@ export default async function AmazonSalesPage({ searchParams }: { searchParams: 
   // "ส่งเข้า reconcile" (ปุ่ม "ส่งเข้าบัญชี LedgerLine" ที่ CEO ร้องเรียนว่า program_admin
   // มองไม่เห็น) เปิดให้ program_admin ที่ได้รับสิทธิ์โปรแกรมนี้ทำได้ (CEO 2026-09-19).
   const canManageTrcloud = isSuperAdmin(session.user.role); // สร้าง/จัดการสาขา TRCloud = super_admin เท่านั้น
-  const canSendReconcile = isProgramAdminTier(session.user.role); // ส่งเข้า reconcile ledger — program_admin ทำได้แล้ว
+  // ส่งเข้า reconcile ledger — program_admin ทำได้แล้ว, และ 2026-10-02: staff ที่ถูกตั้งเป็น
+  // module admin ของ cashhub โดยเฉพาะก็ทำได้เหมือนกัน (เพิ่งไม่มีผลจริงตอนนี้เพราะหน้านี้
+  // ยังต้อง requireExecutiveRole ผ่านก่อน — เตรียมไว้ให้สอดคล้องกันถ้า view-tier เปิดทีหลัง)
+  const canSendReconcile = await userCanAdminModule(session.user, "cashhub");
   // ปุ่ม "ฝืนส่ง" (ซ้ำใบ IV เข้า TRCloud) = super_admin ฝืนได้ทุกกรณี (CEO 2026-06-16 อนุมัติ รับความเสี่ยงเอง)
   // ป้องกัน 2 ชั้น: เห็นเฉพาะ super_admin + ต้องพิมพ์ "ยืนยัน" ทุกครั้ง · checksum ยังกันใบ Dr≠Cr
   const allowForce = canManageTrcloud;

@@ -2,7 +2,7 @@
 // body = { storeCode, from, to }
 import { NextResponse, type NextRequest } from "next/server";
 import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
-import { isProgramAdminTier } from "@/lib/auth/role-guards";
+import { userCanAdminModule } from "@/lib/auth/module-access";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { loadAmazonDays } from "@/lib/cashhub/amazon-data";
@@ -15,13 +15,17 @@ import { findAmazonBranch } from "@/lib/cashhub/amazon-branch-data";
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
-  const gate = await cashHubApiGuard({ executive: true });
+  // 2026-10-02: dropped { executive: true } — isProgramAdminTier(role) always implies
+  // isExecutiveRole(role), so this was a no-op pre-check for role-based callers; the real
+  // authorization line is the module-admin check below, now also letting a staff
+  // hand-picked as cashhub's module admin through (same pattern as the DocuFlow fix).
+  const gate = await cashHubApiGuard();
   if (gate.error) return gate.error;
   const session = gate.session;
   // 2026-09-19: ส่งเข้า reconcile ภายใน (ledger_revenue_entry) ไม่ได้แตะ TRCloud/ภาษี
   // (คนละ action กับ amazon-import/push ที่สร้างใบกำกับจริง) → program_admin ที่ได้รับ
   // สิทธิ์โปรแกรมนี้ทำได้ (CEO 2026-09-19 อนุมัติ, มาตรฐานเดียวกับ CashHub channel อื่น)
-  if (!isProgramAdminTier(session.user.role))
+  if (!(await userCanAdminModule(session.user, "cashhub")))
     return NextResponse.json({ error: "เฉพาะ admin/program_admin ส่งเข้า reconcile ได้" }, { status: 403 });
 
   let body: { storeCode?: string; storeLabel?: string; from?: string; to?: string };

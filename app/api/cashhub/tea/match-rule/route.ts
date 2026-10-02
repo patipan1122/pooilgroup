@@ -4,7 +4,7 @@
 // body = { rules: [{ bankAccountId, conceptKey, dateWindowDays, tolBaht }] }
 import { NextResponse, type NextRequest } from "next/server";
 import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
-import { isProgramAdminTier } from "@/lib/auth/role-guards";
+import { userCanAdminModule } from "@/lib/auth/module-access";
 import { audit } from "@/lib/audit/log";
 import { saveAccountMatchRules } from "@/lib/ledger/reconcile-match-rule";
 
@@ -13,10 +13,14 @@ export const runtime = "nodejs";
 type InRule = { bankAccountId?: string; conceptKey?: string; dateWindowDays?: number | null; tolBaht?: number | null };
 
 export async function POST(req: NextRequest) {
-  const gate = await cashHubApiGuard({ executive: true });
+  // 2026-10-02: dropped { executive: true } — isProgramAdminTier(role) always implies
+  // isExecutiveRole(role), so this was a no-op pre-check for role-based callers; the real
+  // authorization line is the module-admin check below, now also letting a staff
+  // hand-picked as cashhub's module admin through (same pattern as the DocuFlow fix).
+  const gate = await cashHubApiGuard();
   if (gate.error) return gate.error;
   // 2026-09-19: กฎแมตช์เป็นส่วนหนึ่งของหน้าตั้งค่าบัญชี (tea/settings) ที่เปิดให้ program_admin แล้ว
-  if (!isProgramAdminTier(gate.session.user.role))
+  if (!(await userCanAdminModule(gate.session.user, "cashhub")))
     return NextResponse.json({ error: "เฉพาะ admin/program_admin ตั้งค่ากฎการแมตช์ได้" }, { status: 403 });
 
   let body: { rules?: InRule[] };

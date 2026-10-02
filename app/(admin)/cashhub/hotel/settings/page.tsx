@@ -1,6 +1,6 @@
 // CASHHUB · โรงแรม — ตั้งค่าช่องทาง (ช่องไหน → ส่งเข้าบัญชีไหน) · admin tier + program_admin
 import { requireSession } from "@/lib/auth/session";
-import { requireProgramAdminTier } from "@/lib/auth/role-guards";
+import { requireModuleAdmin } from "@/lib/auth/module-access";
 import { adminClient } from "@/lib/db/server";
 import { BackButton } from "@/components/ui/back-button";
 import { SectionPill } from "@/components/cashhub/redesign/section-pill";
@@ -25,7 +25,9 @@ export default async function HotelSettingsPage({
   searchParams: Promise<{ branch?: string; previewDate?: string }>;
 }) {
   const session = await requireSession();
-  requireProgramAdminTier(session.user.role); // 2026-09-19: program_admin ที่ได้รับสิทธิ์ตั้งค่าได้
+  // 2026-09-19: program_admin ที่ได้รับสิทธิ์ตั้งค่าได้
+  // 2026-10-02: extended to a staff hand-picked as cashhub's module admin too.
+  await requireModuleAdmin(session.user, "cashhub");
   const admin = adminClient();
   const orgId = session.user.org_id;
 

@@ -3,7 +3,7 @@
 // body = { configs: FuelChannelConfig[] }
 import { NextResponse, type NextRequest } from "next/server";
 import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
-import { isProgramAdminTier } from "@/lib/auth/role-guards";
+import { userCanAdminModule } from "@/lib/auth/module-access";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { saveFuelChannelConfig } from "@/lib/cashhub/fuel-settlement-data";
@@ -12,10 +12,15 @@ import type { FuelChannelConfig } from "@/lib/cashhub/fuel-channels";
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
-  const gate = await cashHubApiGuard({ executive: true });
+  // 2026-10-02: dropped { executive: true } here — isProgramAdminTier(role) always implies
+  // isExecutiveRole(role) under the current role-guards.ts tiers, so that pre-check was a
+  // no-op for every role-based caller; the real authorization line is the module-admin
+  // check right below, which now also lets a staff hand-picked as cashhub's module admin
+  // through (same OR-composition as the DocuFlow fix).
+  const gate = await cashHubApiGuard();
   if (gate.error) return gate.error;
   // 2026-09-19: ผูกช่องทาง→บัญชี/บริษัทของเราเอง ไม่ใช่การเชื่อมต่อระบบภายนอก → program_admin ทำได้
-  if (!isProgramAdminTier(gate.session.user.role))
+  if (!(await userCanAdminModule(gate.session.user, "cashhub")))
     return NextResponse.json({ error: "เฉพาะ admin/program_admin ตั้งค่าบัญชีได้" }, { status: 403 });
 
   let body: { configs?: FuelChannelConfig[] };

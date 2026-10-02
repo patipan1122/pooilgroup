@@ -1,7 +1,8 @@
 // CASHHUB · Hotel → ดึง IV จาก TRCloud (หน้าเต็มของตัวเอง)
 // แยกจากหน้า Excel: หน้านี้ = ดึง IV โรงแรมจาก TRCloud มาแสดง + เช็ค IV ครบทุกวัน/กะ
 import { requireSession } from "@/lib/auth/session";
-import { requireExecutiveRole, isProgramAdminTier } from "@/lib/auth/role-guards";
+import { requireExecutiveRole } from "@/lib/auth/role-guards";
+import { userCanAdminModule } from "@/lib/auth/module-access";
 import { adminClient } from "@/lib/db/server";
 import Link from "next/link";
 import { BackButton } from "@/components/ui/back-button";
@@ -113,8 +114,10 @@ export default async function HotelIvPage({ searchParams }: { searchParams: SP }
   }
 
   // ── reconcile (กระทบยอดธนาคาร) — ส่ง ledger_revenue_entry ภายใน ไม่แตะ TRCloud →
-  // program_admin ที่ได้รับสิทธิ์โปรแกรมนี้ทำได้ (CEO 2026-09-19) ──
-  const canSend = isProgramAdminTier(session.user.role);
+  // program_admin ที่ได้รับสิทธิ์โปรแกรมนี้ทำได้ (CEO 2026-09-19), และ 2026-10-02: staff
+  // ที่ถูกตั้งเป็น module admin ของ cashhub ก็ทำได้เหมือนกัน (ยังไม่มีผลจริงตอนนี้เพราะหน้านี้
+  // ยังต้อง requireExecutiveRole ผ่านก่อน — เตรียมไว้ให้สอดคล้องกัน) ──
+  const canSend = await userCanAdminModule(session.user, "cashhub");
   const branchCode = branches.find((b) => b.id === branchId)?.code ?? "";
   let reconcileView: ReturnType<typeof buildReconcileView> | null = null;
   let reconcileConfigured = false;
