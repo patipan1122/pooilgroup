@@ -12,7 +12,7 @@
 
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
-import { isProgramAdminTier } from "@/lib/auth/role-guards";
+import { userCanAdminModule } from "@/lib/auth/module-access";
 import { requireSession, type Session } from "@/lib/auth/session";
 
 export const DC_WAREHOUSE_COOKIE = "dc_wh";
@@ -41,7 +41,10 @@ export async function getAllowedWarehouses(session: Session): Promise<DcWarehous
     orderBy: [{ isDefault: "desc" }, { name: "asc" }],
     select: { id: true, code: true, name: true, location: true, isDefault: true },
   });
-  if (isProgramAdminTier(session.user.role)) return all;
+  // admin tier + program_admin, OR a module-grant-scoped DC admin (user_modules
+  // role='admin' for "dc") see every warehouse — module-grant-awareness fix,
+  // mirrors DocuFlow's requireModuleAdmin/userCanAdminModule pattern.
+  if (await userCanAdminModule(session.user, "dc")) return all;
 
   const bindings = await prisma.dcWarehouseUser.findMany({
     where: { orgId, userId: session.user.id, isActive: true },
@@ -70,7 +73,7 @@ export async function getDcContext(session?: Session): Promise<DcContext> {
 
   return {
     session: s,
-    isAdmin: isProgramAdminTier(s.user.role),
+    isAdmin: await userCanAdminModule(s.user, "dc"),
     warehouses,
     activeWarehouseId: active?.id ?? null,
     activeWarehouse: active,
@@ -79,7 +82,7 @@ export async function getDcContext(session?: Session): Promise<DcContext> {
 
 /** True if user may MANAGE (back-office) the given warehouse. */
 export async function isWarehouseManager(session: Session, warehouseId: string): Promise<boolean> {
-  if (isProgramAdminTier(session.user.role)) return true;
+  if (await userCanAdminModule(session.user, "dc")) return true;
   const row = await prisma.dcWarehouseUser.findFirst({
     where: { orgId: session.user.org_id, userId: session.user.id, warehouseId, role: "MANAGER", isActive: true },
     select: { id: true },

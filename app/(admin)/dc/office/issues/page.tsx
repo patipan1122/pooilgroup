@@ -5,7 +5,7 @@ import { PackageMinus } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getDcContext } from "@/lib/dc/access";
 import { requireDcManager } from "@/lib/dc/role-guard";
-import { isProgramAdminTier } from "@/lib/auth/role-guards";
+import { userCanAdminModule } from "@/lib/auth/module-access";
 import { DcDeleteButton } from "@/app/(admin)/dc/_components/dc-delete-button";
 import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
 import { DcOfficeShell } from "@/components/dc/office-shell";
@@ -22,7 +22,7 @@ export default async function DcIssuesPage() {
   const ctx = await getDcContext();
   requireDcManager(ctx.session.user.role);
   const orgId = ctx.session.user.org_id;
-  const canDelete = isProgramAdminTier(ctx.session.user.role); // CEO 2026-09-19: trial over — admin tier + program_admin
+  const canDelete = await userCanAdminModule(ctx.session.user, "dc"); // admin tier + program_admin, OR a module-grant-scoped DC admin (module-grant-awareness fix)
 
   const issues = await prisma.dcIssue.findMany({
     where: { orgId },

@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { Trash2, History } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
-import { isProgramAdminTier } from "@/lib/auth/role-guards";
+import { userCanAdminModule } from "@/lib/auth/module-access";
 import { getDcContext } from "@/lib/dc/access";
 import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
 import { DcOfficeShell } from "@/components/dc/office-shell";
@@ -64,8 +64,11 @@ function summarizeReversal(reversal: unknown): string {
 export default async function DcDeletionsPage() {
   const session = await requireSession();
   // CEO 2026-09-19: trial period over — matches lib/dc/delete-actions.ts's
-  // requireDeleter() (isProgramAdminTier) and lib/dc/access.ts's own pattern.
-  if (!isProgramAdminTier(session.user.role)) redirect("/dc/office");
+  // requireDeleter() and lib/dc/access.ts's own pattern. 2026-10-02: extended
+  // to also consult a user_modules "dc" grant (module-grant-awareness fix,
+  // mirrors DocuFlow's requireModuleAdmin/userCanAdminModule pattern) so a
+  // staff/branch_manager hand-picked as DC's module admin can see this too.
+  if (!(await userCanAdminModule(session.user, "dc"))) redirect("/dc/office");
   const orgId = session.user.org_id;
 
   const ctx = await getDcContext();

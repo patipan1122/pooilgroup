@@ -23,7 +23,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { requireSession } from "@/lib/auth/session";
 import { canDcManage, canDcFloor } from "@/lib/dc/role-guard";
-import { isProgramAdminTier } from "@/lib/auth/role-guards";
+import { userCanAdminModule } from "@/lib/auth/module-access";
 import { poCode, genCode, grnCode, shipmentCode } from "@/lib/dc/codes";
 import { DcPoStatus, DcPoOrigin, DcProductType, DcPostStatus, DcPoPaymentKind, DcShipmentMode, DcShipmentStatus } from "@/lib/generated/prisma/enums";
 import { getTodayFxRate } from "@/lib/dc/fx";
@@ -994,10 +994,12 @@ export async function revertPoStatus(id: string): Promise<PoActionResult> {
  */
 export async function unreceivePo(poIdRaw: string): Promise<PoActionResult> {
   // 🔒 admin tier + program_admin gate — เหมือน delete-actions's requireDeleter()
-  //    (CEO 2026-09-19: trial period over, both now use isProgramAdminTier).
-  //    ผ่าน deleteGoodsReceipt ก็ตรวจซ้ำอีกชั้น แต่เรากันตั้งแต่ต้นทางเพื่อ error ที่ชัด + ได้ orgId.
+  //    (CEO 2026-09-19: trial period over). 2026-10-02: extended to
+  //    userCanAdminModule so a module-grant-scoped DC admin also passes
+  //    (module-grant-awareness fix, mirrors DocuFlow's requireModuleAdmin
+  //    pattern). ผ่าน deleteGoodsReceipt ก็ตรวจซ้ำอีกชั้น แต่เรากันตั้งแต่ต้นทางเพื่อ error ที่ชัด + ได้ orgId.
   const session = await requireSession();
-  if (!isProgramAdminTier(session.user.role)) {
+  if (!(await userCanAdminModule(session.user, "dc"))) {
     return { ok: false, error: "ย้อนการรับเข้าได้เฉพาะผู้ดูแลระบบเท่านั้น" };
   }
   const orgId = session.user.org_id;

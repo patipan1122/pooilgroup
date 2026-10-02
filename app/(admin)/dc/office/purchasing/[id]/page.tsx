@@ -7,7 +7,7 @@ import { ArrowLeft } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getDcContext } from "@/lib/dc/access";
 import { canDcManage, requireDcManager } from "@/lib/dc/role-guard";
-import { isProgramAdminTier } from "@/lib/auth/role-guards";
+import { userCanAdminModule } from "@/lib/auth/module-access";
 import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
 import { DcOfficeShell } from "@/components/dc/office-shell";
 import { type PoPaymentData } from "@/lib/dc/po-actions";
@@ -40,6 +40,7 @@ export default async function DcPoDetailPage({ params }: { params: Params }) {
   const ctx = await getDcContext();
   requireDcManager(ctx.session.user.role);
   const orgId = ctx.session.user.org_id;
+  const canDelete = await userCanAdminModule(ctx.session.user, "dc"); // admin tier + program_admin, OR a module-grant-scoped DC admin (module-grant-awareness fix)
 
   const { id } = await params;
 
@@ -275,7 +276,7 @@ export default async function DcPoDetailPage({ params }: { params: Params }) {
           freightRatesConfigured={freightRatesConfigured}
           warehouses={warehouses}
           canManage={canDcManage(ctx.session.user.role)}
-          canDelete={isProgramAdminTier(ctx.session.user.role)}
+          canDelete={canDelete}
           r2PublicUrl={r2Public}
           fulfillment={fulfillment}
           documents={documents}

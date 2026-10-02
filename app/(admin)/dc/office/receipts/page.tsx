@@ -11,7 +11,7 @@ import { prisma } from "@/lib/prisma";
 import { DcPoStatus, DcTransferDestType, DcTransferStatus } from "@/lib/generated/prisma/enums";
 import { getDcContext } from "@/lib/dc/access";
 import { requireDcManager } from "@/lib/dc/role-guard";
-import { isProgramAdminTier } from "@/lib/auth/role-guards";
+import { userCanAdminModule } from "@/lib/auth/module-access";
 import { DcDeleteButton } from "@/app/(admin)/dc/_components/dc-delete-button";
 import { getDcOfficeChrome, DC_ROLE_LABEL } from "@/lib/dc/office-chrome";
 import { DcOfficeShell } from "@/components/dc/office-shell";
@@ -49,7 +49,7 @@ export default async function DcReceiptsPage({
   const ctx = await getDcContext();
   requireDcManager(ctx.session.user.role);
   const orgId = ctx.session.user.org_id;
-  const canDelete = isProgramAdminTier(ctx.session.user.role); // CEO 2026-09-19: trial over — admin tier + program_admin
+  const canDelete = await userCanAdminModule(ctx.session.user, "dc"); // admin tier + program_admin, OR a staff/branch_manager hand-picked as DC's module admin via a user_modules grant (module-grant-awareness fix, mirrors DocuFlow's requireModuleAdmin/userCanAdminModule pattern)
 
   const sp = await searchParams;
   const tab: ReceiptSource = sp?.tab === "transfer" ? "transfer" : "po";

@@ -4,7 +4,7 @@
 import { prisma } from "@/lib/prisma";
 import { getDcContext } from "@/lib/dc/access";
 import { canDcManage, requireDcManager } from "@/lib/dc/role-guard";
-import { isProgramAdminTier } from "@/lib/auth/role-guards";
+import { userCanAdminModule } from "@/lib/auth/module-access";
 import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
 import { DcOfficeShell } from "@/components/dc/office-shell";
 import { listSuppliersForPo } from "@/lib/dc/po-actions";
@@ -18,7 +18,7 @@ export default async function DcPurchasingPage() {
   requireDcManager(ctx.session.user.role);
   const orgId = ctx.session.user.org_id;
   const canManage = canDcManage(ctx.session.user.role);
-  const canDelete = isProgramAdminTier(ctx.session.user.role); // CEO 2026-09-19: trial over — admin tier + program_admin
+  const canDelete = await userCanAdminModule(ctx.session.user, "dc"); // admin tier + program_admin, OR a module-grant-scoped DC admin (module-grant-awareness fix)
 
   // โหลดใบ + ผู้ขาย + บรรทัด + กล่อง (เลขพัสดุ/สถานะ) — ใหม่สุดก่อน
   const pos = await prisma.dcPurchaseOrder.findMany({

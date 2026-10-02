@@ -11,8 +11,10 @@
 //
 // 🔒 สิทธิ์: admin tier (super_admin/org_admin/admin) + program_admin — CEO
 // 2026-09-19: trial period is over, opened to the same tier as the rest of
-// DC (matches lib/dc/access.ts's isProgramAdminTier pattern). Previously
-// super_admin (CEO) only during the trial.
+// DC (matches lib/dc/access.ts's admin pattern). Previously super_admin
+// (CEO) only during the trial. 2026-10-02: extended to also consult a
+// user_modules "dc" grant via userCanAdminModule (module-grant-awareness
+// fix, mirrors DocuFlow's requireModuleAdmin pattern).
 //
 // 🏗️ ความปลอดภัย (RULE I):
 //   • Idempotent — reversal movement ใช้ sourceKey prefix เฉพาะ ("*-del") → กดซ้ำ = no-op
@@ -24,7 +26,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { requireSession } from "@/lib/auth/session";
-import { isProgramAdminTier } from "@/lib/auth/role-guards";
+import { userCanAdminModule } from "@/lib/auth/module-access";
 import { sourceKey } from "@/lib/dc/codes";
 import { recordMovement, getOnHand } from "@/lib/dc/stock";
 import { DcMoveKind, DcPostStatus, DcTransferStatus } from "@/lib/generated/prisma/enums";
@@ -74,14 +76,17 @@ export async function getDcTransferDeleteImpact(
 
 type Deleter = { orgId: string; userId: string; userName: string };
 
-/** Guard: login + admin tier (super_admin/org_admin/admin) or program_admin.
- *  CEO 2026-09-19: trial period is over — matches lib/dc/access.ts's
- *  isProgramAdminTier pattern used for the rest of DC's admin surface. */
+/** Guard: login + admin tier (super_admin/org_admin/admin) or program_admin,
+ *  OR a staff/branch_manager hand-picked as DC's module admin via a
+ *  user_modules grant. CEO 2026-09-19: trial period is over — matches
+ *  lib/dc/access.ts's admin pattern used for the rest of DC's admin surface.
+ *  2026-10-02: extended to userCanAdminModule (module-grant-awareness fix,
+ *  mirrors DocuFlow's requireModuleAdmin/userCanAdminModule pattern). */
 async function requireDeleter(): Promise<
   { ok: true; deleter: Deleter } | { ok: false; error: string }
 > {
   const session = await requireSession();
-  if (!isProgramAdminTier(session.user.role)) {
+  if (!(await userCanAdminModule(session.user, "dc"))) {
     return { ok: false, error: "ลบเอกสารได้เฉพาะผู้ดูแลระบบเท่านั้น" };
   }
   return {
