@@ -44,7 +44,7 @@ export async function GET(
     return NextResponse.json({ error: "ต้องเข้าสู่ระบบ" }, { status: 401 });
   }
   // Same admin tier that can approve a submission can see its documents.
-  if (!canRecruitAdmin(session.user.role)) return notFound();
+  if (!(await canRecruitAdmin(session.user))) return notFound();
 
   const { docId } = await ctx.params;
   // Guard the DB call: a non-UUID id would make Prisma throw on a @db.Uuid column.

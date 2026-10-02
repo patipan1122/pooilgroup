@@ -102,7 +102,7 @@ function parseInterviewDate(text: string, fallback: Date): Date | null {
 
 export default async function CalendarPage() {
   const session = await requireSession();
-  requireRecruitAccess(session.user.role);
+  await requireRecruitAccess(session.user);
 
   const sixtyDaysAgo = new Date();
   sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);

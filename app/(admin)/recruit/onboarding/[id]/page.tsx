@@ -93,7 +93,8 @@ export default async function OnboardingSubmissionPage({
   params: Promise<{ id: string }>;
 }) {
   const session = await requireSession();
-  requireRecruitAdmin(session.user.role);
+  await requireRecruitAdmin(session.user);
+  const canDecide = await canRecruitAdmin(session.user);
   const orgId = session.user.org_id;
   const { id } = await params;
 
@@ -372,7 +373,7 @@ export default async function OnboardingSubmissionPage({
             submissionId={sub.id}
             candidateName={`${sub.fullNameTh} (${sub.nickname})`}
             status={sub.status}
-            canDecide={canRecruitAdmin(session.user.role)}
+            canDecide={canDecide}
           />
         </div>
 

@@ -55,7 +55,7 @@ export async function createPosting(input: {
   caption?: string;
 }) {
   const session = await requireSession();
-  if (!canRecruitWrite(session.user.role)) {
+  if (!(await canRecruitWrite(session.user))) {
     throw new Error("ไม่มีสิทธิ์");
   }
 
@@ -115,7 +115,7 @@ export async function updatePosting(
   }>,
 ) {
   const session = await requireSession();
-  if (!canRecruitWrite(session.user.role)) {
+  if (!(await canRecruitWrite(session.user))) {
     throw new Error("ไม่มีสิทธิ์");
   }
 
@@ -173,7 +173,7 @@ export async function updatePosting(
 
 export async function publishPosting(postingId: string) {
   const session = await requireSession();
-  if (!canRecruitWrite(session.user.role)) {
+  if (!(await canRecruitWrite(session.user))) {
     throw new Error("ไม่มีสิทธิ์");
   }
   const posting = await prisma.recruitJobPosting.findFirst({
@@ -201,7 +201,7 @@ export async function publishPosting(postingId: string) {
 
 export async function closePosting(postingId: string) {
   const session = await requireSession();
-  if (!canRecruitWrite(session.user.role)) {
+  if (!(await canRecruitWrite(session.user))) {
     throw new Error("ไม่มีสิทธิ์");
   }
 
@@ -232,7 +232,7 @@ export async function closePosting(postingId: string) {
 
 export async function deletePosting(postingId: string) {
   const session = await requireSession();
-  if (!canRecruitAdmin(session.user.role)) {
+  if (!(await canRecruitAdmin(session.user))) {
     throw new Error("ไม่มีสิทธิ์");
   }
 
@@ -269,7 +269,7 @@ export async function generateApplicantShareLink(
   postingId: string,
 ): Promise<{ url: string; token: string }> {
   const session = await requireSession();
-  if (!canRecruitWrite(session.user.role)) {
+  if (!(await canRecruitWrite(session.user))) {
     throw new Error("ไม่มีสิทธิ์");
   }
 
@@ -305,7 +305,7 @@ export async function generateApplicantShareLink(
 
 export async function revokeApplicantShareLink(postingId: string): Promise<void> {
   const session = await requireSession();
-  if (!canRecruitWrite(session.user.role)) {
+  if (!(await canRecruitWrite(session.user))) {
     throw new Error("ไม่มีสิทธิ์");
   }
 
@@ -343,7 +343,7 @@ export async function changeApplicationStatus(
   newStatus: string,
 ) {
   const session = await requireSession();
-  if (!canRecruitWrite(session.user.role)) {
+  if (!(await canRecruitWrite(session.user))) {
     throw new Error("ไม่มีสิทธิ์");
   }
 
@@ -448,7 +448,7 @@ export async function setApplicationRating(
   rating: number | null,
 ) {
   const session = await requireSession();
-  if (!canRecruitWrite(session.user.role)) {
+  if (!(await canRecruitWrite(session.user))) {
     throw new Error("ไม่มีสิทธิ์");
   }
   if (rating != null && (rating < 1 || rating > 5)) {
@@ -490,7 +490,7 @@ export async function setScreeningVerdict(
   verdict: string | null,
 ) {
   const session = await requireSession();
-  if (!canRecruitWrite(session.user.role)) {
+  if (!(await canRecruitWrite(session.user))) {
     throw new Error("ไม่มีสิทธิ์");
   }
   const parsed = verdict == null ? null : (VerdictEnum.parse(verdict) as string);
@@ -530,7 +530,7 @@ export async function setApplicationTags(
   tags: string[],
 ) {
   const session = await requireSession();
-  if (!canRecruitWrite(session.user.role)) {
+  if (!(await canRecruitWrite(session.user))) {
     throw new Error("ไม่มีสิทธิ์");
   }
 
@@ -573,7 +573,7 @@ export async function addApplicationNote(
   rating?: number | null,
 ) {
   const session = await requireSession();
-  if (!canRecruitWrite(session.user.role)) {
+  if (!(await canRecruitWrite(session.user))) {
     throw new Error("ไม่มีสิทธิ์");
   }
   const trimmed = body.trim();
@@ -627,7 +627,7 @@ export async function addToBlacklist(input: {
   expiresInYears?: number;
 }) {
   const session = await requireSession();
-  if (!canRecruitWrite(session.user.role)) {
+  if (!(await canRecruitWrite(session.user))) {
     throw new Error("ไม่มีสิทธิ์");
   }
   if (!input.fullName.trim()) throw new Error("กรอกชื่อ");
@@ -667,7 +667,7 @@ export async function addToBlacklist(input: {
 
 export async function removeFromBlacklist(id: string) {
   const session = await requireSession();
-  if (!canRecruitAdmin(session.user.role)) {
+  if (!(await canRecruitAdmin(session.user))) {
     throw new Error("ต้องเป็น admin");
   }
   const entry = await prisma.recruitBlacklist.findFirst({

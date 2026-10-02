@@ -31,7 +31,7 @@ export default async function PipelinePage({
   searchParams: Promise<SearchParams>;
 }) {
   const session = await requireSession();
-  requireRecruitAccess(session.user.role);
+  await requireRecruitAccess(session.user);
   const params = await searchParams;
   const postingFilter = params.posting ?? null;
   // บริษัท = "ตัวสลับด้านบน" (URL ?company= > คุกกี้ > ทุกบริษัท) — ไม่มีตัวเลือกในหน้านี้แล้ว
@@ -115,7 +115,7 @@ export default async function PipelinePage({
   for (const c of countsByStatus)
     countMap[c.status as ApplicationStatus] = c._count._all;
 
-  const canWrite = canRecruitWrite(session.user.role);
+  const canWrite = await canRecruitWrite(session.user);
   const showStatuses: ApplicationStatus[] = [
     "NEW",
     "SCREENING",

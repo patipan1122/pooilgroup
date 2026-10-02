@@ -34,7 +34,7 @@ export interface SendMessageInput {
 
 export async function sendMessage(input: SendMessageInput) {
   const session = await requireSession();
-  if (!canRecruitWrite(session.user.role)) throw new Error("ไม่มีสิทธิ์");
+  if (!(await canRecruitWrite(session.user))) throw new Error("ไม่มีสิทธิ์");
 
   const body = input.body.trim();
   if (!body) throw new Error("กรอกข้อความ");
@@ -279,7 +279,7 @@ export async function listThreads(orgId: string) {
 
 export async function markThreadRead(applicationId: string) {
   const session = await requireSession();
-  if (!canRecruitWrite(session.user.role)) throw new Error("ไม่มีสิทธิ์");
+  if (!(await canRecruitWrite(session.user))) throw new Error("ไม่มีสิทธิ์");
   await prisma.recruitMessage.updateMany({
     where: {
       applicationId,

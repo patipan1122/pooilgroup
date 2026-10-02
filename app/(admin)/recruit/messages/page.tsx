@@ -32,7 +32,7 @@ export default async function MessagesPage({
   searchParams: Promise<SearchParams>;
 }) {
   const session = await requireSession();
-  requireRecruitAccess(session.user.role);
+  await requireRecruitAccess(session.user);
   const params = await searchParams;
   const selectedAppId = params.app ?? null;
 

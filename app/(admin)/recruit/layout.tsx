@@ -22,21 +22,20 @@ export default async function RecruitLayout({
 }) {
   if (isModuleDisabled("recruit")) redirect("/dashboard");
   const session = await requireSession();
-  requireRecruitAccess(session.user.role);
+  await requireRecruitAccess(session.user);
   if (!isAdminTier(session.user.role)) {
     const ok = await userHasModuleAccess(session.user, "recruit");
     if (!ok) redirect("/403");
   }
+  const canWrite = await canRecruitWrite(session.user);
+  const canAdmin = await canRecruitAdmin(session.user);
 
   return (
     <div className="recruit-scope relative min-h-screen bg-zinc-50/30">
       {children}
       {/* AI chat FAB · CEO-confirmed manual trigger only */}
       <RecruitChatFab />
-      <RecruitMobileNav
-        canWrite={canRecruitWrite(session.user.role)}
-        canAdmin={canRecruitAdmin(session.user.role)}
-      />
+      <RecruitMobileNav canWrite={canWrite} canAdmin={canAdmin} />
     </div>
   );
 }

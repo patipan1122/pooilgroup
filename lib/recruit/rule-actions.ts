@@ -48,7 +48,7 @@ function validateRule(input: RuleInput) {
 
 export async function createRule(input: RuleInput) {
   const session = await requireSession();
-  if (!canRecruitAdmin(session.user.role)) throw new Error("ไม่มีสิทธิ์");
+  if (!(await canRecruitAdmin(session.user))) throw new Error("ไม่มีสิทธิ์");
   validateRule(input);
 
   const rule = await prisma.recruitScreeningRule.create({
@@ -77,7 +77,7 @@ export async function createRule(input: RuleInput) {
 
 export async function updateRule(id: string, input: Partial<RuleInput>) {
   const session = await requireSession();
-  if (!canRecruitAdmin(session.user.role)) throw new Error("ไม่มีสิทธิ์");
+  if (!(await canRecruitAdmin(session.user))) throw new Error("ไม่มีสิทธิ์");
 
   const existing = await prisma.recruitScreeningRule.findUnique({
     where: { id },
@@ -115,7 +115,7 @@ export async function toggleRule(id: string, enabled: boolean) {
 
 export async function deleteRule(id: string) {
   const session = await requireSession();
-  if (!canRecruitAdmin(session.user.role)) throw new Error("ไม่มีสิทธิ์");
+  if (!(await canRecruitAdmin(session.user))) throw new Error("ไม่มีสิทธิ์");
 
   const existing = await prisma.recruitScreeningRule.findUnique({
     where: { id },
@@ -142,7 +142,7 @@ export async function deleteRule(id: string) {
 // Apply all enabled rules to a single application (called manually by HR)
 export async function applyRulesToApplication(applicationId: string) {
   const session = await requireSession();
-  if (!canRecruitAdmin(session.user.role)) throw new Error("ไม่มีสิทธิ์");
+  if (!(await canRecruitAdmin(session.user))) throw new Error("ไม่มีสิทธิ์");
 
   const app = await prisma.recruitApplication.findUnique({
     where: { id: applicationId },

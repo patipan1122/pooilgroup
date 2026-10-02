@@ -35,7 +35,7 @@ const SOURCE_LABELS: Record<string, string> = {
 
 export default async function RecruitExecDashboard() {
   const session = await requireSession();
-  requireRecruitAccess(session.user.role);
+  await requireRecruitAccess(session.user);
   const orgId = session.user.org_id;
 
   const thirtyDaysAgo = new Date();

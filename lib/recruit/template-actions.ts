@@ -18,7 +18,7 @@ export async function createFormTemplate(input: {
   schema: FormSchema;
 }) {
   const session = await requireSession();
-  if (!canRecruitWrite(session.user.role)) throw new Error("ไม่มีสิทธิ์");
+  if (!(await canRecruitWrite(session.user))) throw new Error("ไม่มีสิทธิ์");
 
   const name = input.name.trim();
   if (!name) throw new Error("ตั้งชื่อ template");
@@ -43,7 +43,7 @@ export async function createFormTemplate(input: {
 
 export async function listFormTemplates() {
   const session = await requireSession();
-  if (!canRecruitWrite(session.user.role)) throw new Error("ไม่มีสิทธิ์");
+  if (!(await canRecruitWrite(session.user))) throw new Error("ไม่มีสิทธิ์");
 
   const templates = await prisma.recruitFormTemplate.findMany({
     where: { orgId: session.user.org_id },
@@ -69,7 +69,7 @@ export async function listFormTemplates() {
 
 export async function deleteFormTemplate(id: string) {
   const session = await requireSession();
-  if (!canRecruitWrite(session.user.role)) throw new Error("ไม่มีสิทธิ์");
+  if (!(await canRecruitWrite(session.user))) throw new Error("ไม่มีสิทธิ์");
 
   const existing = await prisma.recruitFormTemplate.findUnique({
     where: { id },

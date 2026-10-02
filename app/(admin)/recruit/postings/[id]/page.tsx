@@ -44,7 +44,7 @@ export default async function PostingDetailPage({
 }) {
   const { id } = await params;
   const session = await requireSession();
-  requireRecruitAccess(session.user.role);
+  await requireRecruitAccess(session.user);
 
   const posting = await prisma.recruitJobPosting.findFirst({
     where: { id, orgId: session.user.org_id },
@@ -98,7 +98,7 @@ export default async function PostingDetailPage({
       ? (posting.settings as { coverImageUrl?: string; caption?: string })
       : {};
 
-  const canEdit = canRecruitWrite(session.user.role);
+  const canEdit = await canRecruitWrite(session.user);
 
   // Compute stats
   const apps = posting.applications;

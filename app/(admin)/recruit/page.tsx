@@ -37,7 +37,8 @@ export default async function RecruitInboxPage({
   searchParams: Promise<SearchParams>;
 }) {
   const session = await requireSession();
-  requireRecruitAccess(session.user.role);
+  await requireRecruitAccess(session.user);
+  const canWrite = await canRecruitWrite(session.user);
   const params = await searchParams;
 
   const statusFilter = (
@@ -147,7 +148,7 @@ export default async function RecruitInboxPage({
       postings={postings}
       postingsCount={postingsCount}
       companyFilter={companyFilter}
-      canWrite={canRecruitWrite(session.user.role)}
+      canWrite={canWrite}
     />
   );
 }

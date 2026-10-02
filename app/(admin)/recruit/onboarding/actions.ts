@@ -48,7 +48,7 @@ export async function startOnboardingReview(
   submissionId: string,
 ): Promise<OnboardingActionResult> {
   const session = await requireSession();
-  if (!canRecruitAdmin(session.user.role)) return { ok: false, error: "ไม่มีสิทธิ์" };
+  if (!(await canRecruitAdmin(session.user))) return { ok: false, error: "ไม่มีสิทธิ์" };
   const orgId = session.user.org_id;
 
   const moved = await prisma.recruitOnboardingSubmission.updateMany({
@@ -86,7 +86,7 @@ export async function approveOnboarding(
   submissionId: string,
 ): Promise<OnboardingActionResult> {
   const session = await requireSession();
-  if (!canRecruitAdmin(session.user.role)) return { ok: false, error: "ไม่มีสิทธิ์" };
+  if (!(await canRecruitAdmin(session.user))) return { ok: false, error: "ไม่มีสิทธิ์" };
   const orgId = session.user.org_id;
   const reviewerId = session.user.id;
   const now = new Date();
@@ -220,7 +220,7 @@ export async function rejectOnboarding(
   reason: string,
 ): Promise<OnboardingActionResult> {
   const session = await requireSession();
-  if (!canRecruitAdmin(session.user.role)) return { ok: false, error: "ไม่มีสิทธิ์" };
+  if (!(await canRecruitAdmin(session.user))) return { ok: false, error: "ไม่มีสิทธิ์" };
   const trimmed = reason.trim();
   if (!trimmed) return { ok: false, error: "ต้องระบุเหตุผลที่ตีกลับ" };
   if (trimmed.length > 1000) return { ok: false, error: "เหตุผลยาวเกินไป (เกิน 1,000 ตัวอักษร)" };

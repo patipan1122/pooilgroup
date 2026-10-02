@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AutoRulesPage() {
   const session = await requireSession();
-  requireRecruitAdmin(session.user.role);
+  await requireRecruitAdmin(session.user);
 
   const rules = await prisma.recruitScreeningRule.findMany({
     where: { orgId: session.user.org_id },

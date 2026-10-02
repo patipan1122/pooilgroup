@@ -67,9 +67,9 @@ export default async function RecruitTablePage({
   searchParams: Promise<SearchParams>;
 }) {
   const session = await requireSession();
-  requireRecruitAccess(session.user.role);
+  await requireRecruitAccess(session.user);
   const orgId = session.user.org_id;
-  const canWrite = canRecruitWrite(session.user.role);
+  const canWrite = await canRecruitWrite(session.user);
 
   const params = await searchParams;
   const statusFilter =

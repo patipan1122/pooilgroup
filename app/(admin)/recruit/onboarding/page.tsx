@@ -35,7 +35,7 @@ export default async function OnboardingReviewListPage({
   searchParams: Promise<{ status?: string }>;
 }) {
   const session = await requireSession();
-  requireRecruitAdmin(session.user.role);
+  await requireRecruitAdmin(session.user);
   const orgId = session.user.org_id;
 
   const { status: statusParam } = await searchParams;

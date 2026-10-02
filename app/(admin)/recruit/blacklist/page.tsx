@@ -18,7 +18,9 @@ export const dynamic = "force-dynamic";
 
 export default async function BlacklistPage() {
   const session = await requireSession();
-  requireRecruitAccess(session.user.role);
+  await requireRecruitAccess(session.user);
+  const canWrite = await canRecruitWrite(session.user);
+  const canRemove = await canRecruitAdmin(session.user);
 
   const now = new Date();
   const [entries, autoCheckedApps] = await Promise.all([
@@ -106,8 +108,8 @@ export default async function BlacklistPage() {
             active={active.map(mapEntry)}
             expired={expired.map(mapEntry)}
             removed={removed.map(mapEntry)}
-            canWrite={canRecruitWrite(session.user.role)}
-            canRemove={canRecruitAdmin(session.user.role)}
+            canWrite={canWrite}
+            canRemove={canRemove}
           />
 
           {/* Auto-check info card */}

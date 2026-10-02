@@ -29,7 +29,7 @@ import {
 
 export async function scoreApplicationAction(applicationId: string) {
   const session = await requireSession();
-  if (!canRecruitWrite(session.user.role)) {
+  if (!(await canRecruitWrite(session.user))) {
     throw new Error("ไม่มีสิทธิ์");
   }
   // Cost circuit-breaker — enforce the same AI caps the rest of the app does
@@ -96,7 +96,7 @@ export async function scoreApplicationAction(applicationId: string) {
 
 export async function scoreResumeAction(applicationId: string) {
   const session = await requireSession();
-  if (!canRecruitWrite(session.user.role)) {
+  if (!(await canRecruitWrite(session.user))) {
     throw new Error("ไม่มีสิทธิ์");
   }
   const budget = await checkAiBudget({
@@ -217,7 +217,7 @@ export async function draftMessageAction(
   kind: DraftKind,
 ): Promise<{ ok: true; draft: string } | { ok: false; error: string }> {
   const session = await requireSession();
-  if (!canRecruitWrite(session.user.role)) {
+  if (!(await canRecruitWrite(session.user))) {
     return { ok: false, error: "ไม่มีสิทธิ์" };
   }
   const budget = await checkAiBudget({
@@ -311,7 +311,7 @@ export async function smartScoreApplicationAction(
   | { ok: false; error: string; stop?: boolean }
 > {
   const session = await requireSession();
-  if (!canRecruitWrite(session.user.role)) {
+  if (!(await canRecruitWrite(session.user))) {
     return { ok: false, error: "ไม่มีสิทธิ์", stop: true };
   }
   const budget = await checkAiBudget({
@@ -462,7 +462,7 @@ export async function aiSearchApplicantAction(
   if (!q) return { ok: false, id: applicationId, error: "ไม่มีคำค้น", stop: true };
 
   const session = await requireSession();
-  if (!canRecruitWrite(session.user.role)) {
+  if (!(await canRecruitWrite(session.user))) {
     return { ok: false, id: applicationId, error: "ไม่มีสิทธิ์", stop: true };
   }
   const budget = await checkAiBudget({
@@ -574,7 +574,7 @@ export async function suggestFieldsAction(input: {
   notes?: string;
 }): Promise<FieldSuggestion[]> {
   const session = await requireSession();
-  if (!canRecruitWrite(session.user.role)) {
+  if (!(await canRecruitWrite(session.user))) {
     throw new Error("ไม่มีสิทธิ์");
   }
   return suggestFields({
@@ -592,7 +592,7 @@ export async function savePostingAiBrief(
   brief: PostingAiBrief,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const session = await requireSession();
-  if (!canRecruitWrite(session.user.role)) {
+  if (!(await canRecruitWrite(session.user))) {
     return { ok: false, error: "ไม่มีสิทธิ์" };
   }
   const posting = await prisma.recruitJobPosting.findFirst({

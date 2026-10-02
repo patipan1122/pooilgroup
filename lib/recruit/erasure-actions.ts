@@ -11,7 +11,7 @@ import { canRecruitAdmin } from "./role-guard";
 
 export async function approveErasure(requestId: string, note?: string) {
   const session = await requireSession();
-  if (!canRecruitAdmin(session.user.role)) throw new Error("ไม่มีสิทธิ์");
+  if (!(await canRecruitAdmin(session.user))) throw new Error("ไม่มีสิทธิ์");
 
   const req = await prisma.recruitErasureRequest.findUnique({
     where: { id: requestId },
@@ -107,7 +107,7 @@ export async function approveErasure(requestId: string, note?: string) {
 
 export async function rejectErasure(requestId: string, note: string) {
   const session = await requireSession();
-  if (!canRecruitAdmin(session.user.role)) throw new Error("ไม่มีสิทธิ์");
+  if (!(await canRecruitAdmin(session.user))) throw new Error("ไม่มีสิทธิ์");
   if (!note.trim()) throw new Error("ต้องระบุเหตุผลปฏิเสธ");
 
   const req = await prisma.recruitErasureRequest.findUnique({

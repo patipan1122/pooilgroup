@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 export default async function NewPostingPage() {
   const session = await requireSession();
-  requireRecruitWrite(session.user.role);
+  await requireRecruitWrite(session.user);
 
   const companies = await prisma.company.findMany({
     where: { orgId: session.user.org_id, isActive: true },

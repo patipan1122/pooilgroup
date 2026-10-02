@@ -28,7 +28,7 @@ export default async function TalentPoolPage({
   searchParams: Promise<SearchParams>;
 }) {
   const session = await requireSession();
-  requireRecruitAccess(session.user.role);
+  await requireRecruitAccess(session.user);
   const params = await searchParams;
   const filter = params.filter ?? "all";
   const q = params.q ?? "";

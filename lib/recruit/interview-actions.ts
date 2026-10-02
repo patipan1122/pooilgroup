@@ -20,7 +20,7 @@ export interface ScheduleInput {
 
 export async function scheduleInterview(input: ScheduleInput) {
   const session = await requireSession();
-  if (!canRecruitWrite(session.user.role)) throw new Error("ไม่มีสิทธิ์");
+  if (!(await canRecruitWrite(session.user))) throw new Error("ไม่มีสิทธิ์");
 
   const app = await prisma.recruitApplication.findUnique({
     where: { id: input.applicationId },
@@ -111,7 +111,7 @@ export async function updateInterviewStatus(
   status: "SCHEDULED" | "CONFIRMED" | "COMPLETED" | "NO_SHOW" | "CANCELLED",
 ) {
   const session = await requireSession();
-  if (!canRecruitWrite(session.user.role)) throw new Error("ไม่มีสิทธิ์");
+  if (!(await canRecruitWrite(session.user))) throw new Error("ไม่มีสิทธิ์");
 
   const interview = await prisma.recruitInterview.findUnique({
     where: { id: interviewId },
@@ -144,7 +144,7 @@ export async function saveInterviewScorecard(
   scorecard: Record<string, number | string>,
 ) {
   const session = await requireSession();
-  if (!canRecruitWrite(session.user.role)) throw new Error("ไม่มีสิทธิ์");
+  if (!(await canRecruitWrite(session.user))) throw new Error("ไม่มีสิทธิ์");
 
   const interview = await prisma.recruitInterview.findUnique({
     where: { id: interviewId },

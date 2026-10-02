@@ -23,7 +23,7 @@ export const dynamic = "force-dynamic";
 
 export default async function PDPASettingsPage() {
   const session = await requireSession();
-  requireRecruitAdmin(session.user.role);
+  await requireRecruitAdmin(session.user);
 
   const orgId = session.user.org_id;
 

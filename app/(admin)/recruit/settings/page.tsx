@@ -26,7 +26,7 @@ export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const session = await requireSession();
-  requireRecruitAdmin(session.user.role);
+  await requireRecruitAdmin(session.user);
 
   const [postingCount, applicationCount, blacklistCount, recentAiScored, rulesCount, pendingErasure] =
     await Promise.all([

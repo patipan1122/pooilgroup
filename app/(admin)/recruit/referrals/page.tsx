@@ -26,7 +26,7 @@ const STATUS_PILL: Record<
 
 export default async function ReferralsAdminPage() {
   const session = await requireSession();
-  requireRecruitAdmin(session.user.role);
+  await requireRecruitAdmin(session.user);
   const orgId = session.user.org_id;
 
   // Stats

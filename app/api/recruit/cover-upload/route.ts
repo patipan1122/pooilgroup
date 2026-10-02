@@ -18,7 +18,7 @@ const COVER_MAX_SIZE = 10 * 1024 * 1024; // 10 MB (admin, workplace photos)
 
 export async function POST(req: NextRequest) {
   const session = await requireSession();
-  if (!canRecruitWrite(session.user.role)) {
+  if (!(await canRecruitWrite(session.user))) {
     return NextResponse.json({ error: "ไม่มีสิทธิ์" }, { status: 403 });
   }
 

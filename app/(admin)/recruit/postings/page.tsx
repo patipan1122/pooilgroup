@@ -118,7 +118,7 @@ export default async function PostingsListPage({
   searchParams: Promise<{ status?: string; company?: string; tag?: string }>;
 }) {
   const session = await requireSession();
-  requireRecruitAccess(session.user.role);
+  await requireRecruitAccess(session.user);
   const params = await searchParams;
   const filter = params.status as PostingStatus | undefined;
   const companyFilter = await resolveCompanyFilter(params.company);
@@ -140,7 +140,7 @@ export default async function PostingsListPage({
     a.localeCompare(b, "th"),
   );
 
-  const canWrite = canRecruitWrite(session.user.role);
+  const canWrite = await canRecruitWrite(session.user);
 
   return (
     <div className="p-5 sm:p-8 max-w-[1600px] mx-auto">

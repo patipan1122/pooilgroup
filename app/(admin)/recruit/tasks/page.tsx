@@ -45,7 +45,7 @@ const NEXT_ACTION: Partial<Record<ApplicationStatus, string>> = {
 
 export default async function TasksPage() {
   const session = await requireSession();
-  requireRecruitAccess(session.user.role);
+  await requireRecruitAccess(session.user);
 
   const [apps, todayInterviews] = await Promise.all([
     prisma.recruitApplication.findMany({

@@ -42,7 +42,7 @@ const CAPABILITIES = [
 
 export default async function PermissionsPage() {
   const session = await requireSession();
-  requireRecruitAdmin(session.user.role);
+  await requireRecruitAdmin(session.user);
   const canInvite = await userIsModuleAdmin(session.user, "recruit");
 
   // Count users per role

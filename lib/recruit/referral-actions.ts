@@ -109,7 +109,7 @@ export async function attributeReferral(code: string, applicantId: string) {
 /** Admin marks referral as PAID */
 export async function markReferralPaid(referralId: string) {
   const session = await requireSession();
-  if (!canRecruitAdmin(session.user.role)) throw new Error("ไม่มีสิทธิ์");
+  if (!(await canRecruitAdmin(session.user))) throw new Error("ไม่มีสิทธิ์");
 
   const ref = await prisma.recruitReferral.findUnique({
     where: { id: referralId },

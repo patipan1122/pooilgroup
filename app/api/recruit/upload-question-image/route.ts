@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  if (!canRecruitWrite(session.user.role)) {
+  if (!(await canRecruitWrite(session.user))) {
     return NextResponse.json({ error: "ไม่มีสิทธิ์" }, { status: 403 });
   }
 

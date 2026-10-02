@@ -21,7 +21,7 @@ export default async function TriagePage({
   searchParams: Promise<SearchParams>;
 }) {
   const session = await requireSession();
-  requireRecruitWrite(session.user.role);
+  await requireRecruitWrite(session.user);
   const params = await searchParams;
 
   const apps = await prisma.recruitApplication.findMany({

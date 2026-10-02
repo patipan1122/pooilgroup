@@ -10,6 +10,6 @@ export async function askChat(input: {
   history?: Array<{ role: "user" | "assistant"; content: string }>;
 }): Promise<string> {
   const session = await requireSession();
-  requireRecruitAccess(session.user.role);
+  await requireRecruitAccess(session.user);
   return chatSupport(input);
 }

@@ -25,7 +25,8 @@ export default async function ApplicationFullPage({
   const id = parsed.data;
 
   const session = await requireSession();
-  requireRecruitAccess(session.user.role);
+  await requireRecruitAccess(session.user);
+  const canWrite = await canRecruitWrite(session.user);
 
   const exists = await prisma.recruitApplication.findFirst({
     where: { id, orgId: session.user.org_id },
@@ -45,7 +46,7 @@ export default async function ApplicationFullPage({
       </div>
       <ApplicationDetail
         applicationId={id}
-        canWrite={canRecruitWrite(session.user.role)}
+        canWrite={canWrite}
       />
     </div>
   );
