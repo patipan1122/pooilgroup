@@ -12,7 +12,7 @@
 
 **แก้:** `vercel promote` กลับไปที่ deployment ตัวก่อนหน้าที่สร้างจาก git (commit `0dbeb56c`) — ยืนยันด้วย `vercel inspect pooilgroup.com` ว่า alias ชี้ถูกต้องแล้ว + screenshot สดยืนยันสาขา 2002 กลับมาจริง (฿30.4M, "ทุกสาขา (22)")
 
-**ความเสี่ยงที่ยังอยู่:** ถ้า session อื่นที่มี Vercel CLI access สั่ง deploy ตรงแบบนี้อีก จะทับ production ได้อีกโดยไม่ผ่านด่าน `/verify` หรือ git review เลย — ยังไม่มีการป้องกันระดับ infra สำหรับเคสนี้ (ด่าน `verify-gate.py` ป้องกันแค่ฝั่ง `git push` เท่านั้น ไม่ครอบคลุม `vercel deploy` ตรง) — ควรคุยกับ session/ทีมที่ทำงานเครื่องนั้นให้ deploy ผ่าน git เสมอ
+**ความเสี่ยงที่ยังอยู่:** ถ้า session อื่นที่มี Vercel CLI access สั่ง deploy ตรงแบบนี้อีก จะทับ production ได้อีกโดยไม่ผ่านด่าน `/verify` หรือ git review เลย — ยังไม่มีการป้องกันระดับ infra สำหรับเคสนี้ (ด่าน `verify-gate.py` ป้องกันแค่ฝั่ง `git push` เท่านั้น ไม่ครอบคลุม `vercel deploy` ตรง) — ควรคุยกับ session/ทีมที่ทำงานเครื่องนั้นให้ deploy ผ่าน git เสมอ · post-mortem เต็ม: [`postmortems/flowco-production-deploy-overwritten-outside-git-2026-10-03.md`](postmortems/flowco-production-deploy-overwritten-outside-git-2026-10-03.md)
 
 ---
 
