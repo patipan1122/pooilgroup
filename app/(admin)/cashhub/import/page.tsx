@@ -57,7 +57,7 @@ const SOURCES: ImportSource[] = [
     emoji: "⛽",
     Icon: Fuel,
     title: "ปั๊มน้ำมัน FlowCo",
-    subtitle: "ยอดขายน้ำมันรายวัน 20 สาขา · ดึงจากระบบ FlowCo อัตโนมัติ",
+    subtitle: "ยอดขายน้ำมันรายวันทุกสาขา · ดึงจากระบบ FlowCo อัตโนมัติ",
     status: "ready",
     businessType: "fuel_station",
   },

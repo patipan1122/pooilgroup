@@ -267,7 +267,7 @@ export function FlowcoImportView({
 
           {preview.excluded.length > 0 && (
             <div className="rounded-xl bg-[var(--ch-bg-2)] px-3 py-2 text-xs text-[var(--ch-text-2)]">
-              ข้ามรหัสนอกลิสต์ 20 สาขา:{" "}
+              ข้ามรหัสนอกลิสต์สาขา FlowCo:{" "}
               {preview.excluded
                 .map((u) => `${u.steId} (${baht(u.totalSales)})`)
                 .join(" · ")}{" "}

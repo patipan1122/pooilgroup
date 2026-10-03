@@ -239,7 +239,7 @@ export function FlowcoBranchMapView() {
                     )}
                     {!l.inSeed && (
                       <span className="text-[10px] text-[#b45309]">
-                        (ไม่อยู่ในลิสต์ 20 สาขา)
+                        (ไม่อยู่ในลิสต์สาขา FlowCo)
                       </span>
                     )}
                     {l.inData && (

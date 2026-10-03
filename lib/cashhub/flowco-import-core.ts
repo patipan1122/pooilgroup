@@ -18,7 +18,7 @@ import { resolveSteToBranch, FLOWCO_STATIONS } from "./flowco-branch-map";
 
 type Admin = SupabaseClient;
 
-/** allow-list นำเข้า = 20 สาขาตามลิสต์ CEO เท่านั้น. กัน ste แปลกปลอม (3001 ยอด0 · 9999 ฿22M อาจเป็นยอดรวม→นับซ้ำ) หลุดเข้ายอด. */
+/** allow-list นำเข้า = สาขาตามลิสต์ FLOWCO_STATIONS เท่านั้น. กัน ste แปลกปลอม (3001 ยอด0 · 9999 ฿22M อาจเป็นยอดรวม→นับซ้ำ) หลุดเข้ายอด. */
 const SEED_STE = new Set(FLOWCO_STATIONS.map((s) => s.steId));
 
 const SHIFT = "all";
@@ -60,7 +60,7 @@ export interface FlowcoPlanRow {
 export interface FlowcoPlan {
   rows: FlowcoPlanRow[];
   unmapped: { steId: number; days: number; totalSales: number }[];
-  /** ste ที่มีข้อมูลแต่อยู่นอกลิสต์ 20 สาขา (3001/9999) — ไม่นำเข้า กันนับซ้ำ */
+  /** ste ที่มีข้อมูลแต่อยู่นอกลิสต์ FLOWCO_STATIONS (เช่น 3001) — ไม่นำเข้า กันนับซ้ำ */
   excluded: { steId: number; days: number; totalSales: number }[];
   summary: {
     total: number; // แถวที่จับคู่ได้ทั้งหมด

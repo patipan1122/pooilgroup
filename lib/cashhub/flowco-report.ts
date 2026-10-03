@@ -275,7 +275,7 @@ export interface FlowcoMatrix {
   mode: FlowcoMatrixMode;
   periodKeys: string[]; // เรียงเก่า→ใหม่ (ซ้าย→ขวา)
   periodLabels: string[];
-  rows: FlowcoMatrixRow[]; // ทุกสาขา (21) เรียงตาม steId
+  rows: FlowcoMatrixRow[]; // ทุกสาขา (รวม 9999/2002) เรียงตาม steId
   colTotals: Record<string, FlowcoMatrixCell>;
   grandBaht: number;
   grandLiters: number;
@@ -362,7 +362,7 @@ export async function fetchFlowcoMatrix(
   );
   const keyOf = (date: string) => (mode === "month" ? date.slice(0, 7) : date);
 
-  // ทุกสาขา (21) เรียงตาม steId
+  // ทุกสาขา (รวม 9999/2002) เรียงตาม steId
   const rows: FlowcoMatrixRow[] = [...FLOWCO_STATIONS]
     .sort((a, b) => a.steId - b.steId)
     .map((s) => ({
@@ -382,7 +382,7 @@ export async function fetchFlowcoMatrix(
 
   for (const a of aggs) {
     const row = rowBySte.get(a.steId);
-    if (!row) continue; // นอกลิสต์ 21 สาขา
+    if (!row) continue; // นอกลิสต์สาขา FlowCo
     const pk = keyOf(a.reportDate);
     if (!periodSet.has(pk)) continue;
     const c = cellOf(row, pk);

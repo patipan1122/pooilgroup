@@ -57,3 +57,8 @@ next-env.d.ts
 # shared checkout (2026-08-23) — each is its own nested repo (own node_modules,
 # own .git), never meant to be tracked/committed from the main checkout.
 .claude/worktrees/
+
+# One-off debug/investigation scripts + their output images/data (2026-10-03).
+# Never meant to be committed — was previously untracked-but-not-ignored, which
+# let stray scratch files pile up and trip the pre-push clean-tree gate.
+/scratchpad/
