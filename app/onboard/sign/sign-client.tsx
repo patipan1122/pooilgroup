@@ -35,6 +35,7 @@ import {
   Check,
   CheckCircle2,
   Loader2,
+  Lock,
   PenLine,
   RotateCcw,
   FileText,
@@ -1315,72 +1316,121 @@ export function SignClient({
         )}
       </section>
 
-      {/* (ง) ลายเซ็น ---------------------------------------------------------- */}
-      <section className={CARD}>
-        <div className="flex items-center justify-between gap-2">
-          <p className={CARD_TITLE}>
-            <PenLine className="size-4" aria-hidden />
-            วาดลายเซ็นของคุณ
-          </p>
-          <button
-            type="button"
-            onClick={clearPad}
-            className="inline-flex items-center gap-1 h-9 px-3 rounded-xl border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-50"
-          >
-            <RotateCcw className="size-3.5" aria-hidden />
-            เซ็นใหม่
-          </button>
-        </div>
+      {/*
+        readyToSign mirrors `blocker`'s first 3 checks (contract read + both
+        consents) — the actual submit gate was always correct (see `blocker`
+        above), but the signature pad and camera below rendered at full
+        opacity/fully interactive regardless, with only the checkboxes above
+        showing a "locked" look. A user could draw a signature and grant
+        camera access before ever reading the contract, wasting real effort
+        and real permission prompts for nothing. Found via /ultramobileux
+        mobile audit, 2026-10-05 (mobile-pattern-library.md M-001) — extends
+        the SAME opacity-55/disabled convention already used on the
+        checkboxes above (§(ค)) down to these two sections, rather than
+        inventing a new pattern.
+      */}
+      {(() => {
+        const readyToSign = scrolledToEnd && acknowledged && referenceConsentOk;
+        return (
+          <>
+            {/* (ง) ลายเซ็น ---------------------------------------------------- */}
+            <section
+              className={`${CARD} transition-opacity ${
+                readyToSign ? "" : "opacity-55 pointer-events-none"
+              }`}
+              aria-disabled={!readyToSign}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <p className={CARD_TITLE}>
+                  <PenLine className="size-4" aria-hidden />
+                  วาดลายเซ็นของคุณ
+                </p>
+                <button
+                  type="button"
+                  onClick={clearPad}
+                  disabled={!readyToSign}
+                  className="inline-flex items-center gap-1 h-9 px-3 rounded-xl border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-50 disabled:cursor-not-allowed"
+                >
+                  <RotateCcw className="size-3.5" aria-hidden />
+                  เซ็นใหม่
+                </button>
+              </div>
 
-        <div
-          ref={padBoxRef}
-          className="mt-2 relative rounded-2xl border-2 border-dashed border-zinc-300 bg-white overflow-hidden"
-        >
-          <SignatureCanvas
-            ref={padRef}
-            penColor="#0a0a0a"
-            clearOnResize={false}
-            onEnd={refreshInk}
-            canvasProps={{
-              className: "block w-full h-40 sm:h-44 touch-none",
-              "aria-label": "พื้นที่วาดลายเซ็น",
-            }}
-          />
-          <div className="pointer-events-none absolute inset-x-5 bottom-6 border-b border-dashed border-zinc-300" />
-          {!inkOk && (
-            <p className="pointer-events-none absolute inset-x-0 bottom-1.5 text-center text-[11px] text-zinc-400">
-              ใช้นิ้วลากเซ็นชื่อในกรอบนี้
-            </p>
-          )}
-        </div>
+              <div
+                ref={padBoxRef}
+                className="mt-2 relative rounded-2xl border-2 border-dashed border-zinc-300 bg-white overflow-hidden"
+              >
+                <SignatureCanvas
+                  ref={padRef}
+                  penColor="#0a0a0a"
+                  clearOnResize={false}
+                  onEnd={refreshInk}
+                  canvasProps={{
+                    className: "block w-full h-40 sm:h-44 touch-none",
+                    "aria-label": "พื้นที่วาดลายเซ็น",
+                  }}
+                />
+                <div className="pointer-events-none absolute inset-x-5 bottom-6 border-b border-dashed border-zinc-300" />
+                {!readyToSign ? (
+                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1 bg-white/70 text-center px-4">
+                    <Lock className="size-4 text-zinc-400" aria-hidden />
+                    <p className="text-[11px] text-zinc-500">
+                      ปลดล็อกหลังอ่านสัญญาจบและติ๊กยอมรับด้านบน
+                    </p>
+                  </div>
+                ) : (
+                  !inkOk && (
+                    <p className="pointer-events-none absolute inset-x-0 bottom-1.5 text-center text-[11px] text-zinc-400">
+                      ใช้นิ้วลากเซ็นชื่อในกรอบนี้
+                    </p>
+                  )
+                )}
+              </div>
 
-        {signatureNote ? (
-          <p role="alert" className="mt-1.5 text-xs text-amber-700">
-            {signatureNote}
-          </p>
-        ) : inkOk ? (
-          <p className="mt-1.5 text-xs text-emerald-600 inline-flex items-center gap-1">
-            <Check className="size-3" aria-hidden />
-            เซ็นเรียบร้อย
-          </p>
-        ) : null}
-      </section>
+              {signatureNote ? (
+                <p role="alert" className="mt-1.5 text-xs text-amber-700">
+                  {signatureNote}
+                </p>
+              ) : inkOk ? (
+                <p className="mt-1.5 text-xs text-emerald-600 inline-flex items-center gap-1">
+                  <Check className="size-3" aria-hidden />
+                  เซ็นเรียบร้อย
+                </p>
+              ) : null}
+            </section>
 
-      {/* (จ) เซลฟี่ ----------------------------------------------------------- */}
-      <section className={CARD}>
-        <p className={CARD_TITLE}>
-          <Camera className="size-4" aria-hidden />
-          ถ่ายรูปยืนยันตัวตน
-        </p>
-        <p className="text-xs text-zinc-500 mt-1">
-          ถ่ายหน้าตรง ไม่ใส่หมวกหรือแว่นดำ · ใช้ยืนยันว่าคนเซ็นคือคุณจริง
-        </p>
-        <SelfieCapture
-          previewUrl={selfie?.previewUrl ?? null}
-          onCaptured={onSelfieCaptured}
-          onCleared={onSelfieCleared}
-        />
-      </section>
+            {/* (จ) เซลฟี่ ------------------------------------------------------ */}
+            <section
+              className={`${CARD} transition-opacity ${
+                readyToSign ? "" : "opacity-55 pointer-events-none"
+              }`}
+              aria-disabled={!readyToSign}
+            >
+              <p className={CARD_TITLE}>
+                <Camera className="size-4" aria-hidden />
+                ถ่ายรูปยืนยันตัวตน
+              </p>
+              {readyToSign ? (
+                <>
+                  <p className="text-xs text-zinc-500 mt-1">
+                    ถ่ายหน้าตรง ไม่ใส่หมวกหรือแว่นดำ · ใช้ยืนยันว่าคนเซ็นคือคุณจริง
+                  </p>
+                  <SelfieCapture
+                    previewUrl={selfie?.previewUrl ?? null}
+                    onCaptured={onSelfieCaptured}
+                    onCleared={onSelfieCleared}
+                  />
+                </>
+              ) : (
+                <div className="mt-2 rounded-2xl border-2 border-dashed border-zinc-300 bg-zinc-50 py-10 flex flex-col items-center justify-center gap-1 text-center px-4">
+                  <Lock className="size-4 text-zinc-400" aria-hidden />
+                  <p className="text-[11px] text-zinc-500">ปลดล็อกเมื่อเซ็นชื่อแล้ว</p>
+                </div>
+              )}
+            </section>
+          </>
+        );
+      })()}
 
       {/* ข้อผิดพลาดจาก server ------------------------------------------------- */}
       {submitError !== null && (
@@ -1411,8 +1461,13 @@ export function SignClient({
         </div>
       )}
 
-      {/* (ฉ) ปุ่มส่ง ติดล่างจอ ------------------------------------------------- */}
-      <div className="fixed inset-x-0 bottom-0 z-30 bg-white/95 backdrop-blur border-t border-zinc-200">
+      {/* (ฉ) ปุ่มส่ง ติดล่างจอ -------------------------------------------------
+          pb-[env(safe-area-inset-bottom)] added to match the wrapper on
+          /onboard (onboard-client.tsx:1036), which already does this
+          correctly — this sticky bar didn't, risking the button sitting
+          under the home-indicator bar on notched iPhones. Found via
+          /ultramobileux mobile audit, 2026-10-05. */}
+      <div className="fixed inset-x-0 bottom-0 z-30 bg-white/95 backdrop-blur border-t border-zinc-200 pb-[env(safe-area-inset-bottom)]">
         <div className="max-w-2xl mx-auto px-4 sm:px-6 py-3">
           <button
             type="button"
@@ -1740,14 +1795,20 @@ function SelfieCapture({
                 ถ่ายเลย
               </button>
             )}
+            {/* Demoted from a bordered button (same visual weight as "ถ่ายเลย")
+                to a text-link, with clearer copy — both controls said something
+                camera-shaped and were shown together, so a user had no way to
+                tell they're different actions (live preview vs. picking an
+                existing photo). Found via /ultramobileux mobile audit,
+                2026-10-05 (mobile-pattern-library.md M-001-adjacent finding). */}
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
               disabled={busy}
-              className="inline-flex items-center gap-1.5 h-11 px-4 rounded-xl border border-zinc-200 text-sm font-bold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 h-11 px-2 text-sm font-bold text-zinc-500 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-700 disabled:opacity-50"
             >
               <Upload className="size-4" aria-hidden />
-              เปิดกล้องของเครื่อง
+              เลือกรูปจากคลังของเครื่อง
             </button>
           </>
         )}

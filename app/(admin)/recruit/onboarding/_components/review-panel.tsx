@@ -99,19 +99,38 @@ export function ReviewPanel({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2">
+        {/* size="md" is only 40px tall — below this project's own 44px tap-target
+            floor. These are the highest-stakes buttons in the module (approve
+            creates a real employee account), so bump height only here via a
+            scoped className (not the shared Button primitive's `md` definition,
+            which other screens rely on — per RULE I, a sitewide change needs its
+            own sign-off). Found via ultramobileux mobile audit, 2026-10-05. */}
         {status === "SUBMITTED" && (
-          <Button variant="outline" size="md" onClick={doStartReview} disabled={isPending}>
+          <Button
+            variant="outline"
+            size="md"
+            className="h-11"
+            onClick={doStartReview}
+            disabled={isPending}
+          >
             <Eye className="size-4" />
             รับเรื่องมาตรวจ
           </Button>
         )}
-        <Button variant="primary" size="md" onClick={doApprove} loading={isPending}>
+        <Button
+          variant="primary"
+          size="md"
+          className="h-11"
+          onClick={doApprove}
+          loading={isPending}
+        >
           <Check className="size-4" />
           อนุมัติ · สร้างบัญชีพนักงาน
         </Button>
         <Button
           variant={mode === "reject" ? "secondary" : "outline"}
           size="md"
+          className="h-11"
           onClick={() => setMode(mode === "reject" ? "idle" : "reject")}
           disabled={isPending}
         >
@@ -139,12 +158,19 @@ export function ReviewPanel({
             className="w-full rounded-lg border border-red-200 bg-white px-3 py-2 text-sm outline-none focus:border-red-400"
           />
           <div className="flex gap-2">
-            <Button variant="danger" size="sm" onClick={doReject} loading={isPending}>
+            <Button
+              variant="danger"
+              size="sm"
+              className="h-11"
+              onClick={doReject}
+              loading={isPending}
+            >
               ยืนยันตีกลับ
             </Button>
             <Button
               variant="ghost"
               size="sm"
+              className="h-11"
               onClick={() => setMode("idle")}
               disabled={isPending}
             >

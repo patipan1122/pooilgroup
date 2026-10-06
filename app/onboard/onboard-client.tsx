@@ -48,6 +48,7 @@ import {
   Plus,
   Trash2,
   AlertTriangle,
+  Lock,
 } from "lucide-react";
 import {
   ONBOARDING_ALLOWED_DOC_MIMES,
@@ -1737,13 +1738,28 @@ export function OnboardClient() {
         />
       </SectionCard>
 
-      {/* SUBMIT ------------------------------------------------------------- */}
+      {/* SUBMIT -------------------------------------------------------------
+          Same visual-gating finding as the sign page (ultramobileux audit,
+          2026-10-05): this button rendered full brand-blue "ready to go"
+          even when required documents weren't uploaded yet, with the only
+          signal being small gray text below it. Scoped the fix to
+          `missingRequiredDocs` specifically (already computed, reliable) —
+          NOT a full re-validation of all 41 fields reactively, which would
+          duplicate the real `validate()` logic used at actual submit time
+          and risk the two drifting apart (this codebase has been bitten by
+          exactly that shape of bug before). The button stays clickable even
+          when docs are missing so the existing scroll-to-first-error toast
+          flow for OTHER incomplete fields still works unchanged. */}
       <div className="pt-1">
         <button
           type="submit"
           disabled={submitting || underage}
           style={{ scrollMarginBottom: "100px" }}
-          className="w-full h-14 rounded-2xl bg-[var(--color-brand-600)] text-white font-extrabold text-base hover:bg-[var(--color-brand-700)] disabled:opacity-40 transition-all flex items-center justify-center gap-2 shadow-[0_6px_16px_rgba(30,58,255,0.25)] disabled:shadow-none"
+          className={`w-full h-14 rounded-2xl font-extrabold text-base transition-all flex items-center justify-center gap-2 disabled:shadow-none ${
+            missingRequiredDocs.length > 0
+              ? "bg-zinc-100 text-zinc-500 border-2 border-dashed border-zinc-300 hover:bg-zinc-100"
+              : "bg-[var(--color-brand-600)] text-white hover:bg-[var(--color-brand-700)] disabled:opacity-40 shadow-[0_6px_16px_rgba(30,58,255,0.25)]"
+          }`}
         >
           {submitting ? (
             <>
@@ -1752,6 +1768,11 @@ export function OnboardClient() {
             </>
           ) : underage ? (
             "อายุไม่ถึง 18 ปี — ติดต่อฝ่ายบุคคล"
+          ) : missingRequiredDocs.length > 0 ? (
+            <>
+              <Lock className="size-4" aria-hidden />
+              แนบเอกสารให้ครบก่อน
+            </>
           ) : (
             <>
               ถัดไป · อ่านและเซ็นสัญญาจ้าง

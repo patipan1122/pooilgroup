@@ -377,13 +377,20 @@ export default async function OnboardingSubmissionPage({
           />
         </div>
 
-        {/* ── เทียบหน้า: ลายเซ็น · เซลฟี่ · บัตรประชาชน (BranchManager §2) ── */}
+        {/* ── เทียบหน้า: ลายเซ็น · เซลฟี่ · บัตรประชาชน (BranchManager §2) ──
+            Deliberate exception to "1-col on mobile": the whole point per the
+            BranchManager persona spec above is seeing all 3 side-by-side to
+            compare, not scrolling through them one at a time — a vertical
+            stack on mobile defeats the anti-fraud check entirely. Was
+            `grid-cols-1 sm:grid-cols-3` (collapsed on every real phone);
+            forced to grid-cols-3 always, with `tall` shrunk so 3 columns fit
+            a 390px screen (see DocFrame below). ultramobileux audit, 2026-10-05. */}
         <Block
           no="★"
           title="เทียบหน้า — ลายเซ็น · เซลฟี่สด · บัตรประชาชน"
           hint="กดที่รูปเพื่อเปิดเต็มจอ (รูปบัตรจากมือถือมักเบลอ · ซูมดูก่อนตัดสิน)"
         >
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
             <DocFrame doc={selfieDoc} caption="เซลฟี่สด (ถ่ายตอนเซ็น)" tall />
             <DocFrame doc={idCardDoc} caption="บัตรประชาชน" tall />
             <DocFrame doc={signatureDoc} caption="ลายเซ็นที่วาด" tall />
@@ -757,13 +764,13 @@ function DocFrame({
           <img
             src={href}
             alt={caption}
-            className={`w-full object-contain ${tall ? "h-48 sm:h-56" : "h-28"}`}
+            className={`w-full object-contain ${tall ? "h-24 sm:h-56" : "h-28"}`}
             loading="lazy"
           />
         ) : (
           <span
             className={`flex flex-col items-center justify-center gap-1 text-zinc-500 ${
-              tall ? "h-48 sm:h-56" : "h-28"
+              tall ? "h-24 sm:h-56" : "h-28"
             }`}
           >
             <FileText className="size-6" />
