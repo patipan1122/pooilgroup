@@ -302,6 +302,7 @@ export default async function PipelinePage({
               <PipelineBoard
                 showStatuses={showStatuses}
                 grouped={groupedCards}
+                countMap={countMap}
                 canWrite={canWrite}
                 selectHrefBase={{
                   posting: postingFilter ?? undefined,

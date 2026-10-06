@@ -288,7 +288,27 @@ export async function ApplicationsInbox({
           </div>
           <div className="flex items-center justify-between text-xs">
             <p className="text-zinc-500">
-              <span className="font-bold text-zinc-900 tabular-num">{apps.length}</span> ใบสมัคร
+              {/* Real total from countMap (uncapped groupBy), not apps.length —
+                  apps is capped at take:100 above and was showing "100 ใบสมัคร"
+                  when the real total was 796, on both mobile AND desktop (this
+                  header isn't lg-hidden). Found via ultramobileux mobile audit,
+                  2026-10-06. When the list has fewer rows loaded than the real
+                  total, say so explicitly instead of a bare number. */}
+              <span className="font-bold text-zinc-900 tabular-num">
+                {currentStatus
+                  ? countMap[currentStatus]
+                  : Object.values(countMap).reduce((s, n) => s + n, 0)}
+              </span>{" "}
+              ใบสมัคร
+              {apps.length <
+                (currentStatus
+                  ? countMap[currentStatus]
+                  : Object.values(countMap).reduce((s, n) => s + n, 0)) && (
+                <span className="text-zinc-400">
+                  {" "}
+                  (แสดง {apps.length} รายการล่าสุด)
+                </span>
+              )}
               {currentStatus && (
                 <>
                   {" · "}

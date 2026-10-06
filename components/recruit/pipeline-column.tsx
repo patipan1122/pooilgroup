@@ -48,6 +48,11 @@ function isOverdue(status: ApplicationStatus, updatedAt: string | null | undefin
 interface Props {
   status: ApplicationStatus;
   applications: AppCard[];
+  /** Real total for this status from an uncapped query — NOT applications.length,
+   * which is capped upstream (take:300 across all statuses) and can read far
+   * lower than reality on a status with many rows (found via ultramobileux
+   * mobile audit, 2026-10-06: badge showed 299, real NEW count was 766). */
+  totalCount: number;
   canWrite: boolean;
   /** Build URL for clicking a card (used by pipeline page to open slide-in detail) */
   selectHref?: (id: string) => string;
@@ -59,6 +64,7 @@ interface Props {
 export function PipelineColumn({
   status,
   applications,
+  totalCount,
   canWrite,
   selectHref,
   selectedIds,
@@ -73,7 +79,7 @@ export function PipelineColumn({
             {STATUS_LABELS[status]}
           </Badge>
           <span className="text-xs font-bold tabular-num text-zinc-500">
-            {applications.length}
+            {totalCount}
           </span>
         </div>
       </div>

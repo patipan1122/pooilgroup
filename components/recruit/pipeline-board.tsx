@@ -23,6 +23,15 @@ interface Props {
   showStatuses: ApplicationStatus[];
   /** Cards already grouped + serialized per status (from the server page) */
   grouped: Record<ApplicationStatus, AppCard[]>;
+  /**
+   * Real per-status totals from an uncapped `groupBy` query (server page) —
+   * NOT derived from `grouped[s].length`, which is capped (`take: 300` across
+   * ALL statuses combined server-side) and silently under-counts any status
+   * with more than a few hundred real rows. A mobile HR user saw "299" here
+   * when the real NEW count was 766 (ultramobileux audit, 2026-10-06) because
+   * the column badge used the capped array's length instead of this map.
+   */
+  countMap: Record<ApplicationStatus, number>;
   canWrite: boolean;
   /** Base href params so a card click still opens the slide-in detail */
   selectHrefBase: { posting?: string; company?: string };
@@ -34,7 +43,7 @@ interface Props {
  * level that renders ALL of them — here. Renders the sticky BulkActionBar when
  * ≥1 card is selected.
  */
-export function PipelineBoard({ showStatuses, grouped, canWrite, selectHrefBase }: Props) {
+export function PipelineBoard({ showStatuses, grouped, countMap, canWrite, selectHrefBase }: Props) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const toggleSelect = useCallback((id: string) => {
@@ -69,6 +78,7 @@ export function PipelineBoard({ showStatuses, grouped, canWrite, selectHrefBase 
             key={s}
             status={s}
             applications={grouped[s]}
+            totalCount={countMap[s]}
             canWrite={canWrite}
             selectHref={buildSelectHref}
             selectedIds={canWrite ? selectedIds : undefined}
