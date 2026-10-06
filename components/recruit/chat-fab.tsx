@@ -22,7 +22,17 @@ export function RecruitChatFab() {
   // Move focus into the dialog when opened; return focus to the FAB on close.
   // a11y (quality pass 2026-05-28): screen-reader users need focus inside the
   // dialog · keyboard users need focus returned to the trigger.
+  // mountedRef guards the initial mount: `open` starts false, so without this
+  // guard the else-branch fired on every Recruit route change (this component
+  // remounts per page via layout), silently stealing keyboard focus to the FAB
+  // even though the user never opened/closed anything (found during the
+  // ultramobileux mobile audit, 2026-10-06).
+  const mountedRef = useRef(false);
   useEffect(() => {
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
+    }
     if (open) {
       const t = window.setTimeout(() => textareaRef.current?.focus(), 50);
       return () => window.clearTimeout(t);
@@ -84,9 +94,14 @@ export function RecruitChatFab() {
         ref={fabRef}
         type="button"
         onClick={() => setOpen(true)}
-        // Stacked ABOVE the global AI/Pinpoint FAB (which sits at bottom-20 mobile /
-        // bottom-4 desktop, 44px tall) so the two buttons never overlap.
-        className="fixed bottom-[132px] right-4 z-40 size-14 rounded-full bg-[var(--color-brand-600)] text-white shadow-xl hover:bg-[var(--color-brand-700)] hover:scale-105 transition-all flex items-center justify-center group focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--color-brand-600)] lg:bottom-[72px] lg:right-4"
+        // Stacked ABOVE the global AI/Pinpoint FAB (admin-shell.tsx AiChatLauncher,
+        // bottom-20/80px mobile, size-11/44px tall, shadow-blue). The boxes only
+        // leave an 8px gap at bottom-[132px] — shadow-blue's own blur radius eats
+        // that gap entirely, so the two buttons visually touch. bottom-[156px]
+        // (ultramobileux mobile audit, 2026-10-06) leaves a real ~16px gap after
+        // accounting for both shadows. Desktop (lg:bottom-[72px]) is unaffected —
+        // AiChatLauncher sits at bottom-4 there, nowhere near this button.
+        className="fixed bottom-[156px] right-4 z-40 size-14 rounded-full bg-[var(--color-brand-600)] text-white shadow-xl hover:bg-[var(--color-brand-700)] hover:scale-105 transition-all flex items-center justify-center group focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--color-brand-600)] lg:bottom-[72px] lg:right-4"
         aria-label="เปิดผู้ช่วย AI"
         aria-expanded={open}
         aria-controls="recruit-chat-dialog"
