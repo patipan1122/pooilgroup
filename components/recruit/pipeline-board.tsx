@@ -73,7 +73,7 @@ export function PipelineBoard({ showStatuses, grouped, countMap, canWrite, selec
   return (
     <>
       <div className="flex gap-3 min-w-max snap-x snap-mandatory lg:min-w-0 lg:snap-none lg:grid lg:grid-cols-3 xl:grid-cols-6">
-        {showStatuses.map((s) => (
+        {showStatuses.map((s, i) => (
           <PipelineColumn
             key={s}
             status={s}
@@ -83,6 +83,8 @@ export function PipelineBoard({ showStatuses, grouped, countMap, canWrite, selec
             selectHref={buildSelectHref}
             selectedIds={canWrite ? selectedIds : undefined}
             onToggleSelect={canWrite ? toggleSelect : undefined}
+            columnIndex={i + 1}
+            columnCount={showStatuses.length}
           />
         ))}
       </div>

@@ -826,6 +826,38 @@ function FieldRow({
                 </span>
               </div>
 
+              {/* Format-type selector — moved up + labeled so HR sees it before
+                  helpText/placeholder. Picking "เบอร์โทร" here is the ONLY
+                  thing that switches the applicant's mobile keyboard to the
+                  numeric phone pad (type=tel/inputMode=tel in the renderer) —
+                  buried below other inputs, HR kept building plain-text phone
+                  fields that forced the full QWERTY keyboard on mobile
+                  (ultramobileux audit, 2026-10-06). */}
+              {(field.type === "short_text" || field.type === "long_text") && (
+                <label className="block">
+                  <span className="text-[11px] text-zinc-500 block mb-0.5">
+                    ชนิดข้อมูล (กำหนดแป้นพิมพ์ที่มือถือจะเปิดให้)
+                  </span>
+                  <select
+                    value={field.format ?? ""}
+                    onChange={(e) =>
+                      onUpdate({
+                        format: (e.target.value || undefined) as Field["format"],
+                      })
+                    }
+                    disabled={readonly}
+                    className="w-full text-xs px-2 py-1.5 rounded-lg border border-zinc-200"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <option value="">— ข้อความทั่วไป —</option>
+                    <option value="phone">เบอร์โทร (เปิดแป้นเลข)</option>
+                    <option value="email">อีเมล</option>
+                    <option value="thai_id">บัตรประชาชน</option>
+                    <option value="url">URL</option>
+                  </select>
+                </label>
+              )}
+
               <input
                 type="text"
                 value={field.helpText ?? ""}
@@ -851,27 +883,6 @@ function FieldRow({
                   onClick={(e) => e.stopPropagation()}
                   maxLength={200}
                 />
-              )}
-
-              {/* Type-specific options */}
-              {(field.type === "short_text" || field.type === "long_text") && (
-                <select
-                  value={field.format ?? ""}
-                  onChange={(e) =>
-                    onUpdate({
-                      format: (e.target.value || undefined) as Field["format"],
-                    })
-                  }
-                  disabled={readonly}
-                  className="text-xs px-2 py-1.5 rounded-lg border border-zinc-200"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <option value="">— format ปกติ —</option>
-                  <option value="phone">เบอร์โทร</option>
-                  <option value="email">อีเมล</option>
-                  <option value="thai_id">บัตรประชาชน</option>
-                  <option value="url">URL</option>
-                </select>
               )}
 
               {(field.type === "number" || field.type === "range") && (

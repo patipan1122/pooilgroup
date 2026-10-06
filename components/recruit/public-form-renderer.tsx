@@ -185,7 +185,10 @@ export function PublicFormRenderer({
       setFiles((f) => ({ ...f, [fieldId]: [...(f[fieldId] ?? []), entry] }));
       toast.success(`อัปโหลด ${file.name} แล้ว`);
     } catch (e) {
-      toast.error((e as Error).message);
+      // (e as Error).message showed raw browser text like "Failed to fetch"
+      // on a dropped connection — same fallback pattern already used in
+      // /onboard's upload handler (ultramobileux audit, 2026-10-06).
+      toast.error(e instanceof Error ? e.message : "อัปโหลดไม่สำเร็จ · เช็คสัญญาณเน็ต");
     }
   }
 
@@ -273,7 +276,9 @@ export function PublicFormRenderer({
         } catch {}
       }
     } catch (err) {
-      toast.error((err as Error).message);
+      toast.error(
+        err instanceof Error ? err.message : "ส่งใบสมัครไม่สำเร็จ · เช็คสัญญาณเน็ตแล้วลองใหม่",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -453,7 +458,7 @@ export function PublicFormRenderer({
       </button>
       <p className="text-xs text-zinc-500 text-center inline-flex items-center justify-center gap-1.5 w-full">
         <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-        บันทึกอัตโนมัติทุกครั้งที่กรอก · กลับมาต่อจากเครื่องอื่นได้
+        บันทึกอัตโนมัติทุกครั้งที่กรอก · เก็บไว้ในเครื่องนี้เท่านั้น
       </p>
     </form>
   );
@@ -501,11 +506,18 @@ function FieldInput({
   disabled,
 }: FieldInputProps) {
   const id = `f-${field.id}`;
+  const inputId = `${id}-input`;
+  const labelId = `${id}-label`;
   const errorId = `${id}-error`;
   const helpId = `${id}-help`;
   return (
     <div id={id}>
-      <label className="block">
+      {/* htmlFor pairs with the single-control types below (text/number/date/
+          dropdown/textarea); multi-control types (radio/checkbox/yes_no/file)
+          can't take a single htmlFor target, so the group wrapper further
+          down also carries role="group" + aria-labelledby={labelId} — the
+          same label covers both pairing styles at once. */}
+      <label id={labelId} htmlFor={inputId} className="block">
         <span className="text-sm font-medium text-zinc-800">
           {field.label}
           {field.required && (
@@ -534,7 +546,7 @@ function FieldInput({
           />
         </div>
       )}
-      <div className="mt-1.5">
+      <div className="mt-1.5" role="group" aria-labelledby={labelId}>
         {renderInput(
           field,
           value,
@@ -544,6 +556,7 @@ function FieldInput({
           onRemoveFile,
           disabled,
           {
+            id: inputId,
             ariaInvalid: !!error,
             ariaDescribedBy:
               [error ? errorId : null, field.helpText ? helpId : null]
@@ -563,6 +576,7 @@ function FieldInput({
 }
 
 interface InputA11y {
+  id?: string;
   ariaInvalid?: boolean;
   ariaDescribedBy?: string;
   ariaRequired?: boolean;
@@ -594,6 +608,7 @@ function renderInput(
       const isPhone = field.format === "phone";
       return (
         <input
+          id={a11y?.id}
           type={isEmail ? "email" : isPhone ? "tel" : "text"}
           value={(value as string) ?? ""}
           onChange={(e) => onChange(e.target.value)}
@@ -610,6 +625,7 @@ function renderInput(
     case "long_text":
       return (
         <textarea
+          id={a11y?.id}
           value={(value as string) ?? ""}
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
@@ -643,6 +659,7 @@ function renderInput(
     case "dropdown":
       return (
         <select
+          id={a11y?.id}
           value={(value as string) ?? ""}
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
@@ -744,6 +761,7 @@ function renderInput(
     case "number":
       return (
         <input
+          id={a11y?.id}
           type="number"
           value={(value as number | string) ?? ""}
           onChange={(e) =>
@@ -762,6 +780,7 @@ function renderInput(
     case "date":
       return (
         <input
+          id={a11y?.id}
           type="date"
           value={(value as string) ?? ""}
           onChange={(e) => onChange(e.target.value)}

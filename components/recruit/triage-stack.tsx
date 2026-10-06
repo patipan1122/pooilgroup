@@ -200,8 +200,8 @@ export function TriageStack({
         </button>
       </div>
 
-      {/* Keyboard hints */}
-      <div className="text-center text-[10px] opacity-50 pb-3">
+      {/* Keyboard hints — real keyboard only, hidden on mobile touch screens */}
+      <div className="hidden lg:block text-center text-[10px] opacity-50 pb-3">
         ⌨️ ← ไม่ผ่าน · → ผ่าน · ↑ ข้าม
       </div>
     </div>

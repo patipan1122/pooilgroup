@@ -34,7 +34,7 @@ export function ApplyClient({
   coverImageUrl,
 }: Props) {
   const router = useRouter();
-  const [initialAnswers] = useState<Record<string, unknown>>(() => {
+  const [rawDraft] = useState<Record<string, unknown>>(() => {
     if (typeof window === "undefined") return {};
     try {
       const raw = window.localStorage.getItem(`recruit_draft_${slug}`);
@@ -43,6 +43,20 @@ export function ApplyClient({
       return {};
     }
   });
+  const draftOwnerName = (rawDraft["_applicant_fullName"] as string | undefined)?.trim();
+  // Only ask when there's a name to confirm against — an empty/partial draft
+  // (e.g. just a gender tap) has nothing worth a confirmation screen for.
+  const [draftChoice, setDraftChoice] = useState<"pending" | "resume" | "fresh">(
+    draftOwnerName ? "pending" : "resume",
+  );
+  const initialAnswers = draftChoice === "resume" ? rawDraft : {};
+
+  function startFresh() {
+    try {
+      window.localStorage.removeItem(`recruit_draft_${slug}`);
+    } catch {}
+    setDraftChoice("fresh");
+  }
 
   // Rough field count for time estimate (1 minute per 4 fields)
   const fieldCount = schema.sections.reduce((sum, s) => sum + s.fields.length, 0) + 3;
@@ -113,25 +127,59 @@ export function ApplyClient({
       {/* FORM CARD */}
       <div className="max-w-2xl mx-auto px-4 sm:px-6 -mt-6">
         <div className="bg-white rounded-3xl border border-zinc-200 shadow-soft p-5 sm:p-8">
-          <PublicFormRenderer
-            schema={schema}
-            jobTitle={jobTitle}
-            jobDescription={jobDescription}
-            companyName={companyName}
-            slug={slug}
-            initialAnswers={initialAnswers}
-            hideHeader
-            onSubmit={async (input) => {
-              const result = await submitPublicApplication({
-                slug,
-                applicant: input.applicant,
-                answers: input.answers,
-                files: input.files,
-                referralCode,
-              });
-              router.push(`/apply/${slug}/success?ref=${result.refId}`);
-            }}
-          />
+          {draftChoice === "pending" ? (
+            // Draft is keyed only by job slug, not by person — on a shared/
+            // walk-in device the next applicant would silently inherit the
+            // previous one's name+answers. Confirm the owner before
+            // auto-filling, same pattern as /onboard's resume screen.
+            <div>
+              <h2 className="text-xl font-extrabold text-zinc-900 font-display">
+                พบข้อมูลที่กรอกค้างไว้
+              </h2>
+              <p className="text-sm text-zinc-600 mt-2 leading-relaxed">
+                เครื่องนี้มีข้อมูลที่กรอกค้างไว้ · ชื่อ “{draftOwnerName}”
+              </p>
+              <p className="text-xs text-zinc-500 mt-2">
+                ถ้าไม่ใช่คุณ ให้กด “เริ่มกรอกใหม่” — ระบบจะลบข้อมูลเดิมออกจากเครื่องนี้
+              </p>
+              <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setDraftChoice("resume")}
+                  className="h-12 rounded-xl bg-[var(--color-brand-600)] text-white font-bold hover:bg-[var(--color-brand-700)] transition-colors"
+                >
+                  ใช่ ฉันคือ “{draftOwnerName}” · ต่อจากเดิม
+                </button>
+                <button
+                  type="button"
+                  onClick={startFresh}
+                  className="h-12 rounded-xl border-2 border-zinc-300 text-zinc-700 font-bold hover:border-zinc-400 transition-colors"
+                >
+                  ไม่ใช่ฉัน · เริ่มกรอกใหม่
+                </button>
+              </div>
+            </div>
+          ) : (
+            <PublicFormRenderer
+              schema={schema}
+              jobTitle={jobTitle}
+              jobDescription={jobDescription}
+              companyName={companyName}
+              slug={slug}
+              initialAnswers={initialAnswers}
+              hideHeader
+              onSubmit={async (input) => {
+                const result = await submitPublicApplication({
+                  slug,
+                  applicant: input.applicant,
+                  answers: input.answers,
+                  files: input.files,
+                  referralCode,
+                });
+                router.push(`/apply/${slug}/success?ref=${result.refId}`);
+              }}
+            />
+          )}
         </div>
         <p className="text-center text-xs text-zinc-500 mt-6 pb-10">
           {companyName} · ข้อมูลส่วนบุคคลเก็บตาม PDPA · ไม่เกิน 2 ปี

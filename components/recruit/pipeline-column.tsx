@@ -59,6 +59,11 @@ interface Props {
   /** Multi-select (Wave 3): ids currently checked + toggle callback. Absent = no checkboxes. */
   selectedIds?: Set<string>;
   onToggleSelect?: (id: string) => void;
+  /** 1-based position + total columns — mobile-only "2/5" so a horizontally
+   * snap-scrolled column always shows how many more sit off-screen (the
+   * swipe hint above the board only says a next column exists, not how many). */
+  columnIndex?: number;
+  columnCount?: number;
 }
 
 export function PipelineColumn({
@@ -69,6 +74,8 @@ export function PipelineColumn({
   selectHref,
   selectedIds,
   onToggleSelect,
+  columnIndex,
+  columnCount,
 }: Props) {
   return (
     <div className="w-[82vw] max-w-[300px] snap-start sm:w-auto sm:max-w-none shrink-0 sm:shrink rounded-2xl border border-zinc-200 bg-zinc-50/40 overflow-hidden flex flex-col max-h-[80vh]">
@@ -78,9 +85,16 @@ export function PipelineColumn({
             <span className="size-1.5 rounded-full bg-current opacity-60" />
             {STATUS_LABELS[status]}
           </Badge>
-          <span className="text-xs font-bold tabular-num text-zinc-500">
-            {totalCount}
-          </span>
+          <div className="flex items-center gap-2">
+            {columnIndex != null && columnCount != null && (
+              <span className="lg:hidden text-[10px] font-bold tabular-num text-zinc-400">
+                {columnIndex}/{columnCount}
+              </span>
+            )}
+            <span className="text-xs font-bold tabular-num text-zinc-500">
+              {totalCount}
+            </span>
+          </div>
         </div>
       </div>
       <div className="overflow-y-auto p-2 space-y-2 flex-1">
