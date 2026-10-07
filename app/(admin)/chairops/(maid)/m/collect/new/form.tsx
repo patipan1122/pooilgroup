@@ -820,11 +820,13 @@ function ChairPhotoButton({
           )}
         </Button>
       )}
+      {/* ultramobileux audit 2026-10-07: ไม่ใส่ capture — เคยบังคับเปิดกล้อง
+          อย่างเดียว เลือกรูปจากคลังไม่ได้ (bug class เดียวกับที่แก้ไปแล้วใน
+          id-card-upload.tsx/selfie-capture.tsx เมื่อ 23 ก.ย.) */}
       <input
         ref={fileRef}
         type="file"
         accept="image/*"
-        capture="environment"
         className="hidden"
         onChange={onChange}
       />

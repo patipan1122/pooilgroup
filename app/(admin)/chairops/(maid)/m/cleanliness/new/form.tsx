@@ -279,11 +279,11 @@ export function MaidCleanlinessForm() {
               <CheckCircle2 className="h-4 w-4" /> มี {photos.length} รูปแล้ว
             </div>
           )}
+          {/* ultramobileux audit 2026-10-07: ไม่ใส่ capture — ดู collect/new/form.tsx */}
           <input
             ref={fileRef}
             type="file"
             accept="image/*"
-            capture="environment"
             className="hidden"
             onChange={onAddPhoto}
           />

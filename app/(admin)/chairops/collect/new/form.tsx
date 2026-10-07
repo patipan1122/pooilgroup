@@ -303,11 +303,11 @@ export function CollectNewForm({ avg7d }: Props) {
               )}
             </Button>
           )}
+          {/* ultramobileux audit 2026-10-07: ไม่ใส่ capture — ดู (maid)/m/collect/new/form.tsx */}
           <input
             ref={fileRef}
             type="file"
             accept="image/*"
-            capture="environment"
             className="hidden"
             onChange={onPickPhoto}
           />

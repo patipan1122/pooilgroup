@@ -369,11 +369,11 @@ export function MaidDamageForm({ chairs, openTicketChairIds }: Props) {
               )}
             </Button>
           )}
+          {/* ultramobileux audit 2026-10-07: ไม่ใส่ capture — ดู collect/new/form.tsx */}
           <input
             ref={fileRef}
             type="file"
             accept="image/*"
-            capture="environment"
             className="hidden"
             onChange={onAddPhoto}
           />
