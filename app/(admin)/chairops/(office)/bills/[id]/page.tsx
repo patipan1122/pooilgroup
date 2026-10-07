@@ -10,6 +10,7 @@ import { requireRole } from "@/lib/chairops/auth/session";
 import { rankOf } from "@/lib/chairops/auth/role-guards";
 import { ChairopsUserRole } from "@/lib/generated/prisma/enums";
 import { isAllowedPhotoUrl } from "@/lib/chairops/utils/url-guard";
+import { toAuthedPhotoUrl } from "@/lib/chairops/utils/photo-url";
 import {
   getCategoryList,
   getAnomaly,
@@ -261,7 +262,7 @@ function ReadOnlyView({
           <dt className="text-xs font-medium text-zinc-700">สลิป</dt>
           <dd className="mt-1">
             <a
-              href={slipPhotoUrl}
+              href={toAuthedPhotoUrl(slipPhotoUrl) ?? slipPhotoUrl}
               target="_blank"
               rel="noreferrer"
               className="text-xs text-blue-700 underline"

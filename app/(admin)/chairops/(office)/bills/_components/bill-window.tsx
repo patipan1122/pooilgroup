@@ -19,6 +19,7 @@ import {
 
 import { FloatingWindow } from "@/components/chairops/redesign/floating-window";
 import { baht } from "@/lib/chairops/utils/format";
+import { toAuthedPhotoUrl } from "@/lib/chairops/utils/photo-url";
 import {
   getBillDetail,
   markPaid,
@@ -216,7 +217,7 @@ export function BillWindow({
 
           {bill.slipPhotoUrl ? (
             <a
-              href={bill.slipPhotoUrl}
+              href={toAuthedPhotoUrl(bill.slipPhotoUrl) ?? bill.slipPhotoUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:underline"

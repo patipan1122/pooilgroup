@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 import { FileText, Loader2, Upload, X } from "lucide-react";
 
 import { updateMaidProfile } from "../actions";
+import { toAuthedPhotoUrl } from "@/lib/chairops/utils/photo-url";
 
 interface Props {
   maidId: string;
@@ -166,7 +167,7 @@ export function MaidProfileForm({
         {fileUrl ? (
           <div className="flex items-center justify-between gap-2 rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-2">
             <a
-              href={fileUrl}
+              href={toAuthedPhotoUrl(fileUrl) ?? fileUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex min-w-0 items-center gap-1.5 text-sm text-blue-600 hover:underline"

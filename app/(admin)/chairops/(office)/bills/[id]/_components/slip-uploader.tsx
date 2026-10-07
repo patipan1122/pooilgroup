@@ -8,6 +8,7 @@ import { useState, useTransition } from "react";
 import { ImageIcon, Trash2 } from "lucide-react";
 
 import { isAllowedPhotoUrl } from "@/lib/chairops/utils/url-guard";
+import { toAuthedPhotoUrl } from "@/lib/chairops/utils/photo-url";
 
 interface Props {
   branchSlug: string;
@@ -82,13 +83,13 @@ export function SlipUploader({ branchSlug, billId, value, onChange }: Props) {
         <div className="flex items-start gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={safeValue}
+            src={toAuthedPhotoUrl(safeValue) ?? safeValue}
             alt="สลิป"
             className="size-24 rounded-md border border-zinc-200 object-cover"
           />
           <div className="flex flex-col gap-1 text-xs">
             <a
-              href={safeValue}
+              href={toAuthedPhotoUrl(safeValue) ?? safeValue}
               target="_blank"
               rel="noreferrer"
               className="text-blue-700 underline"

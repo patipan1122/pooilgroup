@@ -20,6 +20,7 @@ import {
   rejectDeleteSlipAttachment,
 } from "@/app/(admin)/chairops/reconcile/actions";
 import type { PeriodSlip } from "@/lib/chairops/queries/reconcile-v2";
+import { toAuthedPhotoUrl } from "@/lib/chairops/utils/photo-url";
 
 // Single source of truth for the attachment shape — imported from the query
 // layer instead of redeclared, so approve/delete fields can never drift
@@ -73,9 +74,10 @@ function Lightbox({
         className="relative max-h-[90vh] max-w-[95vw]"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* unoptimized: R2 URLs aren't in next/image remotePatterns */}
+        {/* unoptimized: R2 URLs aren't in next/image remotePatterns · routed
+            through the authed photo proxy (ultramobileux audit P0-1) */}
         <Image
-          src={url}
+          src={toAuthedPhotoUrl(url) ?? url}
           alt={caption}
           width={1400}
           height={1900}
@@ -272,7 +274,7 @@ function SlipAttachmentRow({ slip, index }: { slip: SlipAttachment; index: numbe
     >
       <div className="flex w-full flex-wrap items-center gap-1">
         <a
-          href={slip.url}
+          href={toAuthedPhotoUrl(slip.url) ?? slip.url}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1 rounded-full bg-white/15 px-2 py-1 text-[11px] text-white hover:bg-white/25"

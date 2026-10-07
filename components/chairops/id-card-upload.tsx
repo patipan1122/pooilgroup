@@ -3,11 +3,15 @@
 // Reusable ID-card / document uploader for ChairOps maid flows (CEO 2026-07-12).
 // Uploads to R2 via the generic /api/r2/sign presign route and exposes the
 // resulting URL + filename through hidden inputs so a plain <form> submit picks
-// them up. Accepts image or PDF. PDPA note: the R2 URL is an obscure-UUID public
-// object — sensitive docs; a Drive-private move is a recommended hardening.
+// them up. Accepts image or PDF. The hidden inputs still carry the raw public
+// R2 URL (server actions need it to write to Prisma) — but DISPLAY goes through
+// toAuthedPhotoUrl() so the bare public link never lands in rendered page HTML
+// (ultramobileux audit P0-1, 2026-10-07 — interim fix; full fix is a private
+// bucket + presigned GETs).
 
 import { useRef, useState } from "react";
 import { FileText, Loader2, Upload, X } from "lucide-react";
+import { toAuthedPhotoUrl } from "@/lib/chairops/utils/photo-url";
 
 /** fetch() only throws TypeError for network-level failures (Safari surfaces
  *  this as the bare, unhelpful message "Load failed") — retry once since
@@ -108,7 +112,7 @@ export function IdCardUpload({
           {/* เดิมเป็นแค่รูปเล็ก/ไอคอนเฉยๆ กดดูไฟล์เต็มไม่ได้เลย (CEO report
               2026-09-23 — office ดูเอกสารบัตรประชาชนที่แม่บ้านแนบมาไม่ได้) */}
           <a
-            href={url}
+            href={toAuthedPhotoUrl(url) ?? url}
             target="_blank"
             rel="noopener noreferrer"
             className="flex min-w-0 flex-1 items-center gap-3"
@@ -116,7 +120,7 @@ export function IdCardUpload({
             {isImage ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={url}
+                src={toAuthedPhotoUrl(url) ?? url}
                 alt="บัตรประชาชน"
                 className="h-16 w-24 shrink-0 rounded-md object-cover transition hover:opacity-80"
               />

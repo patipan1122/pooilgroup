@@ -8,6 +8,7 @@ import { AlertTriangle, CheckCircle, ChevronLeft, ExternalLink } from "lucide-re
 import { requireRole } from "@/lib/chairops/auth/session";
 import { prisma } from "@/lib/prisma";
 import { clearDepositReview } from "./actions";
+import { toAuthedPhotoUrl } from "@/lib/chairops/utils/photo-url";
 
 export const dynamic = "force-dynamic";
 
@@ -97,14 +98,14 @@ export default async function ReviewQueuePage() {
                   {/* Slip thumbnail */}
                   {d.slipPhotoUrl && (
                     <a
-                      href={d.slipPhotoUrl}
+                      href={toAuthedPhotoUrl(d.slipPhotoUrl) ?? d.slipPhotoUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="shrink-0"
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={d.slipPhotoUrl}
+                        src={toAuthedPhotoUrl(d.slipPhotoUrl) ?? d.slipPhotoUrl}
                         alt="สลิปฝากเงิน"
                         className="h-24 w-24 rounded-lg border border-zinc-200 object-cover"
                       />

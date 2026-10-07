@@ -16,6 +16,7 @@ import { ChairopsUserRole } from "@/lib/generated/prisma/enums";
 import { getMaidDetail } from "@/lib/chairops/queries/maid-roster";
 import { getMaidActiveBranches } from "@/lib/chairops/auth/branch-scope";
 import { baht, thaiDate } from "@/lib/chairops/utils/format";
+import { toAuthedPhotoUrl } from "@/lib/chairops/utils/photo-url";
 import { prisma } from "@/lib/prisma";
 import { LeaveRequestForm } from "../_components/leave-request-form";
 import { DeleteLeaveButton } from "../_components/delete-leave-button";
@@ -269,10 +270,10 @@ export default async function MaidDetailPage({
           <div className="flex flex-wrap items-start gap-4">
             <figure className="shrink-0">
               {maid.selfieImageUrl ? (
-                <a href={maid.selfieImageUrl} target="_blank" rel="noopener noreferrer">
+                <a href={toAuthedPhotoUrl(maid.selfieImageUrl) ?? maid.selfieImageUrl} target="_blank" rel="noopener noreferrer">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={maid.selfieImageUrl}
+                    src={toAuthedPhotoUrl(maid.selfieImageUrl) ?? maid.selfieImageUrl}
                     alt={`รูปเซลฟี่ของ ${maid.displayName}`}
                     className="size-24 rounded-lg border border-zinc-200 object-cover transition hover:opacity-80"
                   />
@@ -293,10 +294,10 @@ export default async function MaidDetailPage({
                 (CEO report 2026-09-23) เปลี่ยนเป็นรูปคลิกดูได้เหมือนเซลฟี่ */}
             <figure className="shrink-0">
               {maid.idCardImageUrl ? (
-                <a href={maid.idCardImageUrl} target="_blank" rel="noopener noreferrer">
+                <a href={toAuthedPhotoUrl(maid.idCardImageUrl) ?? maid.idCardImageUrl} target="_blank" rel="noopener noreferrer">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={maid.idCardImageUrl}
+                    src={toAuthedPhotoUrl(maid.idCardImageUrl) ?? maid.idCardImageUrl}
                     alt={`สำเนาบัตรประชาชนของ ${maid.displayName}`}
                     className="size-24 rounded-lg border border-zinc-200 object-cover transition hover:opacity-80"
                   />

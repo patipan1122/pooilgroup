@@ -5,6 +5,7 @@
 // SIGNED copy, and inside a print view. White-paper look, Thai body text.
 
 import type { ContractDocData, ContractSignature } from "./types";
+import { toAuthedPhotoUrl } from "@/lib/chairops/utils/photo-url";
 
 function thaiDate(iso: string | null): string {
   if (!iso) return "____/____/______";
@@ -67,7 +68,7 @@ export function ContractDocument({
           {data.selfieImageUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={data.selfieImageUrl}
+              src={toAuthedPhotoUrl(data.selfieImageUrl) ?? data.selfieImageUrl}
               alt="รูปถ่ายผู้รับจ้าง"
               className="size-full object-cover"
             />
@@ -172,7 +173,7 @@ export function ContractDocument({
         <Section title="เอกสารแนบ · สำเนาบัตรประชาชน">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={data.idCardImageUrl}
+            src={toAuthedPhotoUrl(data.idCardImageUrl) ?? data.idCardImageUrl}
             alt="สำเนาบัตรประชาชน"
             className="max-h-56 rounded-md border border-zinc-200"
           />
@@ -243,7 +244,7 @@ function SignBox({
       <div className="mt-2 flex h-16 items-end justify-center">
         {signatureUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={signatureUrl} alt="ลายเซ็น" className="max-h-16" />
+          <img src={toAuthedPhotoUrl(signatureUrl) ?? signatureUrl} alt="ลายเซ็น" className="max-h-16" />
         ) : preAuthorized ? (
           <span className="pb-1 text-xs italic text-zinc-400">(อนุมัติล่วงหน้าโดยบริษัท)</span>
         ) : (

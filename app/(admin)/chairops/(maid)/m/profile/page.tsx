@@ -6,6 +6,7 @@ import { Card, CardBody } from "@/components/ui/card";
 import { ChevronRight, FileSignature, IdCard, MapPin, Phone, Star, User, Users } from "lucide-react";
 import { MaidLogoutButton } from "./logout-button";
 import { ProfileEditWrapper } from "./profile-edit-wrapper";
+import { toAuthedPhotoUrl } from "@/lib/chairops/utils/photo-url";
 
 export const dynamic = "force-dynamic";
 
@@ -94,7 +95,7 @@ export default async function MaidProfilePage() {
                     {user.idCardNumber ? maskId(user.idCardNumber) : "แนบรูปแล้ว"}
                     {user.idCardImageUrl && (
                       <a
-                        href={user.idCardImageUrl}
+                        href={toAuthedPhotoUrl(user.idCardImageUrl) ?? user.idCardImageUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="ml-2 text-xs font-normal text-blue-600 hover:underline"

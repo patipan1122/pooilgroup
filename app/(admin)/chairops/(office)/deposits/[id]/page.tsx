@@ -7,6 +7,7 @@ import { notFound } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { prisma } from "@/lib/prisma";
+import { toAuthedPhotoUrl } from "@/lib/chairops/utils/photo-url";
 
 export const dynamic = "force-dynamic";
 
@@ -83,13 +84,13 @@ export default async function DepositDetailPage({
           <div className="space-y-2">
             <p className="text-xs font-semibold text-zinc-500">สลิปฝากเงิน</p>
             <a
-              href={deposit.slipPhotoUrl}
+              href={toAuthedPhotoUrl(deposit.slipPhotoUrl) ?? deposit.slipPhotoUrl}
               target="_blank"
               rel="noopener noreferrer"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={deposit.slipPhotoUrl}
+                src={toAuthedPhotoUrl(deposit.slipPhotoUrl) ?? deposit.slipPhotoUrl}
                 alt="สลิปฝากเงิน"
                 className="w-full rounded-xl border border-zinc-200 object-cover"
                 style={{ maxHeight: 300 }}

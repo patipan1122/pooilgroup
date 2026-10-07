@@ -5,14 +5,16 @@
 
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
+import { toAuthedPhotoUrl } from "@/lib/chairops/utils/photo-url";
 
 interface Props {
   url: string;
   alt: string;
 }
 
-export function PhotoLightbox({ url, alt }: Props) {
+export function PhotoLightbox({ url: rawUrl, alt }: Props) {
   const [open, setOpen] = useState(false);
+  const url = toAuthedPhotoUrl(rawUrl) ?? rawUrl;
 
   // Escape key dismiss (B6 / B-007 regression).
   useEffect(() => {

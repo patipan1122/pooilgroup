@@ -13,6 +13,7 @@ import { thaiDateTime, thaiRelative } from "@/lib/chairops/utils/format";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { ChairopsTicketStatus, ChairopsAlertKind } from "@/lib/generated/prisma/enums";
 import { getSuspectsWithChecks } from "@/lib/chairops/alerts/_chair-check";
+import { toAuthedPhotoUrl } from "@/lib/chairops/utils/photo-url";
 import { SuspectsView } from "./_suspects-view";
 import { recheckSuspects } from "./check-actions";
 import { RecheckButton } from "./_recheck-button";
@@ -365,7 +366,7 @@ export default async function DamageListPage({
                             >
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
-                                src={t.photoUrls[0]}
+                                src={toAuthedPhotoUrl(t.photoUrls[0]) ?? t.photoUrls[0]}
                                 alt="รูปแจ้งซ่อม"
                                 loading="lazy"
                                 className="h-10 w-10 rounded object-cover border border-border"

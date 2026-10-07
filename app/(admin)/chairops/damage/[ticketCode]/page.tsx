@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { thaiDateTime, thaiRelative } from "@/lib/chairops/utils/format";
 import { ChairopsTicketStatus } from "@/lib/generated/prisma/enums";
 import { TicketActions } from "./ticket-actions";
+import { toAuthedPhotoUrl } from "@/lib/chairops/utils/photo-url";
 
 const STATUS_LABEL: Record<ChairopsTicketStatus, string> = {
   OPEN: "ใหม่",
@@ -166,14 +167,14 @@ export default async function DamageTicketDetail({
                   {ticket.photoUrls.map((url, i) => (
                     <a
                       key={i}
-                      href={url}
+                      href={toAuthedPhotoUrl(url) ?? url}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="group relative aspect-square overflow-hidden rounded-md border border-border bg-muted"
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={url}
+                        src={toAuthedPhotoUrl(url) ?? url}
                         alt={`รูป ${i + 1}`}
                         className="h-full w-full object-cover transition-transform group-hover:scale-105"
                       />
