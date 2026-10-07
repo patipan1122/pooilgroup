@@ -1,12 +1,16 @@
-// Impersonation cookie — lets a super_admin temporarily browse the app as
-// another user (debugging, fixing data on their behalf), with a one-click
-// return to their own account.
+// Impersonation cookie — lets super_admin/org_admin/admin temporarily browse
+// the app as another (lower-ranked) user (debugging, fixing data on their
+// behalf, ChairOps office playing-as a maid), with a one-click return to
+// their own account.
 //
 // Design:
 // - Cookie holds {adminId, targetId, exp} signed with HMAC-SHA256.
 // - getSession() honors the cookie ONLY if the real authenticated user's id
-//   matches `adminId` AND that user is super_admin. So the cookie is bound to
-//   a specific admin and cannot be re-used by anyone else.
+//   matches `adminId`, that user has an allowed real role (session.ts's
+//   IMPERSONATION_ALLOWED_ROLES), AND that user out-ranks the target
+//   (canManageUser — ultramobileux audit P0-5, 2026-10-07). So the cookie is
+//   bound to a specific admin, cannot be re-used by anyone else, and cannot
+//   be used to reach a peer or superior.
 // - 1-hour expiry. Return-to-self just clears the cookie.
 // - Audit log on enter + exit (handled in route handlers).
 //

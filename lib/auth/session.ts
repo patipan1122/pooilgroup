@@ -9,6 +9,16 @@ import {
   IMPERSONATION_COOKIE,
   decodeImpersonationCookie,
 } from "./impersonation";
+import { canManageUser } from "./role-guards";
+
+// Who the swap-honoring gate below trusts to carry a cookie at all. Must stay
+// in sync with the Caller-role check in
+// app/api/admin/users/[id]/impersonate/route.ts (the only place that SETS
+// this cookie) — ultramobileux audit P0-5 (2026-10-07): this used to be
+// super_admin-only here while the route already granted org_admin/admin too
+// (2026-05-30), so an org_admin/admin's impersonation silently no-opped
+// (route returned {success:true}, this gate just never honored the cookie).
+const IMPERSONATION_ALLOWED_ROLES: DbUser["role"][] = ["super_admin", "org_admin", "admin"];
 
 export type DbUser = {
   id: string;
@@ -64,9 +74,13 @@ export const getSession = cache(async (): Promise<Session | null> => {
 
   if (!dbUser) return null;
 
-  // Impersonation override: if real user is super_admin AND has a valid
-  // impersonation cookie bound to their id, swap the surface user to target.
-  if ((dbUser as DbUser).role === "super_admin") {
+  // Impersonation override: if real user has an allowed real role AND has a
+  // valid impersonation cookie bound to their id, swap the surface user to
+  // target — PROVIDED they out-rank the target (canManageUser). The role-
+  // ceiling check is re-verified here (not just trusted from the grant-side
+  // route) because this is the side that actually matters: this is what
+  // decides whether the swap is honored on every single request.
+  if (IMPERSONATION_ALLOWED_ROLES.includes((dbUser as DbUser).role)) {
     const cookieStore = await cookies();
     const raw = cookieStore.get(IMPERSONATION_COOKIE)?.value;
     const payload = decodeImpersonationCookie(raw);
@@ -78,7 +92,7 @@ export const getSession = cache(async (): Promise<Session | null> => {
         .eq("org_id", (dbUser as DbUser).org_id)
         .eq("is_active", true)
         .maybeSingle();
-      if (targetUser) {
+      if (targetUser && canManageUser((dbUser as DbUser).role, (targetUser as DbUser).role)) {
         // Fully assume the target's identity. `users.id` IS the Supabase auth id
         // (the normal path above resolves the DbUser via `id = authUser.id`), so
         // the target's own id is their auth id. Previously authUserId/email

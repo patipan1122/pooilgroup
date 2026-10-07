@@ -10,12 +10,21 @@
 //   themselves on the rare day a maid is off).
 // - Cannot impersonate self.
 // - Target must be in same org and active.
+// - Caller must out-rank target (canManageUser) — ultramobileux audit P0-5
+//   (2026-10-07): this check didn't exist anywhere, in either this route OR
+//   the session-swap gate in lib/auth/session.ts that actually honors the
+//   cookie, so an org_admin/admin (the 2026-05-30 relaxation) could request
+//   impersonation of a super_admin/org_admin peer or superior with nothing
+//   stopping it at the grant side. Checked again in session.ts before the
+//   swap is honored, since that's the side that actually matters.
 
 import { NextResponse, type NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { requireRealRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
+import { canManageUser } from "@/lib/auth/role-guards";
+import type { DbUser } from "@/lib/auth/session";
 import {
   IMPERSONATION_COOKIE,
   encodeImpersonationCookie,
@@ -50,6 +59,13 @@ export async function POST(
     return NextResponse.json(
       { error: "ผู้ใช้ไม่พร้อมใช้งาน" },
       { status: 404 },
+    );
+  }
+
+  if (!canManageUser(session.user.role, target.role as DbUser["role"])) {
+    return NextResponse.json(
+      { error: "ไม่มีสิทธิ์เข้าใช้แทนผู้ใช้รายนี้ — ระดับสิทธิ์สูงกว่าหรือเท่ากับคุณ" },
+      { status: 403 },
     );
   }
 
