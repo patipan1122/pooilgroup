@@ -2,7 +2,7 @@
 
 > CEO command: `/ultramobileux โปรแกรมเก้าอี้นวด ทุกหน้าเลย` — no specific prior complaint, a full-coverage audit of every reachable ChairOps surface. Mobile-only scope (desktop not evaluated). This is the largest `/ultramobileux` run to date: 73 routes mapped, 63 real mobile screenshots captured (390×844@2x), 15-persona fan-out (12 core + SA/BE/SEC add-ons, loaded because the module handles money, PII, and a LINE integration).
 
-> **2026-10-07 update**: CEO said "แก้ไปเลยสิ" (just go fix it) — 8 fix batches (A–H) landed same day on branch `claude/chairops-mobile-fixes-2026-10-07`, committed and typecheck/build-verified but **NOT yet deployed** (awaiting CEO push approval). Each fixed finding below is marked `✅ FIXED` with its batch/commit. 3 items are explicitly NOT done yet: P0-2/P0-3 (Sentry DSN — needs CEO to retrieve it, no code fix possible), P0-4 (LINE secret split — investigated + planned, execution needs separate CEO approval per RULE J's coordinated-rotation risk), and the forced-camera-only question for `deposit/form.tsx` which turned out to already be correctly built (false positive, see Batch B commit `c644859e`).
+> **2026-10-07 update**: CEO said "แก้ไปเลยสิ" (just go fix it) — 8 fix batches (A–H) landed same day on branch `claude/chairops-mobile-fixes-2026-10-07`, verified, and **DEPLOYED LIVE** `de7f267a` (Batch D's migration applied to production first, then `/verify` 4-gate + push `origin/setup` + Vercel build confirmed Ready + screenshot-verified on `pooilgroup.com`). Each fixed finding below is marked `✅ FIXED` with its batch/commit. 3 items are explicitly NOT done yet: P0-2/P0-3 (Sentry DSN — needs CEO to retrieve it, no code fix possible), P0-4 (LINE secret split — investigated + planned, execution needs separate CEO approval per RULE J's coordinated-rotation risk), and the forced-camera-only question for `deposit/form.tsx` which turned out to already be correctly built (false positive, see Batch B commit `c644859e`).
 
 ## §1 Executive verdict
 
@@ -31,7 +31,7 @@ ChairOps's bottom nav is genuinely `position:fixed` (confirmed in code at both `
 | P0-3 | **A real production crash happened during this very audit** — `/chairops/pos-ingest/i/[id]` Server Component render error, digest `2550650762`. | ❌ NOT FIXED — blocked on P0-2 (no monitoring to confirm it's resolved) |
 | P0-4 | **`CHAIROPS_LINE_LOGIN_CHANNEL_SECRET` is silently the fallback LINE-login secret for `ledger`/`clawhub` too** (and dormant for a 4th, `rentspace`, via the `default` arm). `lib/line/channels.ts:51-70`. | 📋 PLANNED, not executed — see memory, awaiting CEO approval |
 | P0-5 | **"เล่นเป็นแม่บ้าน" reports false success**, and separately had zero role-ceiling check. `app/api/admin/users/[id]/impersonate/route.ts:28` vs `lib/auth/session.ts:69`. | ✅ FIXED — Batch F `a95ee61d` |
-| P0-6 | **Damage-report and cleanliness-checklist forms have zero duplicate-submission protection.** `app/(admin)/chairops/damage/actions.ts:17-23`, `app/(admin)/chairops/cleanliness/actions.ts:55-111`. | ✅ FIXED (code) — Batch D `d12333f3` · ⚠️ **migration not yet applied to production** (schema change needs separate go-ahead, see RULE P) — code will break submits if deployed before the migration runs |
+| P0-6 | **Damage-report and cleanliness-checklist forms have zero duplicate-submission protection.** `app/(admin)/chairops/damage/actions.ts:17-23`, `app/(admin)/chairops/cleanliness/actions.ts:55-111`. | ✅ FIXED — Batch D `d12333f3`, migration applied to production + verified via direct query before deploy |
 | P0-7 | **"ปิดสาขา" has no confirmation dialog.** `.../branch-close-buttons.tsx:41-53`. | ✅ FIXED — Batch A `7ff936ae` |
 | P0-8 | **The office exec dashboard (`/chairops`) overflows the mobile viewport entirely** (1396px vs 780px). `app/(admin)/chairops/(office)/page.tsx:372,560,562,567`. | ✅ FIXED — Batch A `7ff936ae` (`min-w-0` on the ancestor flex/grid containers) |
 | P0-9 | **Review-queue is an unpaginated wall of up to 100 full-res photos, 75,428px tall.** `app/(admin)/chairops/(office)/review-queue/page.tsx:18-21,106-110`. | ✅ FIXED — Batch E `cdbb22fe` (paginated 12/page, real aggregate totals) |
@@ -87,7 +87,7 @@ ChairOps's bottom nav is genuinely `position:fixed` (confirmed in code at both `
 
 **Phase A (shipped as Batch A, `7ff936ae`)**: P0-7, P0-8, `?error=forbidden` toast, AI-chat allowlist, AI budget gate on slip-OCR. P0-4 (LINE secret split) was in the original Phase A list but turned out to need its own approval gate — moved to planned-only, see §2.
 
-**Phase B (shipped as Batches C/D/E/G/H)**: P0-5 (`a95ee61d`), P0-6 code (`d12333f3`, migration pending), P0-9 (`cdbb22fe`), 54-branch search (`85e25ddd`), M-001 (`5139c50a`), P0-1 fast-path (`624a3d06`).
+**Phase B (shipped as Batches C/D/E/G/H)**: P0-5 (`a95ee61d`), P0-6 (`d12333f3`, migration applied), P0-9 (`cdbb22fe`), 54-branch search (`85e25ddd`), M-001 (`5139c50a`), P0-1 fast-path (`624a3d06`).
 
 **Phase C**: still CEO/ops-input-gated, untouched — forced-camera question resolved as a false positive for 1/5 forms (not a real Phase-C decision after all), "ไม่เคยเก็บ" branches, write-off self-approval rate, Sentry DSN.
 
