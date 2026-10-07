@@ -9,7 +9,18 @@ import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-export function ForbiddenToast({ show }: { show: boolean }) {
+export function ForbiddenToast({
+  show,
+  redirectTo = "/chairops",
+}: {
+  show: boolean;
+  /** ultramobileux audit 2026-10-07: was hardcoded to "/chairops" (office
+   * only) — the (maid) side sends the same ?error=forbidden param (e.g.
+   * viewing another maid's collection record) but nothing ever read it,
+   * so the bounce was completely silent. Made the clean-URL target
+   * configurable so this component works on both sides. */
+  redirectTo?: string;
+}) {
   const router = useRouter();
   const fired = useRef(false);
 
@@ -20,8 +31,8 @@ export function ForbiddenToast({ show }: { show: boolean }) {
       description: "เช่น เมนูของแม่บ้านต้องเข้าด้วยบัญชีแม่บ้าน",
     });
     // ลบ ?error=forbidden ออกจาก URL กัน toast เด้งซ้ำตอน refresh
-    router.replace("/chairops");
-  }, [show, router]);
+    router.replace(redirectTo);
+  }, [show, router, redirectTo]);
 
   return null;
 }

@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { baht, thaiDate, thaiRelative, ageDays, TZ } from "@/lib/chairops/utils/format";
 import { toZonedTime } from "date-fns-tz";
 import { SelfDayOffCard } from "./_components/self-dayoff-card";
+import { ForbiddenToast } from "@/components/chairops/forbidden-toast";
 import {
   AlertTriangle,
   CalendarClock,
@@ -48,8 +49,20 @@ function cutoffRemaining(): { over: boolean; hours: number; minutes: number } {
   return { over: false, hours: Math.floor(totalMin / 60), minutes: totalMin % 60 };
 }
 
-export default async function MaidHomePage() {
+export default async function MaidHomePage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const session = await requireExactRole("MAID");
+  // ultramobileux audit 2026-10-07 P1: /m/collect/[id] sends
+  // ?error=forbidden when a maid opens a collection record that isn't
+  // hers, but nothing on this page ever read it — a blocked access
+  // attempt bounced here looking pixel-identical to a normal visit, with
+  // zero explanation. The office dashboard already has this wired
+  // (components/chairops/forbidden-toast.tsx); porting the same pattern.
+  const sp = await searchParams;
+  const spError = Array.isArray(sp.error) ? sp.error[0] : sp.error;
 
   if (!session.user.primaryBranchId) {
     // No branch yet → the maid can't do any task. Don't trap them on a bare
@@ -289,6 +302,7 @@ export default async function MaidHomePage() {
 
   return (
     <div className="space-y-4">
+      <ForbiddenToast show={spError === "forbidden"} redirectTo="/chairops/m" />
       {/* Greeting card (mockup .co-mini-greeting) */}
       <Card className="border-emerald-200 bg-emerald-50/60">
         <CardBody className="space-y-2 p-4">

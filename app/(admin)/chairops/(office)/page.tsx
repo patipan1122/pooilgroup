@@ -369,7 +369,13 @@ export default async function ExecDashboardPage({
       : "0 ฿";
 
   return (
-    <div className="flex flex-col gap-4">
+    // min-w-0: without it, a flex child's default "automatic minimum size"
+    // lets the wide tables below (min-w-[860px]/[680px]) push this whole
+    // column wider than the viewport, even though each table already has
+    // its own overflow-auto wrapper — found via ultramobileux audit
+    // 2026-10-07 P0-8 (measured: page rendered 1396px wide on a 390px
+    // mobile viewport).
+    <div className="flex min-w-0 flex-col gap-4">
       {/* แจ้งเตือนเมื่อถูกเด้งเพราะสิทธิ์ไม่ถึง (เช่น แอดมินกดเมนูแม่บ้าน) */}
       <ForbiddenToast show={first(sp.error) === "forbidden"} />
       {/* page head */}
@@ -556,15 +562,16 @@ export default async function ExecDashboardPage({
         rangeLabel={rangeLabel}
       />
 
-      {/* main 2-col grid */}
-      <div className="grid gap-4 lg:grid-cols-3">
+      {/* main 2-col grid — min-w-0 on both children, same overflow fix as
+          the root wrapper above (P0-8) */}
+      <div className="grid min-w-0 gap-4 lg:grid-cols-3">
         {/* LEFT 2/3 */}
-        <div className="lg:col-span-2">
+        <div className="min-w-0 lg:col-span-2">
           <CriticalBranchesTable rows={criticalBranches} />
         </div>
 
         {/* RIGHT 1/3 */}
-        <div className="flex flex-col gap-4">
+        <div className="flex min-w-0 flex-col gap-4">
           <MissedMaidsCard rows={missedMaids} />
 
           {/* recent alerts */}

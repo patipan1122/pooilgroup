@@ -200,11 +200,20 @@ export function AdminShell({
   const showHubNav = isHubAudience && !activeModuleSlug;
   // These modules render their OWN fixed bottom-nav (~64px) on mobile, so the
   // floating AI button must lift above it to avoid covering the right-most tab.
+  // ultramobileux audit 2026-10-07 P1: chairops has had the same fixed
+  // bottom-nav (both (maid) and (office) shells) since before this
+  // allowlist existed — it was just never added, so the floating AI-chat
+  // button sat directly on top of its right-most tab on every ChairOps
+  // mobile screen. (The Pinpoint feedback session bar has a separate,
+  // fully hardcoded `bottom-4` position with no module-awareness at all —
+  // not fixed by this flag, and not ChairOps-specific; flagged separately,
+  // not in this batch's scope.)
   const moduleHasBottomNav =
     !!activeModuleSlug &&
     (activeModuleSlug === "cashhub" ||
       activeModuleSlug === "recruit" ||
-      activeModuleSlug === "inbox");
+      activeModuleSlug === "inbox" ||
+      activeModuleSlug === "chairops");
 
   const moduleNav = useMemo(() => {
     if (!activeModule) return [];

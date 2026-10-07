@@ -20,7 +20,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { isAllowedPhotoUrl } from "@/lib/chairops/utils/url-guard";
-import { recordAiUsage } from "@/lib/ai/cost-cap";
+import { checkAiBudget, recordAiUsage } from "@/lib/ai/cost-cap";
 
 export type SlipOcrDetails = {
   amount: number | null;
@@ -85,6 +85,19 @@ export async function extractSlipDetails(
 ): Promise<SlipOcrDetails> {
   if (!slipPublicUrl || !isAllowedPhotoUrl(slipPublicUrl)) return EMPTY;
   if (!process.env.GEMINI_API_KEY) return EMPTY;
+
+  // ultramobileux audit 2026-10-07 P1: this was the only AI call site in the
+  // whole codebase that recorded usage without checking budget first — every
+  // other module (docuflow/cashhub/recruit/ledger/clawhub/dc/playland) calls
+  // checkAiBudget() before the model call. Non-fatal by design: a blocked
+  // OCR just means the deposit-slip values stay null (same as any other OCR
+  // failure path here), never blocks the actual deposit.
+  const budget = await checkAiBudget({
+    userId: actor.userId,
+    orgId: actor.orgId,
+    endpoint: "chairops.slip-ocr-details",
+  });
+  if (!budget.allowed) return EMPTY;
 
   try {
     const img = await fetchImageAsBase64(slipPublicUrl);

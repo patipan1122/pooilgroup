@@ -28,6 +28,7 @@ import { presignUpload, evidenceKey, slipKey } from "@/lib/chairops/storage/r2";
 import { putObject } from "@/lib/r2/upload";
 import { zBaht, zUUID } from "@/lib/chairops/schemas/zod-helpers";
 import { isAllowedPhotoUrl } from "@/lib/chairops/utils/url-guard";
+import { checkAiBudget } from "@/lib/ai/cost-cap";
 import { rateLimit, LIMITS } from "@/lib/chairops/utils/rate-limit";
 import { notifyChannel } from "@/lib/chairops/line/messaging";
 import {
@@ -933,6 +934,18 @@ export async function extractSlipAmount(
     return { ok: false, error: "รูปสลิปไม่ถูกต้อง · อัปโหลดผ่านระบบ" };
   }
   if (!process.env.GEMINI_API_KEY) return { ok: true, data: { amount: null } };
+
+  // ultramobileux audit 2026-10-07 P1: this call fires live on every slip
+  // photo re-pick in the mobile deposit form (not just once per deposit) and
+  // was, together with its sibling in slip-ocr.ts, the only AI call site in
+  // the codebase skipping the standard budget gate. Blocked = amount stays
+  // null, same as any other OCR-unavailable path (maid still types it in).
+  const budget = await checkAiBudget({
+    userId: session.user.id,
+    orgId: session.user.orgId,
+    endpoint: "chairops.collect.slip-amount",
+  });
+  if (!budget.allowed) return { ok: true, data: { amount: null } };
 
   try {
     const img = await fetchImageAsBase64(slipPublicUrl);

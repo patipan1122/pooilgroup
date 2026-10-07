@@ -11,8 +11,12 @@
 // dashboard/reconcile/collect instead of showing muted — a second, divergent
 // close-branch mechanism no one asked for. Deleted that; both buttons now call
 // the SAME shared action the reconcile page already uses, so "closed" means
-// one consistent thing everywhere. No confirm dialog either, matching the
-// reconcile sidebar's existing pattern (a plain immediate toggle).
+// one consistent thing everywhere.
+//
+// ultramobileux audit (2026-10-07) P0-7: this button sits inline next to
+// every branch name in a cramped, horizontally-scrolling mobile table — a
+// single mis-tap closed a real branch immediately with zero confirmation.
+// Added a plain window.confirm() on both directions below.
 
 import { useTransition } from "react";
 import { toast } from "sonner";
@@ -22,6 +26,12 @@ function useToggleClosed(branchName: string, closed: boolean) {
   const [pending, startTransition] = useTransition();
 
   function toggle(branchId: string) {
+    const confirmed = window.confirm(
+      closed
+        ? `ยืนยันปิดสาขา "${branchName}"?\n\nสาขาจะถูกซ่อน/ลดความสำคัญในหน้าจออื่นๆ (เปิดใหม่ได้ภายหลัง)`
+        : `ยืนยันเปิดสาขา "${branchName}" ใหม่?`,
+    );
+    if (!confirmed) return;
     startTransition(async () => {
       const res = await toggleBranchClosedAction(branchId, closed);
       if (!res.ok) {
