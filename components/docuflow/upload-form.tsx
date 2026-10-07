@@ -257,6 +257,11 @@ export function UploadForm({
   // is suggest-while-typing, not a forced select-from-list.
   const [tagOpen, setTagOpen] = useState(false);
   const fileNameSyncRef = useRef(false);
+  // True when the auto-filled document name looks like an opaque id/hash
+  // rather than something a person typed — e.g. a file forwarded via LINE
+  // or downloaded from a cloud share link on mobile often keeps a hash-like
+  // filename (CEO screenshot, 2026-10-07 — bonus fix, not a reported bug).
+  const [nameLooksHashLike, setNameLooksHashLike] = useState(false);
 
   // Local copy of `documentTypes` so the "+ สร้างใหม่" quick-create dialog
   // below can add a brand-new type to the dropdown immediately without a
@@ -300,6 +305,10 @@ export function UploadForm({
   });
 
   const expiryWatch = watch("expiryDate");
+  // Registered once so the "name" input's onChange wrapper (which clears
+  // the hash-like-filename warning below) can call RHF's own onChange
+  // without re-registering the field on every keystroke.
+  const nameField = register("name");
 
   // "เอกสารเดียว" mode combines every selected file into one PDF client-side
   // (pdf-lib) — only PDF + JPG/PNG inputs can be combined that way. If any
@@ -526,6 +535,24 @@ export function UploadForm({
     return f.name.replace(/\.[^.]+$/, "").replace(/[_-]/g, " ");
   }
 
+  /** Detects a cleaned filename that reads as a machine-generated id
+   * (a UUID, an MD5-style hex hash, a long cloud-file-id blob) rather
+   * than a name a person typed — common for files forwarded via LINE or
+   * downloaded from a cloud share link on mobile. `cleanFileName` turns
+   * dashes/underscores into spaces, so a dashed UUID collapses to a
+   * space-separated hex run here — stripping whitespace before testing
+   * catches that shape too. */
+  function looksHashLike(cleaned: string): boolean {
+    const compact = cleaned.replace(/\s+/g, "");
+    if (!compact) return false;
+    // Exactly 32 hex chars — MD5 hash, or a UUID with dashes removed.
+    if (/^[0-9a-f]{32}$/i.test(compact)) return true;
+    // Any other long (20+) run of pure hex/digit characters — e.g. a
+    // cloud file id — also reads as a machine id, not a typed name.
+    if (/^[0-9a-f]{20,}$/i.test(compact)) return true;
+    return false;
+  }
+
   function fileIdentity(f: File) {
     return `${f.name}::${f.size}::${f.lastModified}`;
   }
@@ -541,6 +568,7 @@ export function UploadForm({
       const cleaned = cleanFileName(newFiles[0]);
       setValue("name", cleaned);
       fileNameSyncRef.current = true;
+      setNameLooksHashLike(looksHashLike(cleaned));
     }
   }
 
@@ -674,6 +702,7 @@ export function UploadForm({
     setTags([]);
     setTagInput("");
     fileNameSyncRef.current = false;
+    setNameLooksHashLike(false);
     reset({
       name: "",
       documentTypeId: "",
@@ -1223,11 +1252,21 @@ export function UploadForm({
       >
         <Input
           id="name"
-          {...register("name")}
+          {...nameField}
+          onChange={(e) => {
+            void nameField.onChange(e);
+            setNameLooksHashLike(false);
+          }}
           invalid={!!errors.name}
           placeholder="เช่น ใบอนุญาตปั๊ม KKN-001"
           disabled={busy || isMultiDocMode}
         />
+        {nameLooksHashLike && !errors.name && (
+          <p className="flex items-start gap-1.5 text-xs text-amber-700">
+            <AlertCircle className="size-3.5 shrink-0 mt-0.5" />
+            ชื่อไฟล์นี้ดูเหมือนรหัสอัตโนมัติ ลองตั้งชื่อใหม่ให้อ่านง่ายขึ้นไหม
+          </p>
+        )}
       </Field>
 
       <div className="space-y-1.5">

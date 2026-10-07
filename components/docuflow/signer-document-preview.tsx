@@ -28,6 +28,7 @@ import {
   type PlacementType,
 } from "./signature-placement-box";
 import { configurePdfJs } from "@/lib/docuflow/pdfjs-config";
+import { useResponsivePdfWidth } from "@/lib/docuflow/use-responsive-pdf-width";
 
 const ReactPdfDocument = dynamic(
   () => import("react-pdf").then((m) => m.Document),
@@ -95,6 +96,11 @@ export function SignerDocumentPreview({
     height: number;
   }>({ width: 0, height: 0 });
 
+  // Responsive PDF page width — see use-responsive-pdf-width.ts for why
+  // (mobile clipping bug, CEO click-report 2026-10-07, item 4).
+  const pdfContainerRef = useRef<HTMLDivElement | null>(null);
+  const pdfWidth = useResponsivePdfWidth(pdfContainerRef);
+
   useEffect(() => {
     void configurePdfJs();
   }, []);
@@ -151,7 +157,8 @@ export function SignerDocumentPreview({
         </div>
 
         <div
-          className="relative mx-auto bg-zinc-50 rounded-xl border border-zinc-200 overflow-hidden"
+          ref={pdfContainerRef}
+          className="relative mx-auto bg-zinc-50 rounded-xl border border-zinc-200 overflow-auto"
           style={{ maxWidth: 720 }}
         >
           <ReactPdfDocument
@@ -188,7 +195,7 @@ export function SignerDocumentPreview({
             <div className="relative">
               <ReactPdfPage
                 pageNumber={pageNumber}
-                width={720}
+                width={pdfWidth}
                 renderAnnotationLayer={false}
                 renderTextLayer={false}
               />

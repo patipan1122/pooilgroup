@@ -50,6 +50,7 @@ import {
   type SignerPreviewPlacementVm,
 } from "./signer-document-preview";
 import { configurePdfJs } from "@/lib/docuflow/pdfjs-config";
+import { useResponsivePdfWidth } from "@/lib/docuflow/use-responsive-pdf-width";
 
 const ReactPdfDocument = dynamic(
   () => import("react-pdf").then((m) => m.Document),
@@ -138,6 +139,11 @@ export function SignerInterface({
   }>({ width: 0, height: 0 });
   const padRef = useRef<SignaturePadHandle | null>(null);
   const pageWrapRef = useRef<HTMLDivElement | null>(null);
+  // Responsive PDF page width — see use-responsive-pdf-width.ts for why
+  // (mobile clipping bug, CEO click-report 2026-10-07, item 4). Reuses
+  // pageWrapRef (already attached to the same container below for the
+  // scrollIntoView effect) rather than adding a second ref.
+  const pdfWidth = useResponsivePdfWidth(pageWrapRef);
 
   useEffect(() => {
     void configurePdfJs();
@@ -253,7 +259,7 @@ export function SignerInterface({
           <CardBody className="p-2 sm:p-4">
             <div
               ref={pageWrapRef}
-              className="relative mx-auto bg-zinc-50 rounded-xl border border-zinc-200 overflow-hidden"
+              className="relative mx-auto bg-zinc-50 rounded-xl border border-zinc-200 overflow-auto"
               style={{ maxWidth: 720 }}
             >
               <ReactPdfDocument
@@ -289,7 +295,7 @@ export function SignerInterface({
                 <div className="relative">
                   <ReactPdfPage
                     pageNumber={placement.pageNumber}
-                    width={720}
+                    width={pdfWidth}
                     renderAnnotationLayer={false}
                     renderTextLayer={false}
                   />

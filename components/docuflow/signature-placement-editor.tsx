@@ -24,7 +24,6 @@ import {
   Save,
   ChevronLeft,
   ChevronRight,
-  Plus,
   Loader2,
   CheckCircle2,
   Link as LinkIcon,
@@ -48,6 +47,7 @@ import {
   type PlacementType,
 } from "./signature-placement-box";
 import { configurePdfJs } from "@/lib/docuflow/pdfjs-config";
+import { useResponsivePdfWidth } from "@/lib/docuflow/use-responsive-pdf-width";
 
 /* ============================================================
    Dynamic react-pdf imports (client-only)
@@ -161,16 +161,121 @@ function typeLabel(type: PlacementType): string {
   return TYPE_OPTIONS.find((t) => t.value === type)?.label ?? type;
 }
 
-function isUuid(v: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-    v,
-  );
-}
-
 function PdfSkeleton() {
   return (
     <div className="w-full h-[640px] flex items-center justify-center bg-zinc-50 rounded-xl border border-zinc-200">
       <Loader2 className="size-6 animate-spin text-zinc-400" />
+    </div>
+  );
+}
+
+/* ============================================================
+   SignerPicker — searchable signer dropdown
+   ------------------------------------------------------------
+   Replaces a plain native <select> populated from `users`. Org-wide
+   user lists can run into the dozens, and a native <select> can't be
+   filtered by arbitrary typed text (only the browser's built-in
+   type-ahead, which only matches from the start of the label) — so
+   this is a small custom combobox instead: a text input that filters
+   `users` by name/role, rendering matches as a clickable dropdown list.
+   Preserves the same contract the rest of the editor already expects
+   (`value` = signerUserId, `onChange` receives the picked UserOption
+   or null for "ไม่ระบุ"). No existing `cmdk`/Command combobox pattern
+   was found elsewhere in this codebase to reuse (CEO click-report
+   2026-10-07, item 1).
+   ============================================================ */
+
+function SignerPicker({
+  users,
+  value,
+  onChange,
+}: {
+  users: UserOption[];
+  value: string | null;
+  onChange: (user: UserOption | null) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (!rootRef.current) return;
+      if (!rootRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  const selectedUser = users.find((u) => u.id === value) ?? null;
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return users;
+    return users.filter(
+      (u) =>
+        u.name.toLowerCase().includes(q) || u.role.toLowerCase().includes(q),
+    );
+  }, [users, query]);
+
+  function pick(user: UserOption | null) {
+    onChange(user);
+    setQuery("");
+    setOpen(false);
+  }
+
+  return (
+    <div ref={rootRef} className="relative">
+      <input
+        type="text"
+        value={
+          open ? query : selectedUser ? `${selectedUser.name} (${selectedUser.role})` : ""
+        }
+        onChange={(e) => {
+          setQuery(e.target.value);
+          if (!open) setOpen(true);
+        }}
+        onFocus={() => {
+          setQuery("");
+          setOpen(true);
+        }}
+        placeholder="พิมพ์ค้นหาชื่อผู้เซ็น…"
+        className="w-full h-10 px-3 text-sm rounded-xl border border-zinc-200 bg-white"
+      />
+      {open && (
+        <div className="absolute z-30 mt-1 w-full max-h-56 overflow-y-auto rounded-xl border border-zinc-200 bg-white shadow-lg py-1">
+          <button
+            type="button"
+            onClick={() => pick(null)}
+            className={cn(
+              "w-full text-left px-3 py-2 text-sm hover:bg-zinc-50",
+              !value &&
+                "bg-[var(--color-brand-50)] text-[var(--color-brand-700)] font-medium",
+            )}
+          >
+            — ไม่ระบุ (ใช้ลิงก์เซ็น) —
+          </button>
+          {filtered.length === 0 && (
+            <p className="px-3 py-2 text-xs text-zinc-500">
+              ไม่พบชื่อที่ค้นหา
+            </p>
+          )}
+          {filtered.map((u) => (
+            <button
+              key={u.id}
+              type="button"
+              onClick={() => pick(u)}
+              className={cn(
+                "w-full text-left px-3 py-2 text-sm hover:bg-zinc-50",
+                value === u.id &&
+                  "bg-[var(--color-brand-50)] text-[var(--color-brand-700)] font-medium",
+              )}
+            >
+              {u.name} <span className="text-zinc-400">({u.role})</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -200,6 +305,10 @@ export function SignaturePlacementEditor({
   // ID of the placement awaiting delete-confirmation. null = no dialog open.
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [deletingBusy, setDeletingBusy] = useState(false);
+  // ID of the placement awaiting share-link-copy confirmation. null = no
+  // dialog open (CEO click-report 2026-10-07, item 2 — the link only works
+  // once the signer has an invited account, so confirm before copying).
+  const [pendingShareId, setPendingShareId] = useState<string | null>(null);
   // PDF viewer retry — react-pdf's <Document> gives no built-in retry, so we
   // key-remount it to force a fresh fetch. The `error` render prop below
   // replaces react-pdf's default fallback (a bare, unhelpful English string)
@@ -213,6 +322,11 @@ export function SignaturePlacementEditor({
     width: number;
     height: number;
   }>({ width: 0, height: 0 });
+
+  // Responsive PDF page width — see use-responsive-pdf-width.ts for why
+  // (mobile clipping bug, CEO click-report 2026-10-07, item 4).
+  const pdfContainerRef = useRef<HTMLDivElement | null>(null);
+  const pdfWidth = useResponsivePdfWidth(pdfContainerRef);
 
   // Configure pdfjs worker on mount (client-only)
   useEffect(() => {
@@ -560,7 +674,8 @@ export function SignaturePlacementEditor({
               </div>
 
               <div
-                className="relative mx-auto bg-zinc-50 rounded-xl border border-zinc-200 overflow-hidden"
+                ref={pdfContainerRef}
+                className="relative mx-auto bg-zinc-50 rounded-xl border border-zinc-200 overflow-auto"
                 style={{ maxWidth: 720 }}
               >
                 <ReactPdfDocument
@@ -598,7 +713,7 @@ export function SignaturePlacementEditor({
                   <div className="relative">
                     <ReactPdfPage
                       pageNumber={pageNumber}
-                      width={720}
+                      width={pdfWidth}
                       renderAnnotationLayer={false}
                       renderTextLayer={false}
                     />
@@ -775,27 +890,18 @@ export function SignaturePlacementEditor({
                         <p className="text-xs font-bold text-zinc-500 mb-1.5">
                           ผู้เซ็น (ในระบบ)
                         </p>
-                        <select
-                          value={selected.signerUserId ?? ""}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            const u = users.find((u) => u.id === v);
+                        <SignerPicker
+                          users={users}
+                          value={selected.signerUserId}
+                          onChange={(u) =>
                             updatePlacement(selected.id, {
-                              signerUserId: v && isUuid(v) ? v : null,
+                              signerUserId: u ? u.id : null,
                               signerUser: u
                                 ? { id: u.id, name: u.name, role: u.role }
                                 : null,
-                            });
-                          }}
-                          className="w-full h-10 px-3 text-sm rounded-xl border border-zinc-200 bg-white"
-                        >
-                          <option value="">— ไม่ระบุ (ใช้ลิงก์เซ็น) —</option>
-                          {users.map((u) => (
-                            <option key={u.id} value={u.id}>
-                              {u.name} ({u.role})
-                            </option>
-                          ))}
-                        </select>
+                            })
+                          }
+                        />
                       </div>
 
                       <div>
@@ -859,7 +965,7 @@ export function SignaturePlacementEditor({
                     ) : (
                       <button
                         type="button"
-                        onClick={() => copyShareLink(selected.id)}
+                        onClick={() => setPendingShareId(selected.id)}
                         className="w-full inline-flex items-center justify-center gap-2 h-10 px-4 text-sm rounded-xl bg-white text-zinc-900 border border-zinc-200 hover:bg-zinc-50 font-medium"
                       >
                         <Copy className="size-4" />
@@ -891,59 +997,94 @@ export function SignaturePlacementEditor({
             title={`ทุกจุด (${placements.length})`}
           >
             <Card>
-              <CardBody className="space-y-1.5">
-                {placements.length === 0 && (
+              {placements.length === 0 ? (
+                <CardBody>
                   <p className="text-sm text-zinc-500 py-4 text-center">
                     ยังไม่มีจุด · เลือกประเภทจาก toolbar แล้วแตะหน้าเอกสาร
                   </p>
-                )}
-                {placements.map((p) => {
-                  const isSel = selectedId === p.id;
-                  const TypeIcon =
-                    TYPE_OPTIONS.find((t) => t.value === p.placementType)
-                      ?.Icon ?? PenLine;
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => {
-                        setPageNumber(p.pageNumber);
-                        setSelectedId(p.id);
-                      }}
-                      className={cn(
-                        "w-full text-left rounded-lg px-3 py-2 text-sm border transition-colors flex items-center justify-between gap-2",
-                        isSel
-                          ? "border-[var(--color-brand-600)] bg-[var(--color-brand-50)]"
-                          : "border-zinc-200 hover:bg-zinc-50",
-                      )}
-                    >
-                      <span className="flex items-center gap-2 min-w-0">
-                        {p.signedAt ? (
-                          <CheckCircle2 className="size-4 text-green-600 shrink-0" />
-                        ) : (
-                          <Plus className="size-4 text-zinc-400 shrink-0" />
-                        )}
-                        <TypeIcon className="size-3.5 text-zinc-500 shrink-0" />
-                        <span className="truncate">
-                          หน้า {p.pageNumber} · {typeLabel(p.placementType)}
-                          {p.placementType === "signature" ||
+                </CardBody>
+              ) : (
+                // Dense table — was a stack of full-width bordered cards,
+                // which took over the whole mobile viewport fast once a
+                // document had more than a few placements (CEO click-report
+                // 2026-10-07, item 3). overflow-x-auto keeps it usable on a
+                // 390px-wide screen without letting columns overflow the page.
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-zinc-200">
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-zinc-500 whitespace-nowrap">
+                          หน้า
+                        </th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-zinc-500 whitespace-nowrap">
+                          ประเภท
+                        </th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-zinc-500 whitespace-nowrap">
+                          ผู้เซ็น / เจ้าของ
+                        </th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-zinc-500 whitespace-nowrap">
+                          สถานะ
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {placements.map((p) => {
+                        const isSel = selectedId === p.id;
+                        const TypeIcon =
+                          TYPE_OPTIONS.find((t) => t.value === p.placementType)
+                            ?.Icon ?? PenLine;
+                        const ownerText =
+                          p.signerUser?.name ||
+                          p.signerName ||
+                          (p.placementType === "signature" ||
                           p.placementType === "name"
-                            ? ` · ${roleLabel(p.signerRole)}`
-                            : ""}
-                          {p.signerUser?.name
-                            ? ` — ${p.signerUser.name}`
-                            : p.signerName
-                              ? ` — ${p.signerName}`
-                              : ""}
-                        </span>
-                      </span>
-                      {p.placementType === "signature" && !p.signedAt && (
-                        <LinkIcon className="size-3.5 text-zinc-400 shrink-0" />
-                      )}
-                    </button>
-                  );
-                })}
-              </CardBody>
+                            ? roleLabel(p.signerRole)
+                            : "—");
+                        return (
+                          <tr
+                            key={p.id}
+                            onClick={() => {
+                              setPageNumber(p.pageNumber);
+                              setSelectedId(p.id);
+                            }}
+                            className={cn(
+                              "cursor-pointer transition-colors border-b border-zinc-100 last:border-b-0",
+                              isSel
+                                ? "bg-[var(--color-brand-50)]"
+                                : "hover:bg-zinc-50",
+                            )}
+                          >
+                            <td className="px-3 py-2 tabular-nums text-zinc-700 whitespace-nowrap">
+                              {p.pageNumber}
+                            </td>
+                            <td className="px-3 py-2 whitespace-nowrap">
+                              <span className="inline-flex items-center gap-1.5 text-zinc-700">
+                                <TypeIcon className="size-3.5 text-zinc-500 shrink-0" />
+                                {typeLabel(p.placementType)}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 max-w-[140px] truncate text-zinc-700">
+                              {ownerText}
+                            </td>
+                            <td className="px-3 py-2 whitespace-nowrap">
+                              {p.signedAt ? (
+                                <Badge tone="success">เซ็นแล้ว</Badge>
+                              ) : p.placementType === "signature" ? (
+                                <span className="inline-flex items-center gap-1">
+                                  <Badge tone="warning">รอเซ็น</Badge>
+                                  <LinkIcon className="size-3.5 text-zinc-400" />
+                                </span>
+                              ) : (
+                                <Badge tone="neutral">อัตโนมัติ</Badge>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </Card>
           </Section>
 
@@ -989,6 +1130,34 @@ export function SignaturePlacementEditor({
               loading={deletingBusy}
             >
               ลบ
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* Confirm before copying the sign link — item 2, 2026-10-07 */}
+      <Dialog
+        open={pendingShareId !== null}
+        onClose={() => setPendingShareId(null)}
+        title="ยืนยันคัดลอกลิงก์"
+      >
+        <div className="space-y-5">
+          <p className="text-sm text-zinc-700 leading-relaxed">
+            ลิงก์นี้จะใช้งานได้ก็ต่อเมื่อผู้เซ็นได้รับเชิญเป็นผู้ใช้ในระบบ
+            DocuFlow ก่อนแล้ว ยืนยันคัดลอกลิงก์?
+          </p>
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-100">
+            <Button variant="ghost" onClick={() => setPendingShareId(null)}>
+              ยกเลิก
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => {
+                if (pendingShareId) copyShareLink(pendingShareId);
+                setPendingShareId(null);
+              }}
+            >
+              คัดลอกลิงก์
             </Button>
           </div>
         </div>
