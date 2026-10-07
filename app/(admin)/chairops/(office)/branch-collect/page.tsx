@@ -20,8 +20,9 @@ import {
   ChairopsKpiTile,
 } from "@/components/chairops/_kit";
 import { Card, CardBody } from "@/components/ui/card";
-import { Building2, AlertTriangle, Banknote, ChevronRight } from "lucide-react";
+import { Building2, AlertTriangle, Banknote } from "lucide-react";
 import { SyncChairsFromPosButton } from "./sync-button";
+import { BranchCollectGrid } from "./branch-grid";
 
 export const dynamic = "force-dynamic";
 
@@ -139,60 +140,17 @@ export default async function BranchCollectPage() {
           )}
         </div>
 
-        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {branches.map((b) => {
-            const maid = maidByBranch.get(b.id);
-            const hasChairs = b._count.chairs > 0;
-            return (
-              <li key={b.id}>
-                <Card
-                  className={
-                    hasChairs
-                      ? "border-zinc-200"
-                      : "border-amber-200 bg-amber-50/50"
-                  }
-                >
-                  <CardBody className="space-y-3 p-4">
-                    <div className="space-y-1">
-                      <div className="font-semibold text-zinc-900">
-                        {b.name}
-                      </div>
-                      <div className="text-xs text-zinc-500">
-                        {b.city ?? "—"} · {b._count.chairs} เก้าอี้
-                        {maid ? ` · แม่บ้าน ${maid.displayName}` : ""}
-                      </div>
-                    </div>
-                    {hasChairs ? (
-                      <Link
-                        href={`/chairops/collect/${b.id}/new`}
-                        className="inline-flex w-full items-center justify-between gap-2 rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white active:bg-emerald-700"
-                      >
-                        <span className="inline-flex items-center gap-1.5">
-                          <Banknote className="size-4" aria-hidden />
-                          เก็บเงินสาขานี้
-                        </span>
-                        <ChevronRight className="size-4" aria-hidden />
-                      </Link>
-                    ) : (
-                      <div className="space-y-2">
-                        <div className="rounded-md border border-amber-200 bg-white p-2 text-xs text-amber-700">
-                          ยังไม่มีเก้าอี้ในสาขา
-                        </div>
-                        <Link
-                          href={`/chairops/branches/${b.id}/chairs/add`}
-                          className="inline-flex w-full items-center justify-between gap-2 rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-800 active:bg-amber-50"
-                        >
-                          + เพิ่มเก้าอี้สาขานี้
-                          <ChevronRight className="size-4" aria-hidden />
-                        </Link>
-                      </div>
-                    )}
-                  </CardBody>
-                </Card>
-              </li>
-            );
-          })}
-        </ul>
+        {branches.length > 0 && (
+          <BranchCollectGrid
+            branches={branches.map((b) => ({
+              id: b.id,
+              name: b.name,
+              city: b.city,
+              chairCount: b._count.chairs,
+              maidName: maidByBranch.get(b.id)?.displayName ?? null,
+            }))}
+          />
+        )}
 
         {branches.length === 0 && (
           <Card className="border-amber-200 bg-amber-50">

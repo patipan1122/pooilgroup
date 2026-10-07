@@ -23,7 +23,7 @@ import {
 } from "@/lib/chairops/queries/maid-roster";
 import { baht } from "@/lib/chairops/utils/format";
 import type { MaidRosterStatus } from "./types";
-import { MaidActivityTable } from "./_components/branch-roster-view";
+import { MaidRosterSearch } from "./_components/maid-roster-search";
 
 export const dynamic = "force-dynamic";
 
@@ -137,7 +137,7 @@ function ViewToggle({ view }: { view: "branch" | "maid" }) {
 
 async function BranchView({ orgId, canMutate }: { orgId: string; canMutate: boolean }) {
   const rows = await listMaidActivityRoster(orgId);
-  return <MaidActivityTable rows={rows} canMutate={canMutate} />;
+  return <MaidRosterSearch rows={rows} canMutate={canMutate} />;
 }
 
 async function MaidView({
