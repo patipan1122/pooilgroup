@@ -23,6 +23,7 @@ const SignatureCanvas = dynamic(
   ref?: React.Ref<SignaturePad>;
   penColor?: string;
   canvasProps?: React.CanvasHTMLAttributes<HTMLCanvasElement>;
+  onEnd?: () => void;
 }>;
 
 type SignaturePad = {
@@ -112,6 +113,11 @@ export function ContractFlow({ prefill }: { prefill: ContractPrefill }) {
   const [savingDraft, setSavingDraft] = useState(false);
   const [typedName, setTypedName] = useState(prefill.maidName);
   const [consent, setConsent] = useState(false);
+  // ultramobileux audit M-001 (2026-10-07): the sign button's disabled check
+  // never covered "has she actually drawn a signature" — padRef is an
+  // imperative canvas ref, not state, so it can't be read reactively without
+  // this. Tracked via the pad's onEnd callback (fires per stroke).
+  const [hasSignature, setHasSignature] = useState(false);
   const padRef = useRef<SignaturePad | null>(null);
 
   const set = (k: keyof ContractPrefill) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
@@ -167,6 +173,17 @@ export function ContractFlow({ prefill }: { prefill: ContractPrefill }) {
       setSavingDraft(false);
     }
   };
+
+  // ultramobileux audit M-001 (2026-10-07): "ดูตัวอย่าง + เซ็น" used to only
+  // disable on `pending` — button looked tappable with required fields still
+  // empty, same shape as goPreview's own checks below.
+  const canPreview =
+    !!f.maidName.trim() &&
+    !!f.idCardNumber.trim() &&
+    !!f.address.trim() &&
+    !!f.idCardImageUrl &&
+    !!f.salaryBankName.trim() &&
+    !!f.salaryAccountNo.trim();
 
   const goPreview = () => {
     setError(null);
@@ -230,11 +247,15 @@ export function ContractFlow({ prefill }: { prefill: ContractPrefill }) {
               ref={padRef}
               penColor="#111827"
               canvasProps={{ className: "w-full h-40 touch-none" }}
+              onEnd={() => setHasSignature(!(padRef.current?.isEmpty() ?? true))}
             />
           </div>
           <button
             type="button"
-            onClick={() => padRef.current?.clear()}
+            onClick={() => {
+              padRef.current?.clear();
+              setHasSignature(false);
+            }}
             className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-800"
           >
             <Eraser className="size-3.5" /> ลบลายเซ็น เริ่มใหม่
@@ -283,17 +304,19 @@ export function ContractFlow({ prefill }: { prefill: ContractPrefill }) {
           <button
             type="button"
             onClick={onSign}
-            disabled={pending || !consent || !typedName.trim()}
+            disabled={pending || !hasSignature || !consent || !typedName.trim()}
             className="inline-flex flex-[2] items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-3 text-base font-semibold text-white active:opacity-80 disabled:opacity-50"
           >
             {pending ? <Loader2 className="size-4 animate-spin" /> : null}
             {pending
               ? "กำลังบันทึก…"
-              : !typedName.trim()
-                ? "พิมพ์ชื่อก่อน"
-                : !consent
-                  ? "ติ๊กยอมรับก่อน"
-                  : "ยืนยันและเซ็นสัญญา"}
+              : !hasSignature
+                ? "เซ็นในกรอบก่อน"
+                : !typedName.trim()
+                  ? "พิมพ์ชื่อก่อน"
+                  : !consent
+                    ? "ติ๊กยอมรับก่อน"
+                    : "ยืนยันและเซ็นสัญญา"}
           </button>
         </div>
       </div>
@@ -355,7 +378,7 @@ export function ContractFlow({ prefill }: { prefill: ContractPrefill }) {
         <button
           type="button"
           onClick={goPreview}
-          disabled={pending}
+          disabled={pending || !canPreview}
           className="inline-flex flex-[2] items-center justify-center gap-1.5 rounded-xl bg-zinc-900 py-3 text-base font-semibold text-white active:opacity-80 disabled:opacity-50"
         >
           ดูตัวอย่าง + เซ็น <ArrowRight className="size-4" />

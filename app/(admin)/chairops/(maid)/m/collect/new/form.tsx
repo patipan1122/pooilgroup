@@ -738,7 +738,10 @@ export function CollectNewForm({
             type="submit"
             size="xl"
             className="h-14 w-full text-base font-semibold"
-            disabled={pending || chairCodes.length === 0}
+            // ultramobileux audit M-001 (2026-10-07): used to only check
+            // chairCodes.length — button looked tappable before any chair
+            // had an amount/reason entered, or with a missing problem-reason.
+            disabled={pending || !!validateBeforeSubmit()}
           >
             {pending ? (
               <>

@@ -637,7 +637,11 @@ export function BatchDepositForm({
         type="submit"
         size="xl"
         className="h-14 w-full text-base font-semibold"
-        disabled={pending || uploading || !slip || selectedIds.size === 0}
+        // ultramobileux audit M-001 (2026-10-07): used to only check !slip /
+        // selectedIds — button looked tappable even when the anti-fraud
+        // notes gate (diff ≥ ฿100 requires a note) would silently toast-reject
+        // it. Call the real validator directly so this can't drift again.
+        disabled={pending || uploading || !!validateBeforeSubmit()}
       >
         {pending ? (
           <>

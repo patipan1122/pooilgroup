@@ -335,7 +335,9 @@ export function CollectNewForm({ avg7d }: Props) {
         type="submit"
         size="xl"
         className="h-14 w-full text-base"
-        disabled={pending || uploading || !photoUrl}
+        // ultramobileux audit M-001 (2026-10-07): used to only check !photoUrl
+        // — button looked tappable with counted/deposited amounts at 0.
+        disabled={pending || uploading || !!validateBeforeSubmit()}
       >
         {pending ? (
           <>
