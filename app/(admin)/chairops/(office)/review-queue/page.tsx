@@ -12,30 +12,53 @@ import { toAuthedPhotoUrl } from "@/lib/chairops/utils/photo-url";
 
 export const dynamic = "force-dynamic";
 
-export default async function ReviewQueuePage() {
+// ultramobileux audit P0-9 (2026-10-07): this page used to fetch `take: 100`
+// with every photo rendered on one page (measured 75,428px tall on a branch
+// with a real backlog) — paginate like chairops/audit/page.tsx instead.
+const PAGE_SIZE = 12;
+
+export default async function ReviewQueuePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
   const session = await requireRole("OFFICE");
   const orgId = session.user.orgId;
+  const sp = await searchParams;
+  const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
+  const where = { orgId, requiresReview: true };
 
-  const flagged = await prisma.chairopsCashDeposit.findMany({
-    where: { orgId, requiresReview: true },
-    orderBy: { depositedAt: "asc" },
-    take: 100,
-    select: {
-      id: true,
-      branchId: true,
-      depositedAmount: true,
-      bankFee: true,
-      depositedAt: true,
-      notes: true,
-      ocrFlagReason: true,
-      slipPhotoUrl: true,
-      branch: { select: { name: true } },
-      maid: { select: { displayName: true } },
-      collections: {
-        select: { countedAmount: true },
+  const [flagged, total, totalSum] = await Promise.all([
+    prisma.chairopsCashDeposit.findMany({
+      where,
+      orderBy: { depositedAt: "asc" },
+      skip: (page - 1) * PAGE_SIZE,
+      take: PAGE_SIZE,
+      select: {
+        id: true,
+        branchId: true,
+        depositedAmount: true,
+        bankFee: true,
+        depositedAt: true,
+        notes: true,
+        ocrFlagReason: true,
+        slipPhotoUrl: true,
+        branch: { select: { name: true } },
+        maid: { select: { displayName: true } },
+        collections: {
+          select: { countedAmount: true },
+        },
       },
-    },
-  });
+    }),
+    prisma.chairopsCashDeposit.count({ where }),
+    prisma.chairopsCashDeposit.aggregate({
+      where,
+      _sum: { depositedAmount: true, bankFee: true },
+    }),
+  ]);
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const grandTotal =
+    (totalSum._sum.depositedAmount ?? 0) + (totalSum._sum.bankFee ?? 0);
 
   return (
     <div className="chairops-scope mx-auto max-w-4xl space-y-6 px-4 py-6">
@@ -56,7 +79,7 @@ export default async function ReviewQueuePage() {
         </p>
       </header>
 
-      {flagged.length === 0 ? (
+      {total === 0 ? (
         <div
           className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-5"
         >
@@ -70,13 +93,19 @@ export default async function ReviewQueuePage() {
         <div className="space-y-3">
           <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800">
             <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
-            {flagged.length} รายการรอตรวจสอบ
+            {total} รายการรอตรวจสอบ
+            {pageCount > 1 && (
+              <span className="text-xs font-normal text-amber-600">
+                (หน้า {page}/{pageCount})
+              </span>
+            )}
             {/* These amounts already count in the branch shortage number
                 (2026-09-22 CEO decision reverted the earlier hold-out) — this
                 pending total just tells office how much still needs a look,
-                not a count of money excluded from anything. */}
+                not a count of money excluded from anything. Sums ALL flagged
+                rows (not just this page) via a separate aggregate query. */}
             <span className="ml-auto font-mono text-amber-700">
-              รวม {flagged.reduce((s, d) => s + d.depositedAmount + d.bankFee, 0).toLocaleString()} ฿
+              รวม {grandTotal.toLocaleString()} ฿
             </span>
           </div>
 
@@ -183,6 +212,30 @@ export default async function ReviewQueuePage() {
               </div>
             );
           })}
+
+          {pageCount > 1 && (
+            <div className="flex items-center justify-center gap-2 pt-2 text-sm">
+              {page > 1 && (
+                <Link
+                  href={`/chairops/review-queue?page=${page - 1}`}
+                  className="rounded-md border border-zinc-200 px-3 py-1.5 hover:bg-zinc-50"
+                >
+                  ← ก่อนหน้า
+                </Link>
+              )}
+              <span className="text-zinc-500">
+                หน้า {page} / {pageCount}
+              </span>
+              {page < pageCount && (
+                <Link
+                  href={`/chairops/review-queue?page=${page + 1}`}
+                  className="rounded-md border border-zinc-200 px-3 py-1.5 hover:bg-zinc-50"
+                >
+                  ถัดไป →
+                </Link>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
