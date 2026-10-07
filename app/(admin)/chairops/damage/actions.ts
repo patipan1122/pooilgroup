@@ -20,6 +20,10 @@ const inputSchema = z.object({
   description: z.string().min(5, { message: "อธิบายอาการอย่างน้อย 5 ตัวอักษร" }).max(1000),
   priority: z.enum(["URGENT", "NORMAL"]).default("NORMAL"),
   photoUrls: z.array(z.string().url()).max(5),
+  // ultramobileux audit P0-6: client generates ONE key per form mount (draftId,
+  // already used for the R2 upload path) and resends it on retry/double-tap —
+  // see the catch block below for how a collision resolves to the first row.
+  clientKey: z.string().min(8).max(64).optional().nullable(),
 });
 
 export type DamageInput = z.infer<typeof inputSchema>;
@@ -82,6 +86,7 @@ export async function createDamageTicket(
               priority: parsed.data.priority,
               photoUrls: parsed.data.photoUrls,
               status: "OPEN",
+              clientKey: parsed.data.clientKey || null,
             },
             { id: true, ticketCode: true },
             tx,
@@ -116,6 +121,17 @@ export async function createDamageTicket(
         const isUniq =
           typeof e === "object" && e !== null && "code" in e &&
           (e as { code: unknown }).code === "P2002";
+        // Double-tap / retry hit the (orgId, clientKey) unique index, not a
+        // ticketCode collision — return the FIRST ticket instead of retrying
+        // (retrying here would just hit the same collision again).
+        if (isUniq && parsed.data.clientKey && e instanceof Error && e.message.includes("client_key")) {
+          const existing = await prisma.chairopsDamageTicket.findFirst({
+            where: { orgId: session.user.orgId, clientKey: parsed.data.clientKey },
+            select: { id: true, ticketCode: true },
+          });
+          if (existing) return { ok: true, data: existing };
+          throw e;
+        }
         if (isUniq && attempt < 3) {
           lastErr = e;
           continue;

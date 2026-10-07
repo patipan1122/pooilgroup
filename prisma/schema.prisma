@@ -3937,6 +3937,13 @@ model ChairopsDamageTicket {
   openedAt     DateTime             @default(now())
   closedAt     DateTime?
   notes        String?
+  // ultramobileux audit P0-6 (2026-10-07): client-generated idempotency key,
+  // reused across double-tap/retry of the same form mount so a dup submit
+  // hits this unique index instead of creating a second ticket. Nullable so
+  // legacy rows (created before this column existed) are unaffected — the
+  // partial unique index (WHERE client_key IS NOT NULL) is in migration SQL,
+  // not modeled as @@unique here (same pattern as CfStockCount.clientKey).
+  clientKey    String?              @map("client_key")
 
   branch     ChairopsBranch @relation(fields: [branchId], references: [id])
   chair      ChairopsChair? @relation(fields: [chairId], references: [id])
@@ -4002,6 +4009,9 @@ model ChairopsCleanlinessReport {
   photoUrls   String[]
   grade       ChairopsCleanlinessGrade @default(PASS)
   notes       String?
+  // ultramobileux audit P0-6 (2026-10-07) — see ChairopsDamageTicket.clientKey
+  // for the full rationale; same pattern here.
+  clientKey   String?                  @map("client_key")
 
   branch  ChairopsBranch @relation(fields: [branchId], references: [id])
   maid    ChairopsUser   @relation("chairops_cleanliness_by_maid", fields: [byMaidId], references: [id])

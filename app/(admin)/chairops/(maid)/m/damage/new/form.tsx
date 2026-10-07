@@ -138,6 +138,7 @@ export function MaidDamageForm({ chairs, openTicketChairIds }: Props) {
         description: description.trim(),
         priority,
         photoUrls: photos.map((p) => p.url),
+        clientKey: draftId,
       });
       if (!res.ok) {
         toast.error(res.error);

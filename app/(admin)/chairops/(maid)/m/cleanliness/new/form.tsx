@@ -135,6 +135,7 @@ export function MaidCleanlinessForm() {
         checklist: foldToServerChecklist(checks),
         photoUrls: photos.map((p) => p.url),
         notes: offCount > 0 ? `แม่บ้านพบ ${offCount} ข้อต้องดู` : null,
+        clientKey: draftId,
       });
       if (!res.ok) {
         toast.error(res.error);

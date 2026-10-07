@@ -109,6 +109,7 @@ export function CleanlinessNewForm() {
         checklist: checks,
         photoUrls: photos.map((p) => p.url),
         notes: notes.trim() || null,
+        clientKey: draftId,
       });
       if (!res.ok) {
         toast.error(res.error);

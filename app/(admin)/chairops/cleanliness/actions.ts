@@ -37,6 +37,9 @@ const inputSchema = z.object({
   checklist: checklistSchema,
   photoUrls: z.array(z.string().url()).min(1, { message: "ต้องแนบรูปอย่างน้อย 1 รูป" }).max(5),
   notes: z.string().max(500).optional().nullable(),
+  // ultramobileux audit P0-6: see damage/actions.ts's clientKey comment —
+  // same client-generated-key-per-form-mount pattern.
+  clientKey: z.string().min(8).max(64).optional().nullable(),
 });
 
 export type CleanlinessInput = z.infer<typeof inputSchema>;
@@ -77,18 +80,21 @@ export async function createCleanlinessReport(
   const grade = gradeFromChecklist(parsed.data.checklist);
 
   // Wave-0 fix: create + audit atomic
-  const created = await prisma.$transaction(async (tx) => {
-    const row = await tx.chairopsCleanlinessReport.create({
-      data: {
-        orgId: session.user.orgId,
-        branchId,
-        byMaidId: session.user.id,
-        checklist: parsed.data.checklist,
-        photoUrls: parsed.data.photoUrls,
-        grade,
-        notes: parsed.data.notes ?? null,
-      },
-    });
+  let created: { id: string };
+  try {
+    created = await prisma.$transaction(async (tx) => {
+      const row = await tx.chairopsCleanlinessReport.create({
+        data: {
+          orgId: session.user.orgId,
+          branchId,
+          byMaidId: session.user.id,
+          checklist: parsed.data.checklist,
+          photoUrls: parsed.data.photoUrls,
+          grade,
+          notes: parsed.data.notes ?? null,
+          clientKey: parsed.data.clientKey || null,
+        },
+      });
 
     await writeAudit(
       {
@@ -107,8 +113,21 @@ export async function createCleanlinessReport(
       tx,
     );
 
-    return row;
-  });
+      return row;
+    });
+  } catch (e) {
+    // Double-tap / retry hit the (orgId, clientKey) unique index — return the
+    // FIRST report instead of creating a duplicate (and skip re-firing the
+    // FAIL alert below, since that already ran on the original submit).
+    if (parsed.data.clientKey && e instanceof Error && e.message.includes("client_key")) {
+      const existing = await prisma.chairopsCleanlinessReport.findFirst({
+        where: { orgId: session.user.orgId, clientKey: parsed.data.clientKey },
+        select: { id: true, grade: true },
+      });
+      if (existing) return { ok: true, data: { id: existing.id, grade: existing.grade } };
+    }
+    return { ok: false, error: "บันทึกไม่สำเร็จ · กรุณาลองอีกครั้ง" };
+  }
 
   // BF2 D3 · event-driven CLEANLINESS_FAIL emit (post-tx, fire-and-forget so
   // a LINE outage doesn't block the maid's submit). Also auto-resolves any
