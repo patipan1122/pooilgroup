@@ -2729,6 +2729,7 @@ model CfDeliveryLine {
   // ราคาที่แอดมินส่วนกลางระบุ ณ ตอนส่งของ (บังคับกรอก > 0) — ราคาขายสินค้า + ราคาทุน
   salePriceBaht Int?     @map("sale_price_baht") // ราคาขาย (บาท/ครั้ง) — ตั้งเป็นราคาขายเริ่มต้นตอนสาขารับเข้า
   unitCostCents Int      @default(0) @map("unit_cost_cents") // ราคาทุน (สตางค์) — ใช้เป็นต้นทุนตอนสาขารับเข้าคลัง
+  note          String? // โน้ตเฉพาะ SKU นี้ในใบ (CEO 2026-10-10) — ต่างจาก note ระดับทั้งใบที่ CfDelivery
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -2783,6 +2784,7 @@ model CfGoodsReceiptLine {
   productName   String   @map("product_name") // snapshot
   quantity      Int
   unitCostCents Int      @map("unit_cost_cents")
+  note          String? // โน้ตเฉพาะ SKU นี้ในใบ (CEO 2026-10-10) — ต่างจาก note ระดับทั้งใบที่ CfGoodsReceipt
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   receipt CfGoodsReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
@@ -9359,6 +9361,7 @@ model DcTransferLine {
   costLayerId    String? @map("cost_layer_id") @db.Uuid
   unitCostSatang Int?    @map("unit_cost_satang")
   poId           String? @map("po_id") @db.Uuid // Pinpoint #2 — บรรทัดนี้มาจากใบ PO ไหน (โอนจากหลายใบ) · ใช้ตอน cancel คืน po_id
+  note           String? // โน้ตเฉพาะ SKU นี้ในใบโอน (CEO 2026-10-10) — ต่างจาก note ระดับทั้งใบที่ DcTransfer
 
   transfer DcTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
   product  DcProduct  @relation(fields: [productId], references: [id], onDelete: Restrict)

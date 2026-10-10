@@ -214,6 +214,8 @@ export type DispatchLine = {
   lineKey: string;
   /** Pinpoint #2 — บรรทัดนี้โอนจากใบ PO ไหน (โอนจากหลายใบพร้อมกัน) · ถ้าไม่มี → ใช้ header poId */
   poId?: string;
+  /** โน้ตเฉพาะ SKU นี้ในใบโอน (CEO 2026-10-10) — ต่างจาก note ระดับทั้งใบ */
+  note?: string;
 };
 
 export type DispatchTransferInput = {
@@ -306,7 +308,13 @@ export async function dispatchTransfer(input: DispatchTransferInput): Promise<Di
       seen.add(l.lineKey);
       return true;
     })
-    .map((l) => ({ productId: l.productId, qty: Math.trunc(l.qty), lineKey: l.lineKey, poId: (l.poId ?? "").trim() || null }));
+    .map((l) => ({
+      productId: l.productId,
+      qty: Math.trunc(l.qty),
+      lineKey: l.lineKey,
+      poId: (l.poId ?? "").trim() || null,
+      note: (l.note ?? "").trim().slice(0, 300) || null,
+    }));
 
   if (lines.length === 0) return { ok: false, error: "ยังไม่มีรายการส่งออก" };
 
@@ -394,6 +402,7 @@ export async function dispatchTransfer(input: DispatchTransferInput): Promise<Di
             unitCostSatang: l.unitCostSatang,
             costLayerId: l.costLayerId,
             poId: l.poId ?? headerPoId, // Pinpoint #2 — บรรทัดนี้มาจากใบ PO ไหน (ใช้ตอน cancel คืน po_id)
+            note: l.note,
             // sameSite รับเข้าทันที → qtyReceived = qty (ครบ)
             ...(sameSite ? { qtyReceived: l.qty } : {}),
           })),
@@ -560,7 +569,7 @@ export async function confirmTransfer(input: ConfirmTransferInput): Promise<Conf
       toLabel: true,
       status: true,
       lines: {
-        select: { id: true, productId: true, qty: true, unitCostSatang: true, costLayerId: true },
+        select: { id: true, productId: true, qty: true, unitCostSatang: true, costLayerId: true, note: true },
       },
     },
   });
@@ -718,7 +727,7 @@ export async function confirmTransfer(input: ConfirmTransferInput): Promise<Conf
         }
 
         // (2) qtyReceived รายบรรทัด + (3) ลด in-transit ต้นทาง (atomic decrement บน tx)
-        const cfLines: { cfProductId: string; qty: number; unitCostSatang: number }[] = [];
+        const cfLines: { cfProductId: string; qty: number; unitCostSatang: number; note?: string | null }[] = [];
         for (const line of transfer.lines) {
           const received = recvByLine.has(line.id) ? (recvByLine.get(line.id) as number) : line.qty;
           await tx.dcTransferLine.update({ where: { id: line.id }, data: { qtyReceived: received } });
@@ -728,7 +737,9 @@ export async function confirmTransfer(input: ConfirmTransferInput): Promise<Conf
 
           const m = cfMap.get(line.id);
           if (m && received > 0) {
-            cfLines.push({ cfProductId: m.cfProductId, qty: received, unitCostSatang: m.unitCostSatang });
+            // carry-over: ถ้าบรรทัดต้นทาง (DcTransferLine) มีโน้ตอยู่แล้ว → ติดไปกับใบรับที่ระบบสร้างอัตโนมัติด้วย
+            // (CEO 2026-10-10 — ไม่มี UI ให้กรอกใหม่ตรงนี้ เพราะใบรับฝั่งนี้ auto-generate ไม่ใช่กรอกมือ)
+            cfLines.push({ cfProductId: m.cfProductId, qty: received, unitCostSatang: m.unitCostSatang, note: line.note ?? null });
           }
         }
 

@@ -482,7 +482,7 @@ async function loadShipments(orgId: string, allowed: string[] | "ALL"): Promise<
       unitsCount: true,
       createdAt: true,
       branch: { select: { name: true } },
-      lines: { select: { id: true, productName: true, qty: true, receivedQty: true } },
+      lines: { select: { id: true, productName: true, qty: true, receivedQty: true, note: true } },
     },
   });
   return rows.map((d) => ({
@@ -496,6 +496,7 @@ async function loadShipments(orgId: string, allowed: string[] | "ALL"): Promise<
       name: l.productName,
       sent: l.qty,
       received: d.status === "DELIVERED" ? l.receivedQty : null,
+      note: l.note,
     })),
     source: "cf_delivery" as const,
   }));
@@ -514,7 +515,7 @@ async function loadDcTransfers(branchId: string, branchName: string): Promise<Sh
     status: "SCHEDULED", // IN_TRANSIT ของ DC = "รอสาขารับ" (map ให้ shipTone โชว์ตรง)
     unitsCount: d.unitsCount,
     createdAt: d.createdAt.toISOString(),
-    lines: d.lines.map((l) => ({ lineId: l.lineId, name: l.productName, sent: l.qty, received: null })),
+    lines: d.lines.map((l) => ({ lineId: l.lineId, name: l.productName, sent: l.qty, received: null, note: l.note })),
     source: "dc_transfer" as const,
   }));
 }

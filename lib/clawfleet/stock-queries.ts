@@ -449,6 +449,7 @@ export type CfInboundDeliveryRow = {
     receivedQty: number;
     // รูปสินค้า (CfProduct.imageUrl · URL เต็ม) — โชว์ thumbnail บนการ์ดรับสินค้า · null = ไม่มีรูป
     imageUrl: string | null;
+    note: string | null; // โน้ตเฉพาะ SKU นี้ (CEO 2026-10-10)
   }>;
 };
 
@@ -478,7 +479,7 @@ export async function getInboundDeliveries(branchId: string): Promise<CfInboundD
       note: true,
       createdBy: { select: { name: true } },
       lines: {
-        select: { id: true, productId: true, productName: true, qty: true, receivedQty: true },
+        select: { id: true, productId: true, productName: true, qty: true, receivedQty: true, note: true },
         orderBy: { productName: "asc" },
       },
     },
@@ -515,6 +516,7 @@ export async function getInboundDeliveries(branchId: string): Promise<CfInboundD
       qty: l.qty,
       receivedQty: l.receivedQty,
       imageUrl: cfImgMap.get(l.productId) ?? null,
+      note: l.note,
     })),
   }));
 }
@@ -559,6 +561,7 @@ export async function getInboundDcTransfers(branchId: string): Promise<CfInbound
           id: true,
           qty: true,
           qtyReceived: true,
+          note: true,
           // F1 · imageR2Path ของสินค้า DC (ปลายทาง) — ยังไม่มี CfProduct จนกว่าจะกดรับ (map ตอน confirm)
           //   → ใช้รูปของ DcProduct ที่โชว์อยู่แล้ว (แปลง R2 key → URL เต็ม). null = ไม่มีรูป.
           product: { select: { id: true, name: true, imageR2Path: true } },
@@ -588,6 +591,7 @@ export async function getInboundDcTransfers(branchId: string): Promise<CfInbound
       qty: l.qty,
       receivedQty: l.qtyReceived ?? 0,
       imageUrl: toCfImageUrl(l.product.imageR2Path),
+      note: l.note,
     }));
     // เรียงตามชื่อสินค้า (mirror cfDelivery lines orderBy productName)
     lines.sort((a, b) => a.productName.localeCompare(b.productName, "th"));
@@ -941,6 +945,7 @@ export type CfReceiptDocLine = {
   // productId ชี้ CfProduct จริงไหม (received/cf_delivery = ใช่ · dc_transfer ที่ยังไม่รับ = DcProduct
   //   → ยังไม่มี movement ในคลัง → คลิกดูประวัติจะขึ้น "ยังไม่รับเข้าคลัง")
   isCfProduct: boolean;
+  note: string | null; // โน้ตเฉพาะ SKU นี้ (CEO 2026-10-10)
 };
 export type CfReceiptDoc = {
   id: string;
@@ -984,7 +989,7 @@ export async function getAllReceiptDocs(
         id: true, branchId: true, receiptCode: true, supplierName: true, note: true,
         totalCostCents: true, photoUrls: true, createdAt: true, refTable: true, refId: true,
         createdBy: { select: { name: true } },
-        lines: { select: { productId: true, productName: true, quantity: true } },
+        lines: { select: { productId: true, productName: true, quantity: true, note: true } },
       },
     }),
     // pending — DC ส่งตรงเข้าสาขาตู้คีบ ยังไม่รับ (destType MODULE · IN_TRANSIT)
@@ -1000,7 +1005,7 @@ export async function getAllReceiptDocs(
       select: {
         id: true, toBranchId: true, transferCode: true, fromWarehouseId: true,
         dispatchedByUserId: true, note: true, dispatchedAt: true,
-        lines: { select: { qty: true, product: { select: { id: true, name: true } } } },
+        lines: { select: { qty: true, note: true, product: { select: { id: true, name: true } } } },
       },
     }),
     // pending — ใบกระจายภายใน ยังไม่รับ (IN_TRANSIT/SCHEDULED)
@@ -1011,7 +1016,7 @@ export async function getAllReceiptDocs(
       select: {
         id: true, branchId: true, fromLocation: true, note: true, createdAt: true,
         createdBy: { select: { name: true } },
-        lines: { select: { productId: true, productName: true, qty: true } },
+        lines: { select: { productId: true, productName: true, qty: true, note: true } },
       },
     }),
   ]);
@@ -1055,7 +1060,7 @@ export async function getAllReceiptDocs(
           ? (r.refId ? rcCfFromMap.get(r.refId) ?? null : null)
           : r.supplierName ?? null;
     const lines: CfReceiptDocLine[] = r.lines.map((l) => ({
-      productId: l.productId, productName: l.productName, qty: l.quantity, isCfProduct: true,
+      productId: l.productId, productName: l.productName, qty: l.quantity, isCfProduct: true, note: l.note,
     }));
     lines.sort((a, b) => a.productName.localeCompare(b.productName, "th"));
     return {
@@ -1079,7 +1084,7 @@ export async function getAllReceiptDocs(
 
   const dcDocs: CfReceiptDoc[] = dcPending.map((t) => {
     const lines: CfReceiptDocLine[] = t.lines.map((l) => ({
-      productId: l.product.id, productName: l.product.name, qty: l.qty, isCfProduct: false,
+      productId: l.product.id, productName: l.product.name, qty: l.qty, isCfProduct: false, note: l.note,
     }));
     lines.sort((a, b) => a.productName.localeCompare(b.productName, "th"));
     return {
@@ -1103,7 +1108,7 @@ export async function getAllReceiptDocs(
 
   const cfDocs: CfReceiptDoc[] = cfPending.map((d) => {
     const lines: CfReceiptDocLine[] = d.lines.map((l) => ({
-      productId: l.productId, productName: l.productName, qty: l.qty, isCfProduct: true,
+      productId: l.productId, productName: l.productName, qty: l.qty, isCfProduct: true, note: l.note,
     }));
     lines.sort((a, b) => a.productName.localeCompare(b.productName, "th"));
     return {

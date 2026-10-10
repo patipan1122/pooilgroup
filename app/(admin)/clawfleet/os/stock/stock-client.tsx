@@ -13,7 +13,7 @@ import { useRouter } from "next/navigation";
 import {
   AlertTriangle, Info, Warehouse, Store, Monitor, ChevronRight, FileText,
   Boxes, ArrowRight, Plus, Trash2, Inbox, Check, X, Clock, ScanLine, Download,
-  Undo2, Loader2, ImageOff,
+  Undo2, Loader2, ImageOff, StickyNote,
 } from "lucide-react";
 import { Card, IconBox, Modal, EmptyState } from "@/components/clawfleet/os/kit";
 import { bahtN, num, thDate } from "@/components/clawfleet/os/format";
@@ -72,7 +72,7 @@ export type WarehouseRowSeed = {
 };
 export type ShipmentSeed = {
   id: string; to: string; status: string; unitsCount: number; createdAt: string;
-  lines: { lineId: string; name: string; sent: number; received: number | null }[];
+  lines: { lineId: string; name: string; sent: number; received: number | null; note?: string | null }[];
   // แหล่งใบ: cfDelivery (กระจายภายใน · ตรวจรับที่นี่ได้) | dcTransfer (DC ส่งตรง · read-only บนหน้าแอดมิน)
   source?: "cf_delivery" | "dc_transfer";
 };
@@ -986,16 +986,23 @@ function ReceiptDetailModal({ doc, onClose, onProduct }: {
               type="button"
               disabled={!l.isCfProduct}
               onClick={() => l.isCfProduct && onProduct({ id: l.productId, name: l.productName })}
-              style={{ display: "flex", alignItems: "center", gap: 10, textAlign: "left", background: "#fff", border: "1px solid #ECEEF1", borderRadius: 8, padding: "8px 12px", cursor: l.isCfProduct ? "pointer" : "default", opacity: l.isCfProduct ? 1 : 0.6 }}
+              style={{ display: "flex", flexDirection: "column", alignItems: "stretch", gap: 2, textAlign: "left", background: "#fff", border: "1px solid #ECEEF1", borderRadius: 8, padding: "8px 12px", cursor: l.isCfProduct ? "pointer" : "default", opacity: l.isCfProduct ? 1 : 0.6 }}
             >
-              <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.productName}</span>
-              <span className="num" style={{ fontSize: 12.5, fontWeight: 700, flex: "0 0 auto" }}>×{num(l.qty)}</span>
-              {l.isCfProduct ? (
-                <span style={{ flex: "0 0 auto", fontSize: 10.5, color: "#4F46E5", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 3 }}>
-                  <Clock size={12} /> ประวัติ
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.productName}</span>
+                <span className="num" style={{ fontSize: 12.5, fontWeight: 700, flex: "0 0 auto" }}>×{num(l.qty)}</span>
+                {l.isCfProduct ? (
+                  <span style={{ flex: "0 0 auto", fontSize: 10.5, color: "#4F46E5", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 3 }}>
+                    <Clock size={12} /> ประวัติ
+                  </span>
+                ) : (
+                  <span style={{ flex: "0 0 auto", fontSize: 10, color: "#9AA1AB" }}>ยังไม่รับเข้าคลัง</span>
+                )}
+              </div>
+              {l.note && (
+                <span style={{ fontSize: 11, color: "#9AA1AB", fontStyle: "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {l.note}
                 </span>
-              ) : (
-                <span style={{ flex: "0 0 auto", fontSize: 10, color: "#9AA1AB" }}>ยังไม่รับเข้าคลัง</span>
               )}
             </button>
           ))}
@@ -1624,7 +1631,7 @@ function WarehouseItemModal({ item, onClose, onZoom }: { item: WarehouseItem | n
 }
 
 /* ───────────────────────── shared: doc-form line editor ───────────────────────── */
-type FormLine = { productId: string; qty: string };
+type FormLine = { productId: string; qty: string; note?: string }; // note = โน้ตเฉพาะ SKU นี้ (CEO 2026-10-10)
 
 function LineEditor({
   products,
@@ -1757,15 +1764,15 @@ function CountLineEditor({ products, lines, setLines, onHandMap }: {
   );
 }
 
-/** parse + validate form lines → {productId, qty} (qty>0) · คืน error ถ้าไม่ผ่าน */
-function parseLines(lines: FormLine[]): { ok: true; data: { productId: string; qty: number }[] } | { ok: false; error: string } {
-  const out: { productId: string; qty: number }[] = [];
+/** parse + validate form lines → {productId, qty, note?} (qty>0) · คืน error ถ้าไม่ผ่าน */
+function parseLines(lines: FormLine[]): { ok: true; data: { productId: string; qty: number; note?: string }[] } | { ok: false; error: string } {
+  const out: { productId: string; qty: number; note?: string }[] = [];
   for (const l of lines) {
     if (!l.productId) continue;
     const n = Number(l.qty);
     if (l.qty.trim() === "") continue;
     if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) return { ok: false, error: "จำนวนต้องเป็นเลขจำนวนเต็ม ≥ 0" };
-    if (n > 0) out.push({ productId: l.productId, qty: n });
+    if (n > 0) out.push({ productId: l.productId, qty: n, note: l.note?.trim() || undefined });
   }
   if (out.length === 0) return { ok: false, error: "เลือกสินค้าและใส่จำนวนมากกว่า 0 อย่างน้อย 1 รายการ" };
   return { ok: true, data: out };
@@ -1849,7 +1856,7 @@ function ReceiptsTab({ docs, realBranches, products, defaultBranchId }: {
     const payloadLines = parsed.data.map((d, i) => {
       const typed = Number(costs[i]);
       const cents = costs[i] && Number.isFinite(typed) && typed >= 0 ? Math.round(typed * 100) : (costMap.get(d.productId) ?? 0);
-      return { productId: d.productId, quantity: d.qty, unitCostCents: cents };
+      return { productId: d.productId, quantity: d.qty, unitCostCents: cents, note: d.note };
     });
     startTransition(async () => {
       const res = await receiveStock({ branchId, supplierName: supplier || undefined, note: note || undefined, lines: payloadLines });
@@ -1942,31 +1949,48 @@ function ReceiptLineEditor({ products, lines, setLines, costs, setCosts }: {
   const setCostAt = (i: number, v: string) => setCosts((prev) => prev.map((c, j) => (j === i ? v : c)));
   const removeAt = (i: number) => { setLines((prev) => prev.filter((_, j) => j !== i)); setCosts((prev) => prev.filter((_, j) => j !== i)); };
   const add = () => { setLines((prev) => [...prev, { productId: products[0]?.id ?? "", qty: "" }]); setCosts((prev) => [...prev, ""]); };
+  // โน้ตรายบรรทัด (CEO 2026-10-10) — ซ่อนโดยปริยาย กดไอคอนถึงกาง ไม่ให้แถวรกเกินจำเป็น (UI density)
+  const [openNote, setOpenNote] = useState<Record<number, boolean>>({});
+  const toggleNote = (i: number) => setOpenNote((prev) => ({ ...prev, [i]: !prev[i] }));
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       {lines.map((l, i) => {
         const defCost = products.find((p) => p.id === l.productId)?.unitCostCents ?? 0;
+        const noteShown = !!openNote[i] || !!l.note;
         return (
-          <div key={i} className="grid grid-cols-[1fr_70px_84px_34px] gap-2 items-end">
-            <div>
-              {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>สินค้า</label>}
-              <select value={l.productId} onChange={(e) => setAt(i, { productId: e.target.value })} style={FIELD_INPUT}>
-                <option value="">— เลือก —</option>
-                {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
+          <div key={i} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div className="grid grid-cols-[1fr_70px_84px_30px_30px] gap-2 items-end">
+              <div>
+                {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>สินค้า</label>}
+                <select value={l.productId} onChange={(e) => setAt(i, { productId: e.target.value })} style={FIELD_INPUT}>
+                  <option value="">— เลือก —</option>
+                  {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+              <div>
+                {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>จำนวน</label>}
+                <input type="number" min={0} step={1} inputMode="numeric" value={l.qty} onChange={(e) => setAt(i, { qty: e.target.value })} placeholder="0" style={FIELD_INPUT} />
+              </div>
+              <div>
+                {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>ทุน/ตัว (บาท)</label>}
+                <input type="number" min={0} step="0.01" inputMode="decimal" value={costs[i] ?? ""} onChange={(e) => setCostAt(i, e.target.value)} placeholder={String(Math.round(defCost / 100))} style={FIELD_INPUT} />
+              </div>
+              <button type="button" onClick={() => toggleNote(i)} title="เพิ่มโน้ตรายการนี้" style={{ height: 38, border: "1px solid #E3E6EA", borderRadius: 10, background: noteShown ? "#EEF0FE" : "#fff", color: noteShown ? "#4F46E5" : "#8A93A3", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <StickyNote size={14} />
+              </button>
+              <button type="button" onClick={() => removeAt(i)} disabled={lines.length <= 1} title="ลบ" style={{ height: 38, border: "1px solid #E3E6EA", borderRadius: 10, background: "#fff", color: lines.length <= 1 ? "#D4D7DC" : "#B42318", cursor: lines.length <= 1 ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Trash2 size={15} />
+              </button>
             </div>
-            <div>
-              {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>จำนวน</label>}
-              <input type="number" min={0} step={1} inputMode="numeric" value={l.qty} onChange={(e) => setAt(i, { qty: e.target.value })} placeholder="0" style={FIELD_INPUT} />
-            </div>
-            <div>
-              {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>ทุน/ตัว (บาท)</label>}
-              <input type="number" min={0} step="0.01" inputMode="decimal" value={costs[i] ?? ""} onChange={(e) => setCostAt(i, e.target.value)} placeholder={String(Math.round(defCost / 100))} style={FIELD_INPUT} />
-            </div>
-            <button type="button" onClick={() => removeAt(i)} disabled={lines.length <= 1} title="ลบ" style={{ height: 38, border: "1px solid #E3E6EA", borderRadius: 10, background: "#fff", color: lines.length <= 1 ? "#D4D7DC" : "#B42318", cursor: lines.length <= 1 ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Trash2 size={15} />
-            </button>
+            {noteShown && (
+              <input
+                value={l.note ?? ""}
+                onChange={(e) => setAt(i, { note: e.target.value })}
+                placeholder="โน้ตเฉพาะรายการนี้ (ไม่บังคับ) เช่น กล่องนี้เปียก"
+                style={{ ...FIELD_INPUT, fontSize: 12 }}
+              />
+            )}
           </div>
         );
       })}
@@ -2407,7 +2431,7 @@ type ShipVM = {
   dbStatus: string; // SCHEDULED | IN_TRANSIT | DELIVERED | CANCELLED
   unitsCount: number;
   createdAt: string;
-  lines: { lineId: string; name: string; sent: number; received: number | null }[];
+  lines: { lineId: string; name: string; sent: number; received: number | null; note?: string | null }[];
   isReceived: boolean;
   hasDiff: boolean;
   source: "cf_delivery" | "dc_transfer";
@@ -2595,16 +2619,21 @@ function AllReceiptsTab({ docs }: { docs: CfReceiptDoc[] }) {
                             type="button"
                             disabled={!l.isCfProduct}
                             onClick={() => l.isCfProduct && setHistProduct({ id: l.productId, name: l.productName })}
-                            style={{ display: "flex", alignItems: "center", gap: 10, textAlign: "left", background: "#fff", border: "1px solid #ECEEF1", borderRadius: 8, padding: "8px 12px", cursor: l.isCfProduct ? "pointer" : "default", opacity: l.isCfProduct ? 1 : 0.6 }}
+                            style={{ display: "flex", flexDirection: "column", alignItems: "stretch", gap: 2, textAlign: "left", background: "#fff", border: "1px solid #ECEEF1", borderRadius: 8, padding: "8px 12px", cursor: l.isCfProduct ? "pointer" : "default", opacity: l.isCfProduct ? 1 : 0.6 }}
                           >
-                            <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 600, ...ELLIPSIS }}>{l.productName}</span>
-                            <span className="num" style={{ fontSize: 12.5, fontWeight: 700, flex: "0 0 auto" }}>×{num(l.qty)}</span>
-                            {l.isCfProduct ? (
-                              <span style={{ flex: "0 0 auto", fontSize: 10.5, color: "#4F46E5", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 3 }}>
-                                <Clock size={12} /> ประวัติ
-                              </span>
-                            ) : (
-                              <span style={{ flex: "0 0 auto", fontSize: 10, color: "#9AA1AB" }}>ยังไม่รับเข้าคลัง</span>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                              <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 600, ...ELLIPSIS }}>{l.productName}</span>
+                              <span className="num" style={{ fontSize: 12.5, fontWeight: 700, flex: "0 0 auto" }}>×{num(l.qty)}</span>
+                              {l.isCfProduct ? (
+                                <span style={{ flex: "0 0 auto", fontSize: 10.5, color: "#4F46E5", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 3 }}>
+                                  <Clock size={12} /> ประวัติ
+                                </span>
+                              ) : (
+                                <span style={{ flex: "0 0 auto", fontSize: 10, color: "#9AA1AB" }}>ยังไม่รับเข้าคลัง</span>
+                              )}
+                            </div>
+                            {l.note && (
+                              <span style={{ fontSize: 11, color: "#9AA1AB", fontStyle: "italic", ...ELLIPSIS }}>{l.note}</span>
                             )}
                           </button>
                         ))}
@@ -2901,7 +2930,7 @@ function CreateShipmentModal({ open, onClose, realBranches, products, defaultBra
     const parsed = parseLines(lines);
     if (!parsed.ok) { setError(parsed.error); return; }
     // แอดมินส่วนกลางส่งของ = ต้องระบุราคาขาย + ราคาทุนทุกรายการ (บังคับ > 0) → เช็คก่อนส่ง
-    const payloadLines: { productId: string; qty: number; salePriceBaht: number; unitCostCents: number }[] = [];
+    const payloadLines: { productId: string; qty: number; salePriceBaht: number; unitCostCents: number; note?: string }[] = [];
     for (let i = 0; i < parsed.data.length; i++) {
       const d = parsed.data[i];
       const idx = lines.findIndex((l) => l.productId === d.productId);
@@ -2917,6 +2946,7 @@ function CreateShipmentModal({ open, onClose, realBranches, products, defaultBra
         qty: d.qty,
         salePriceBaht: Math.round(sale),
         unitCostCents: Math.round(cost * 100),
+        note: d.note,
       });
     }
     startTransition(async () => {
@@ -3005,46 +3035,63 @@ function ShipmentLineEditor({ products, lines, setLines, salePrices, setSalePric
     setSalePrices((prev) => [...prev, ""]);
     setCosts((prev) => [...prev, ""]);
   };
+  // โน้ตรายบรรทัด (CEO 2026-10-10) — ซ่อนโดยปริยาย กดไอคอนถึงกาง ไม่ให้แถวรกเกินจำเป็น (UI density)
+  const [openNote, setOpenNote] = useState<Record<number, boolean>>({});
+  const toggleNote = (i: number) => setOpenNote((prev) => ({ ...prev, [i]: !prev[i] }));
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       {lines.map((l, i) => {
         const defCost = products.find((p) => p.id === l.productId)?.unitCostCents ?? 0;
+        const noteShown = !!openNote[i] || !!l.note;
         return (
-          <div key={i} className="grid grid-cols-[1fr_58px_82px_82px_34px] gap-2 items-end">
-            <div>
-              {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>สินค้า</label>}
-              <select
-                value={l.productId}
-                onChange={(e) => {
-                  const pid = e.target.value;
-                  setAt(i, { productId: pid });
-                  // item #7 · prefill ราคาทุนเป็น "ค่าจริง" (ต้นทุนเฉลี่ยเดิมของสินค้า · บาท)
-                  // เฉพาะเมื่อช่องทุนยังว่าง — ผู้ใช้แก้ทับได้ (ไม่ทับค่าที่พิมพ์เอง)
-                  const pc = products.find((p) => p.id === pid)?.unitCostCents ?? 0;
-                  if (pc > 0 && (costs[i] ?? "").trim() === "") setCostAt(i, String(Math.round(pc / 100)));
-                }}
-                style={FIELD_INPUT}
-              >
-                <option value="">— เลือก —</option>
-                {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
+          <div key={i} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div className="grid grid-cols-[1fr_58px_82px_82px_30px_30px] gap-2 items-end">
+              <div>
+                {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>สินค้า</label>}
+                <select
+                  value={l.productId}
+                  onChange={(e) => {
+                    const pid = e.target.value;
+                    setAt(i, { productId: pid });
+                    // item #7 · prefill ราคาทุนเป็น "ค่าจริง" (ต้นทุนเฉลี่ยเดิมของสินค้า · บาท)
+                    // เฉพาะเมื่อช่องทุนยังว่าง — ผู้ใช้แก้ทับได้ (ไม่ทับค่าที่พิมพ์เอง)
+                    const pc = products.find((p) => p.id === pid)?.unitCostCents ?? 0;
+                    if (pc > 0 && (costs[i] ?? "").trim() === "") setCostAt(i, String(Math.round(pc / 100)));
+                  }}
+                  style={FIELD_INPUT}
+                >
+                  <option value="">— เลือก —</option>
+                  {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+              <div>
+                {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>ส่ง</label>}
+                <input type="number" min={0} step={1} inputMode="numeric" value={l.qty} onChange={(e) => setAt(i, { qty: e.target.value })} placeholder="0" style={FIELD_INPUT} />
+              </div>
+              <div>
+                {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>ขาย (บาท)</label>}
+                <input type="number" min={0} step={1} inputMode="numeric" value={salePrices[i] ?? ""} onChange={(e) => setSaleAt(i, e.target.value)} placeholder="10" style={FIELD_INPUT} />
+              </div>
+              <div>
+                {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>ทุน (บาท)</label>}
+                <input type="number" min={0} step="0.01" inputMode="decimal" value={costs[i] ?? ""} onChange={(e) => setCostAt(i, e.target.value)} placeholder={defCost > 0 ? String(Math.round(defCost / 100)) : "0"} style={FIELD_INPUT} />
+              </div>
+              <button type="button" onClick={() => toggleNote(i)} title="เพิ่มโน้ตรายการนี้" style={{ height: 38, border: "1px solid #E3E6EA", borderRadius: 10, background: noteShown ? "#EEF0FE" : "#fff", color: noteShown ? "#4F46E5" : "#8A93A3", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <StickyNote size={14} />
+              </button>
+              <button type="button" onClick={() => removeAt(i)} disabled={lines.length <= 1} title="ลบ" style={{ height: 38, border: "1px solid #E3E6EA", borderRadius: 10, background: "#fff", color: lines.length <= 1 ? "#D4D7DC" : "#B42318", cursor: lines.length <= 1 ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Trash2 size={15} />
+              </button>
             </div>
-            <div>
-              {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>ส่ง</label>}
-              <input type="number" min={0} step={1} inputMode="numeric" value={l.qty} onChange={(e) => setAt(i, { qty: e.target.value })} placeholder="0" style={FIELD_INPUT} />
-            </div>
-            <div>
-              {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>ขาย (บาท)</label>}
-              <input type="number" min={0} step={1} inputMode="numeric" value={salePrices[i] ?? ""} onChange={(e) => setSaleAt(i, e.target.value)} placeholder="10" style={FIELD_INPUT} />
-            </div>
-            <div>
-              {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>ทุน (บาท)</label>}
-              <input type="number" min={0} step="0.01" inputMode="decimal" value={costs[i] ?? ""} onChange={(e) => setCostAt(i, e.target.value)} placeholder={defCost > 0 ? String(Math.round(defCost / 100)) : "0"} style={FIELD_INPUT} />
-            </div>
-            <button type="button" onClick={() => removeAt(i)} disabled={lines.length <= 1} title="ลบ" style={{ height: 38, border: "1px solid #E3E6EA", borderRadius: 10, background: "#fff", color: lines.length <= 1 ? "#D4D7DC" : "#B42318", cursor: lines.length <= 1 ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Trash2 size={15} />
-            </button>
+            {noteShown && (
+              <input
+                value={l.note ?? ""}
+                onChange={(e) => setAt(i, { note: e.target.value })}
+                placeholder="โน้ตเฉพาะรายการนี้ (ไม่บังคับ)"
+                style={{ ...FIELD_INPUT, fontSize: 12 }}
+              />
+            )}
           </div>
         );
       })}
@@ -3121,7 +3168,12 @@ function ShipmentDetailModal({ ship, isSample, onClose, onDone }: {
           const diffColor = diff == null ? "#9AA1AB" : diff === 0 ? "#15803D" : "#B42318";
           return (
             <div key={ir.lineId} style={{ display: "grid", gridTemplateColumns: "1.6fr 0.7fr 0.9fr 0.9fr", padding: "12px 20px", alignItems: "center", borderBottom: "1px solid #F4F5F7", fontSize: 13 }}>
-              <span style={{ fontWeight: 600 }}>{ir.name}</span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ir.name}</div>
+                {ir.note && (
+                  <div style={{ fontSize: 11, color: "#9AA1AB", fontStyle: "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ir.note}</div>
+                )}
+              </div>
               <span className="num" style={{ textAlign: "right" }}>{num(ir.sent)}</span>
               <span style={{ textAlign: "right" }}>
                 {canConfirm ? (

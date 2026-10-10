@@ -135,6 +135,7 @@ const ReceiveSchema = z.object({
         productId: z.string().uuid(),
         quantity: z.coerce.number().int().positive(),
         unitCostCents: z.coerce.number().int().min(0),
+        note: z.string().trim().max(300).optional(), // โน้ตเฉพาะ SKU นี้ (CEO 2026-10-10)
       }),
     )
     .min(1, "ยังไม่ได้ใส่รายการรับเข้า"),
@@ -266,7 +267,7 @@ export async function receiveStock(input: unknown): Promise<Result<{ receiptCode
       let total = 0;
       const agg = new Map<
         string,
-        { id: string; name: string; oldCost: number; qty: number; costTotal: number }
+        { id: string; name: string; oldCost: number; qty: number; costTotal: number; notes: string[] }
       >();
       for (const l of lines) {
         const p = pmap.get(l.productId);
@@ -276,6 +277,7 @@ export async function receiveStock(input: unknown): Promise<Result<{ receiptCode
         if (cur) {
           cur.qty += l.quantity;
           cur.costTotal += l.unitCostCents * l.quantity;
+          if (l.note) cur.notes.push(l.note);
         } else {
           agg.set(p.id, {
             id: p.id,
@@ -283,13 +285,14 @@ export async function receiveStock(input: unknown): Promise<Result<{ receiptCode
             oldCost: p.unitCostCents,
             qty: l.quantity,
             costTotal: l.unitCostCents * l.quantity,
+            notes: l.note ? [l.note] : [],
           });
         }
       }
 
       const work: Array<{
         id: string; name: string; oldCost: number; qty: number;
-        unit: number; oldBal: number; orgQtyBefore: number;
+        unit: number; oldBal: number; orgQtyBefore: number; note: string | null;
       }> = [];
       for (const a of agg.values()) {
         // 🔒 B3 · ล็อกต่อ product — serialize การคำนวณต้นทุนเฉลี่ยถ่วงน้ำหนัก (transaction-level →
@@ -317,7 +320,9 @@ export async function receiveStock(input: unknown): Promise<Result<{ receiptCode
           _sum: { qty: true },
         });
         const orgQtyBefore = totalQtyAcrossOrg._sum.qty ?? 0;
-        work.push({ id: a.id, name: a.name, oldCost: a.oldCost, qty: a.qty, unit, oldBal, orgQtyBefore });
+        // ถ้าสินค้าเดียวกันถูกกรอกหลายบรรทัด (ของบวกไว้เป็นบรรทัดเดียวใน DB อยู่แล้ว) → รวมโน้ตเข้าด้วยกัน
+        const note = a.notes.length > 0 ? a.notes.join(" · ") : null;
+        work.push({ id: a.id, name: a.name, oldCost: a.oldCost, qty: a.qty, unit, oldBal, orgQtyBefore, note });
       }
 
       const receipt = await tx.cfGoodsReceipt.create({
@@ -339,6 +344,7 @@ export async function receiveStock(input: unknown): Promise<Result<{ receiptCode
               productName: w.name,
               quantity: w.qty,
               unitCostCents: w.unit,
+              note: w.note,
             })),
           },
         },
@@ -1895,6 +1901,7 @@ const CreateShipmentSchema = z.object({
         // แอดมินส่วนกลางส่งของ = ต้องระบุราคาขาย + ราคาทุนของสินค้า ณ ตอนส่ง (บังคับ > 0)
         salePriceBaht: z.coerce.number().int().positive("ระบุราคาขายของสินค้า (บาท) มากกว่า 0"),
         unitCostCents: z.coerce.number().int().positive("ระบุราคาทุนของสินค้า (บาท) มากกว่า 0"),
+        note: z.string().trim().max(300).optional(), // โน้ตเฉพาะ SKU นี้ (CEO 2026-10-10)
       }),
     )
     .min(1, "ยังไม่ได้ใส่รายการสินค้าในใบกระจาย"),
@@ -1932,7 +1939,7 @@ export async function createShipment(input: unknown): Promise<Result<{ deliveryI
       // ราคาขาย/ราคาทุน = ใช้ค่าจากบรรทัดล่าสุดของ product นั้น (บังคับ > 0 มาแล้วจาก Zod)
       const agg = new Map<
         string,
-        { id: string; name: string; qty: number; salePriceBaht: number; unitCostCents: number }
+        { id: string; name: string; qty: number; salePriceBaht: number; unitCostCents: number; notes: string[] }
       >();
       for (const l of lines) {
         const p = pmap.get(l.productId);
@@ -1942,6 +1949,7 @@ export async function createShipment(input: unknown): Promise<Result<{ deliveryI
           cur.qty += l.qty;
           cur.salePriceBaht = l.salePriceBaht;
           cur.unitCostCents = l.unitCostCents;
+          if (l.note) cur.notes.push(l.note);
         } else {
           agg.set(p.id, {
             id: p.id,
@@ -1949,6 +1957,7 @@ export async function createShipment(input: unknown): Promise<Result<{ deliveryI
             qty: l.qty,
             salePriceBaht: l.salePriceBaht,
             unitCostCents: l.unitCostCents,
+            notes: l.note ? [l.note] : [],
           });
         }
       }
@@ -1975,6 +1984,7 @@ export async function createShipment(input: unknown): Promise<Result<{ deliveryI
               qty: w.qty,
               salePriceBaht: w.salePriceBaht,
               unitCostCents: w.unitCostCents,
+              note: w.notes.length > 0 ? w.notes.join(" · ") : null,
             })),
           },
         },
@@ -2259,7 +2269,7 @@ export type ReceiveDcTransferArgs = {
   transferId: string;
   transferCode: string;
   actorUserId: string;
-  lines: { cfProductId: string; qty: number; unitCostSatang: number }[];
+  lines: { cfProductId: string; qty: number; unitCostSatang: number; note?: string | null }[];
   // doc-first (CEO 2026-07-16) · ใบรับจริง: หมายเหตุ + รูปหลักฐานตอนรับ (เดิมรูป dc path อัปโหลดแล้วหายเงียบ)
   note?: string | null;
   photoUrls?: string[];
@@ -2284,7 +2294,7 @@ export async function receiveDcTransferIntoBranchTx(
     const destMainWarehouseId = await ensureBranchMainWarehouseId(tx, orgId, branchId, actorUserId);
 
     // รวมจำนวน + มูลค่าทุนต่อ product (กัน product ซ้ำหลายบรรทัด → double-count ต้นทุนเฉลี่ย)
-    const agg = new Map<string, { id: string; qty: number; costTotalCents: number }>();
+    const agg = new Map<string, { id: string; qty: number; costTotalCents: number; notes: string[] }>();
     for (const ln of lines) {
       const qty = Math.max(0, Math.trunc(ln.qty));
       if (qty <= 0) continue;
@@ -2297,8 +2307,9 @@ export async function receiveDcTransferIntoBranchTx(
       if (cur) {
         cur.qty += qty;
         cur.costTotalCents += unitCents * qty;
+        if (ln.note) cur.notes.push(ln.note);
       } else {
-        agg.set(ln.cfProductId, { id: ln.cfProductId, qty, costTotalCents: unitCents * qty });
+        agg.set(ln.cfProductId, { id: ln.cfProductId, qty, costTotalCents: unitCents * qty, notes: ln.note ? [ln.note] : [] });
       }
     }
 
@@ -2387,6 +2398,8 @@ export async function receiveDcTransferIntoBranchTx(
               productName: prodNameMap.get(a.id) ?? "— สินค้า —",
               quantity: a.qty,
               unitCostCents: a.qty > 0 ? Math.round(a.costTotalCents / a.qty) : 0,
+              // carry-over: โน้ตจากบรรทัดใบโอนต้นทาง (DcTransferLine.note) ถ้ามี — ไม่มี UI กรอกใหม่ตรงนี้
+              note: a.notes.length > 0 ? a.notes.join(" · ") : null,
             })),
           },
         },

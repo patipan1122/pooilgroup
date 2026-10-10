@@ -13,7 +13,7 @@
 //     • ปุ่มส่งออก busy-lock กันกดซ้ำ · สำเร็จ → toast เขียว · buffer ใน localStorage กันลิสต์หาย
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeftRight, FileText, List, Search, Trash2, Truck, X } from "lucide-react";
+import { ArrowLeftRight, FileText, List, Search, StickyNote, Trash2, Truck, X } from "lucide-react";
 import { DcScanBox } from "@/components/dc/scan-box";
 import { MoveWorkspace } from "../move/move-workspace";
 import { IssueWorkspace } from "../issue/issue-workspace";
@@ -49,6 +49,7 @@ type Line = {
   imageUrl: string | null; // รูปสินค้า (resolve แล้ว) — null = โชว์ไอคอน placeholder
   poId: string | null; // Pinpoint #2 — บรรทัดนี้มาจากใบ PO ไหน (โอนจากหลายใบ) · null = เพิ่มเอง/สแกน
   poCode: string | null;
+  note?: string; // โน้ตเฉพาะ SKU นี้ (CEO 2026-10-10)
 };
 
 // ใบ PO ที่กำลังอ้างอิง (สะสมได้หลายใบ — Pinpoint #2)
@@ -232,6 +233,8 @@ export function TransferDispatch({
   const [note, setNote] = useState("");
 
   const [lines, setLines] = useState<Line[]>([]);
+  // โน้ตรายบรรทัด (CEO 2026-10-10) — ซ่อนโดยปริยาย กดไอคอนถึงกาง ไม่ให้การ์ดรกเกินจำเป็น
+  const [openNoteKeys, setOpenNoteKeys] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -494,6 +497,10 @@ export function TransferDispatch({
     );
   }, []);
 
+  const setLineNote = useCallback((lineKey: string, note: string) => {
+    setLines((prev) => prev.map((l) => (l.lineKey === lineKey ? { ...l, note } : l)));
+  }, []);
+
   const removeLine = useCallback((lineKey: string) => {
     setLines((prev) => prev.filter((l) => l.lineKey !== lineKey));
   }, []);
@@ -520,6 +527,7 @@ export function TransferDispatch({
         qty: l.qty,
         lineKey: l.lineKey,
         poId: l.poId ?? undefined, // Pinpoint #2 — poId ต่อบรรทัด (โอนจากหลายใบ) · server cap ต่อใบ
+        note: l.note?.trim() || undefined, // โน้ตเฉพาะ SKU นี้ (CEO 2026-10-10)
       }));
 
       // baht → satang (สตางค์): round(บาท × 100) · กัน NaN/ติดลบ → 0 (money-critical)
@@ -930,6 +938,24 @@ export function TransferDispatch({
                   <div style={{ marginTop: 8, color: "#c0392b", fontSize: 13, fontWeight: 700 }}>
                     ⚠️ ส่ง {l.qty} แต่เหลือแค่ {l.onHand} — จะส่งไม่ผ่าน
                   </div>
+                )}
+
+                {openNoteKeys[l.lineKey] || l.note ? (
+                  <input
+                    type="text"
+                    value={l.note ?? ""}
+                    onChange={(e) => setLineNote(l.lineKey, e.target.value)}
+                    placeholder="โน้ตเฉพาะรายการนี้ (ไม่บังคับ)"
+                    style={{ marginTop: 10, width: "100%", border: "1px solid var(--dc-border, #e3e6ea)", borderRadius: 10, padding: "9px 12px", fontSize: 14 }}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setOpenNoteKeys((prev) => ({ ...prev, [l.lineKey]: true }))}
+                    style={{ marginTop: 10, display: "inline-flex", alignItems: "center", gap: 5, background: "transparent", border: "none", color: "var(--dc-muted, #6b7785)", fontSize: 12.5, fontWeight: 600, cursor: "pointer", padding: 0 }}
+                  >
+                    <StickyNote size={13} /> เพิ่มโน้ตรายการนี้
+                  </button>
                 )}
               </div>
             );
