@@ -1,20 +1,27 @@
 import { adminClient } from "@/lib/db/server";
+import { isDocumentSignerInvite } from "@/lib/docuflow/signer-helpers";
+import { isSafeNextPath } from "@/lib/utils/safe-next-path";
 import { InviteAcceptForm } from "./accept-form";
-import { CheckCircle2, Crown, UserPlus, AlertCircle } from "lucide-react";
+import { CheckCircle2, Crown, UserPlus, PenLine, AlertCircle } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
 export default async function InviteAcceptPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ token: string }>;
+  searchParams: Promise<{ next?: string }>;
 }) {
   const { token } = await params;
+  const { next } = await searchParams;
   const admin = adminClient();
 
   const { data: pending } = await admin
     .from("users")
-    .select("id, email, name, phone, role, invite_expires_at, invite_used_at, is_active")
+    .select(
+      "id, org_id, email, name, phone, role, invite_expires_at, invite_used_at, is_active",
+    )
     .eq("invite_token", token)
     .maybeSingle();
 
@@ -49,22 +56,42 @@ export default async function InviteAcceptPage({
   }
 
   const isAdmin = pending.role === "super_admin" || pending.role === "org_admin";
+  // External document-signer invite (CEO 2026-10-08, item 5) — this account
+  // isn't joining as company staff, so the usual "ยินดีต้อนรับ... เริ่มใช้งาน
+  // Pooilgroup ERP" + "บทบาท: Staff" framing reads wrong for an outsider.
+  // Derived from data (zero module grants + an assigned unsigned placement)
+  // rather than a stored flag — see lib/docuflow/signer-helpers.ts.
+  const isSignerInvite =
+    !!pending.org_id && (await isDocumentSignerInvite(pending.id, pending.org_id));
+  const safeNext = isSafeNextPath(next) ? next : undefined;
 
   return (
     <div className="w-full max-w-md">
       <div className="mb-8 flex flex-col items-center text-center animate-fade-up">
         <div className="inline-flex items-center justify-center size-14 rounded-2xl bg-[var(--color-brand-600)] text-white mb-5 shadow-blue">
-          {isAdmin ? (
+          {isSignerInvite ? (
+            <PenLine className="size-7" strokeWidth={2.5} />
+          ) : isAdmin ? (
             <Crown className="size-7" strokeWidth={2.5} />
           ) : (
             <UserPlus className="size-7" strokeWidth={2.5} />
           )}
         </div>
         <h1 className="text-3xl font-extrabold tracking-tight font-display">
-          ยินดีต้อนรับ <span className="accent">{pending.name}</span>
+          {isSignerInvite ? (
+            <>
+              คุณได้รับเชิญให้ <span className="accent">เซ็นเอกสาร</span>
+            </>
+          ) : (
+            <>
+              ยินดีต้อนรับ <span className="accent">{pending.name}</span>
+            </>
+          )}
         </h1>
         <p className="text-sm text-zinc-500 mt-2">
-          ตั้งรหัสผ่านเพื่อเริ่มใช้งาน Pooilgroup ERP
+          {isSignerInvite
+            ? "ตั้งรหัสผ่านเพื่อเปิดเอกสารที่ต้องเซ็น"
+            : "ตั้งรหัสผ่านเพื่อเริ่มใช้งาน Pooilgroup ERP"}
         </p>
       </div>
 
@@ -77,12 +104,19 @@ export default async function InviteAcceptPage({
                 {pending.email ?? pending.phone ?? pending.name}
               </div>
               <div className="text-xs text-[var(--color-brand-700)] mt-0.5">
-                บทบาท: {ROLE_LABEL[pending.role] ?? pending.role}
+                {isSignerInvite
+                  ? "เชิญให้เซ็นเอกสาร 1 ฉบับ — ไม่ใช่พนักงาน Pooilgroup"
+                  : `บทบาท: ${ROLE_LABEL[pending.role] ?? pending.role}`}
               </div>
             </div>
           </div>
         </div>
-        <InviteAcceptForm token={token} email={pending.email ?? null} userId={pending.id} />
+        <InviteAcceptForm
+          token={token}
+          email={pending.email ?? null}
+          userId={pending.id}
+          next={safeNext}
+        />
       </div>
     </div>
   );

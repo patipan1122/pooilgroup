@@ -8,15 +8,26 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
 import { browserClient } from "@/lib/db/client";
+import { isSafeNextPath } from "@/lib/utils/safe-next-path";
 
 interface Props {
   token: string;
   email: string | null;
   userId: string;
+  /** Where to land after activation — e.g. `/sign/[placementId]` for a
+   *  document-signer invite (CEO 2026-10-08, item 3). Falls back to "/"
+   *  like every other invite always did when absent/unsafe. */
+  next?: string;
 }
 
-export function InviteAcceptForm({ token, email: initialEmail, userId }: Props) {
+export function InviteAcceptForm({
+  token,
+  email: initialEmail,
+  userId,
+  next,
+}: Props) {
   const router = useRouter();
+  const safeNext = isSafeNextPath(next) ? next : "/";
   const [pending, startTransition] = useTransition();
   const [email, setEmail] = useState(initialEmail ?? "");
   const [password, setPassword] = useState("");
@@ -69,7 +80,7 @@ export function InviteAcceptForm({ token, email: initialEmail, userId }: Props) 
 
       toast.success("ยินดีต้อนรับ!");
       router.refresh();
-      router.push("/");
+      router.push(safeNext);
     });
   }
 

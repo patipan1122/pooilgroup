@@ -9,6 +9,7 @@ import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { canAssignRole, canManageUser, isAdminLevelRole } from "@/lib/auth/role-guards";
+import { deactivateUserAccount } from "@/lib/auth/deactivate-user";
 
 const PatchSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -289,27 +290,10 @@ export async function DELETE(
     }
   }
 
-  const now = new Date().toISOString();
-
-  // Mark all sessions revoked (force logout from every device)
-  await admin
-    .from("user_sessions")
-    .update({ is_revoked: true, logout_at: now })
-    .eq("user_id", id)
-    .is("logout_at", null);
-
-  // Soft-delete user
-  await admin
-    .from("users")
-    .update({ is_active: false, updated_at: now })
-    .eq("id", id);
-
-  // Also try to invalidate Supabase auth refresh tokens
-  try {
-    await admin.auth.admin.signOut(id, "global");
-  } catch {
-    // signOut may fail if no active session — ignore
-  }
+  // Mark sessions revoked + is_active=false + best-effort auth signOut —
+  // shared with the DocuFlow external-signer revoke action, see
+  // lib/auth/deactivate-user.ts.
+  await deactivateUserAccount(admin, id);
 
   await audit({
     orgId: session.user.org_id,

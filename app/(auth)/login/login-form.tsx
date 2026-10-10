@@ -9,14 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
 import { browserClient } from "@/lib/db/client";
-
-// Same-origin relative-path guard — mirrors safeRelPath() in
-// app/auth/line-start/route.ts so both entry points reject the same shapes
-// (bare "/" ok, "//evil.com" rejected as protocol-relative, absolute URLs
-// rejected since they don't start with "/").
-function isSafeNextPath(p: string | null | undefined): p is string {
-  return !!p && p.startsWith("/") && !p.startsWith("//");
-}
+import { isSafeNextPath } from "@/lib/utils/safe-next-path";
 
 interface LoginFormProps {
   next?: string;

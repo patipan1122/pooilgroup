@@ -33,6 +33,8 @@ import {
   User as UserIcon,
   Pencil,
   RotateCcw,
+  Clock,
+  UserX,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -46,6 +48,8 @@ import {
   type PlacementRect,
   type PlacementType,
 } from "./signature-placement-box";
+import { InviteDocumentSignerButton } from "./invite-document-signer-button";
+import { revokeDocumentSignerAccess } from "@/lib/docuflow/invite-signer";
 import { configurePdfJs } from "@/lib/docuflow/pdfjs-config";
 import { useResponsivePdfWidth } from "@/lib/docuflow/use-responsive-pdf-width";
 
@@ -83,7 +87,18 @@ export interface PlacementVm {
   signerRole: SignerRole;
   signerUserId: string | null;
   signerName: string | null;
-  signerUser: { id: string; name: string; role: string } | null;
+  signerUser: {
+    id: string;
+    name: string;
+    role: string;
+    /** false = invited but hasn't set a password yet. Only meaningful
+     *  for isExternalSigner accounts — internal staff are always active. */
+    isActive: boolean;
+    /** True when this signerUser has zero user_modules grants — the exact
+     *  shape inviteDocumentSigner() produces. Drives the pending-invite
+     *  badge + revoke-access button in the signer panel below. */
+    isExternalSigner: boolean;
+  } | null;
   label: string | null;
   ordering: number;
   signedAt: string | null;
@@ -309,6 +324,10 @@ export function SignaturePlacementEditor({
   // dialog open (CEO click-report 2026-10-07, item 2 — the link only works
   // once the signer has an invited account, so confirm before copying).
   const [pendingShareId, setPendingShareId] = useState<string | null>(null);
+  // ID of the placement whose external-signer account is pending a
+  // revoke-confirmation. null = no dialog open (CEO 2026-10-08, item 6).
+  const [pendingRevokeId, setPendingRevokeId] = useState<string | null>(null);
+  const [revokingBusy, setRevokingBusy] = useState(false);
   // PDF viewer retry — react-pdf's <Document> gives no built-in retry, so we
   // key-remount it to force a fresh fetch. The `error` render prop below
   // replaces react-pdf's default fallback (a bare, unhelpful English string)
@@ -560,6 +579,54 @@ export function SignaturePlacementEditor({
       );
     } finally {
       setResettingId(null);
+    }
+  }
+
+  // External-signer invite succeeded server-side (signerUserId is already
+  // persisted by inviteDocumentSigner()) — patch local state directly
+  // WITHOUT markDirty/updatePlacement, so this doesn't false-flag "มีการ
+  // เปลี่ยนแปลงรอบันทึก" for something that's already saved.
+  function applyInvitedSigner(
+    placementId: string,
+    signer: { id: string; name: string },
+  ) {
+    setPlacements((prev) =>
+      prev.map((p) =>
+        p.id === placementId
+          ? {
+              ...p,
+              signerUserId: signer.id,
+              signerUser: {
+                id: signer.id,
+                name: signer.name,
+                role: "staff",
+                isActive: false,
+                isExternalSigner: true,
+              },
+            }
+          : p,
+      ),
+    );
+  }
+
+  async function performRevoke(id: string) {
+    setRevokingBusy(true);
+    try {
+      const res = await revokeDocumentSignerAccess({ placementId: id });
+      if (!res.ok) throw new Error(res.error);
+      setPlacements((prev) =>
+        prev.map((p) =>
+          p.id === id && p.signerUser
+            ? { ...p, signerUser: { ...p.signerUser, isActive: false } }
+            : p,
+        ),
+      );
+      setPendingRevokeId(null);
+      toast.success("ปิดสิทธิ์เข้าถึงแล้ว");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "ปิดสิทธิ์ไม่สำเร็จ");
+    } finally {
+      setRevokingBusy(false);
     }
   }
 
@@ -896,8 +963,18 @@ export function SignaturePlacementEditor({
                           onChange={(u) =>
                             updatePlacement(selected.id, {
                               signerUserId: u ? u.id : null,
+                              // Picked from the existing-users list (`users`
+                              // is pre-filtered to isActive:true staff) —
+                              // never an external-signer account, so these
+                              // two always read false here.
                               signerUser: u
-                                ? { id: u.id, name: u.name, role: u.role }
+                                ? {
+                                    id: u.id,
+                                    name: u.name,
+                                    role: u.role,
+                                    isActive: true,
+                                    isExternalSigner: false,
+                                  }
                                 : null,
                             })
                           }
@@ -919,6 +996,54 @@ export function SignaturePlacementEditor({
                           placeholder="เช่น คู่ค้า นาย ก."
                           className="w-full h-10 px-3 text-sm rounded-xl border border-zinc-200 bg-white"
                         />
+                      </div>
+
+                      {/* External-signer invite (CEO 2026-10-08) — for a
+                          true outsider with no Pooilgroup account at all.
+                          Mints a real account scoped to ONLY this
+                          placement (zero module grants), separate from the
+                          "pick an existing user" SignerPicker above. */}
+                      <div className="pt-2 border-t border-zinc-100">
+                        {selected.signerUser?.isExternalSigner ? (
+                          <div className="space-y-2">
+                            <div
+                              className={cn(
+                                "flex items-center gap-2 text-sm rounded-xl px-3 py-2 border",
+                                selected.signerUser.isActive
+                                  ? "text-green-700 bg-green-50 border-green-200"
+                                  : "text-amber-700 bg-amber-50 border-amber-200",
+                              )}
+                            >
+                              {selected.signerUser.isActive ? (
+                                <CheckCircle2 className="size-4 shrink-0" />
+                              ) : (
+                                <Clock className="size-4 shrink-0" />
+                              )}
+                              <span>
+                                {selected.signerUser.isActive
+                                  ? `${selected.signerUser.name} ตั้งรหัสผ่านแล้ว — เข้าเซ็นได้`
+                                  : `เชิญ ${selected.signerUser.name} แล้ว รอตั้งรหัสผ่าน`}
+                              </span>
+                            </div>
+                            {selected.signerUser.isActive && (
+                              <button
+                                type="button"
+                                onClick={() => setPendingRevokeId(selected.id)}
+                                className="w-full inline-flex items-center justify-center gap-2 h-9 px-3 text-xs rounded-xl bg-white text-red-600 border border-red-200 hover:bg-red-50 font-medium"
+                              >
+                                <UserX className="size-3.5" />
+                                ปิดสิทธิ์เข้าถึงผู้เซ็นนี้
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <InviteDocumentSignerButton
+                            placementId={selected.id}
+                            onInvited={(signer) =>
+                              applyInvitedSigner(selected.id, signer)
+                            }
+                          />
+                        )}
                       </div>
                     </>
                   )}
@@ -1158,6 +1283,42 @@ export function SignaturePlacementEditor({
               }}
             >
               คัดลอกลิงก์
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* Confirm before revoking an external signer's account — item 6,
+          2026-10-08. Deactivates the account (soft-delete + force logout),
+          same mechanism as the org-wide user management page. */}
+      <Dialog
+        open={pendingRevokeId !== null}
+        onClose={() => {
+          if (!revokingBusy) setPendingRevokeId(null);
+        }}
+        title="ยืนยันปิดสิทธิ์เข้าถึง"
+      >
+        <div className="space-y-5">
+          <p className="text-sm text-zinc-700 leading-relaxed">
+            ปิดบัญชีผู้เซ็นนี้ — เข้าระบบไม่ได้อีก ใช้เมื่อไม่ต้องการให้เข้าถึง
+            เอกสารนี้แล้ว (เช่น เซ็นเสร็จแล้ว) ยืนยันปิดสิทธิ์?
+          </p>
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-100">
+            <Button
+              variant="ghost"
+              onClick={() => setPendingRevokeId(null)}
+              disabled={revokingBusy}
+            >
+              ยกเลิก
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                if (pendingRevokeId) void performRevoke(pendingRevokeId);
+              }}
+              loading={revokingBusy}
+            >
+              ปิดสิทธิ์
             </Button>
           </div>
         </div>

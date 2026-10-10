@@ -88,6 +88,19 @@ export async function POST(req: NextRequest) {
     .select("module_name, role, is_active, granted_by")
     .eq("user_id", userId);
 
+  // DocuFlow external-signer invites (CEO 2026-10-08) point a
+  // document_signature_placement.signer_user_id at the temp invite-user id.
+  // That column is `onDelete: SetNull` (prisma/schema.prisma) — Step 2's
+  // users-row delete below would silently null it out, orphaning the
+  // signer from the document they were invited to sign, exactly like
+  // user_branches/user_modules would without their own re-link steps.
+  // Must capture this BEFORE the delete — Postgres applies SetNull the
+  // instant the users row is gone, there is nothing left to query after.
+  const { data: oldSignerPlacements } = await admin
+    .from("document_signature_placements")
+    .select("id")
+    .eq("signer_user_id", userId);
+
   // Pre-audit BEFORE the structural id-swap below.
   // The pending users row uses a temp UUID; Supabase auth issues its own id on
   // createUser, so this flow swaps temp→real. The DELETEs below are NOT a
@@ -304,6 +317,47 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         success: true,
         warning: "บัญชีพร้อมใช้งานแล้ว แต่ผูกสิทธิ์โปรแกรมไม่ได้ — ติดต่อ admin",
+      });
+    }
+  }
+
+  // Step 7: re-link DocuFlow signature placements — best-effort, same
+  // pattern as branches/modules above. Without this, a DocuFlow
+  // external-signer invite (CEO 2026-10-08) loses its connection to the
+  // document it was invited to sign the moment the signer activates their
+  // account (signer_user_id went to NULL via the SetNull FK the instant
+  // Step 2 deleted the temp-id row) — the signer would land on /sign/[id]
+  // right after activation but the server-side check there
+  // (signerUserId === session.user.id) would already be comparing against
+  // null, bouncing them to /403 on the very link they were just sent.
+  if (oldSignerPlacements && oldSignerPlacements.length > 0) {
+    const { error: placementErr } = await admin
+      .from("document_signature_placements")
+      .update({ signer_user_id: newAuthId })
+      .in(
+        "id",
+        oldSignerPlacements.map((p) => p.id),
+      );
+    if (placementErr) {
+      console.error("[invite/accept] signer placement relink failed", placementErr);
+      await audit({
+        orgId: oldUser.org_id,
+        userId: newAuthId,
+        action: "CREATE_USER",
+        resourceType: "user",
+        resourceId: newAuthId,
+        diff: {
+          new: {
+            activated: true,
+            role: oldUser.role,
+            signer_placement_relink_failed: true,
+            error: placementErr.message,
+          },
+        },
+      });
+      return NextResponse.json({
+        success: true,
+        warning: "บัญชีพร้อมใช้งานแล้ว แต่ผูกเอกสารที่ต้องเซ็นไม่ได้ — ติดต่อ admin",
       });
     }
   }

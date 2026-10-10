@@ -21,6 +21,7 @@ import {
   HardDrive,
   Activity,
   KeyRound,
+  FileCheck2,
 } from "lucide-react";
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
@@ -29,6 +30,10 @@ import { Section } from "@/components/ui/section";
 import { thaiDateLong } from "@/lib/utils/format";
 import { MODULES } from "@/lib/modules";
 import { loadUserModules } from "@/lib/auth/module-access";
+import {
+  isZeroGrantStaffAccount,
+  findPendingSignPath,
+} from "@/lib/docuflow/signer-helpers";
 import {
   buildFavorites,
   TileGrid,
@@ -65,6 +70,34 @@ export default async function HomePage() {
     if (techProfile) {
       redirect("/repairs/my-jobs");
     }
+
+    // Defense in depth for the DocuFlow external-signer invite flow (CEO
+    // 2026-10-08, item 4) — that flow deliberately produces a staff user
+    // with ZERO user_modules grants (no CashHub access at all). Without
+    // this check they'd hit /cashhub/quick-fill → bounce to /403 on every
+    // future login. A fresh invite link already sends them straight to
+    // /sign/[placementId] (item 3) — this only matters when they log in
+    // again later some other way (bookmark, LINE login, password reset).
+    if (await isZeroGrantStaffAccount(session.user.id, orgId)) {
+      const signPath = await findPendingSignPath(session.user.id, orgId);
+      if (signPath) redirect(signPath);
+      return (
+        <div className="min-h-dvh flex items-center justify-center p-6 text-center">
+          <div>
+            <div className="size-14 mx-auto mb-4 rounded-2xl bg-zinc-100 flex items-center justify-center text-zinc-400">
+              <FileCheck2 className="size-6" />
+            </div>
+            <p className="font-bold text-zinc-900">
+              ไม่มีเอกสารที่ต้องดำเนินการในขณะนี้
+            </p>
+            <p className="text-sm text-zinc-500 mt-1.5">
+              ถ้ามีเอกสารใหม่ให้เซ็น จะมีลิงก์ส่งมาให้อีกครั้ง
+            </p>
+          </div>
+        </div>
+      );
+    }
+
     redirect("/cashhub/quick-fill");
   }
 

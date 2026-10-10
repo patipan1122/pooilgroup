@@ -13,6 +13,7 @@ import { loadDocumentById } from "@/lib/docuflow/data";
 import { getSignedDownloadUrl } from "@/lib/docuflow/r2";
 import { prisma } from "@/lib/prisma";
 import { requireModuleAdmin } from "@/lib/auth/module-access";
+import { filterZeroGrantStaffUserIds } from "@/lib/docuflow/signer-helpers";
 import {
   SignaturePlacementEditor,
   type PlacementVm,
@@ -50,7 +51,9 @@ export default async function SignaturePlacementPage({
       where: { orgId, documentId: id },
       orderBy: [{ pageNumber: "asc" }, { ordering: "asc" }],
       include: {
-        signerUser: { select: { id: true, name: true, role: true } },
+        signerUser: {
+          select: { id: true, name: true, role: true, isActive: true },
+        },
       },
     }),
     prisma.user.findMany({
@@ -66,6 +69,23 @@ export default async function SignaturePlacementPage({
       },
     }),
   ]);
+
+  // External-signer flag (CEO 2026-10-08) — batched across every distinct
+  // signer on this document rather than N+1 per placement. See
+  // lib/docuflow/signer-helpers.ts for the single definition of "external"
+  // (role==="staff" AND zero active user_modules grants) shared with the
+  // revoke action + home-page redirect + invite-accept copy.
+  const signerUserIds = Array.from(
+    new Set(
+      rawPlacements
+        .map((r) => r.signerUser?.id)
+        .filter((v): v is string => !!v),
+    ),
+  );
+  const externalSignerIds = await filterZeroGrantStaffUserIds(
+    signerUserIds,
+    orgId,
+  );
 
   const placements: PlacementVm[] = rawPlacements.map((r) => ({
     id: r.id,
@@ -83,7 +103,13 @@ export default async function SignaturePlacementPage({
     signerUserId: r.signerUserId,
     signerName: r.signerName,
     signerUser: r.signerUser
-      ? { id: r.signerUser.id, name: r.signerUser.name, role: r.signerUser.role }
+      ? {
+          id: r.signerUser.id,
+          name: r.signerUser.name,
+          role: r.signerUser.role,
+          isActive: r.signerUser.isActive,
+          isExternalSigner: externalSignerIds.has(r.signerUser.id),
+        }
       : null,
     label: r.label,
     ordering: r.ordering,

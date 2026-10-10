@@ -40,6 +40,13 @@ export type AuditAction =
   | "DOCUFLOW_SIGN_PLACEMENT_DELETE"
   | "DOCUFLOW_SIGN_PLACEMENT_RESET"
   | "DOCUFLOW_SIGNATURE_SIGNED"
+  // External-counterparty signer invite (CEO 2026-10-08) — mints a real
+  // User row scoped to exactly ONE placement (zero user_modules rows, so
+  // they get no DocuFlow browse access, only /sign/[placementId] for the
+  // placement they're invited to). REVOKED pairs with the admin's later
+  // deactivate action once the signature is no longer needed.
+  | "DOCUFLOW_SIGNER_INVITED"
+  | "DOCUFLOW_SIGNER_REVOKED"
   // Admin sets/clears a signature ON BEHALF OF another user (e.g. onboarding,
   // or the user can't draw their own) — distinct from DOCUFLOW_SIGNATURE_SIGNED
   // (that's the act of signing a document). Security-sensitive: the target
