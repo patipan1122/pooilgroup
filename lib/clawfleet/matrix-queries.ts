@@ -298,3 +298,145 @@ export async function getMatrixData(
     machines: out,
   };
 }
+
+// =============================================================
+// Pinpoint 6pt #1 (2026-10-10) — "กดช่องรวมวันนั้นแล้วดูสลิปฝากเงินได้ไหม"
+// สถานะฝากเงินของ "สาขา × วัน" เดียว — ตอบคำถาม "วันนี้เก็บเงินแล้ว ฝากธนาคารรึยัง".
+//
+// ความจริงของธุรกิจ (วิจัยไว้ก่อนเขียน — ต้องเคารพ): CfCashDeposit ผูกกับ "สาขา + เวลาที่ไปฝาก"
+// ไม่ได้ผูกกับวันเดียว/ตู้เดียว — พนักงานอาจปล่อยรอบค้างมือหลายวันแล้วฝากรวดเดียว (1 ใบฝากครอบ
+// หลายวัน) หรือแยกฝากหลายรอบในวันเดียว (1 วัน หลายใบฝาก). ดังนั้น 1 วันของ 1 สาขา อาจมีพร้อมกันได้ทั้ง
+// "บางรอบฝากแล้ว (อาจคนละใบ)" และ "บางรอบยังค้างมือ" — ฟังก์ชันนี้ group รอบของวันนั้นด้วย depositId
+// (null = ยังไม่ฝาก) แทนที่จะสมมติว่า 1 วัน = 1 สถานะเดียว.
+// =============================================================
+
+/** 1 ใบฝากที่ "ครอบรอบเก็บของวันนี้" อย่างน้อย 1 รอบ (ใบฝากอาจครอบวันอื่นด้วย — amountCents คือยอดฝากทั้งใบ) */
+export type DayDepositEntry = {
+  depositId: string;
+  depositCode: string;
+  depositedAt: string; // ISO
+  slipPhotoUrl: string | null;
+  /** ยอดฝากจริงทั้งใบ (จากสลิป) — อาจมากกว่าที่ครอบวันนี้ ถ้าใบนี้ครอบหลายวัน */
+  amountCents: number;
+  /** จำนวนรอบ "ของวันนี้" ที่อยู่ในใบฝากนี้ */
+  sessionsThisDay: number;
+  /** ผลรวมเงินเก็บของรอบ "วันนี้" ที่อยู่ในใบฝากนี้ (ไม่ใช่ยอดฝากทั้งใบ) */
+  coveredCentsThisDay: number;
+};
+
+export type DayDepositStatus = {
+  isoDay: string;
+  /** มีรอบเก็บ/ยอดตั้งต้นของวันนี้ที่สาขานี้เลยไหม (ไม่ว่าฝากแล้วหรือยัง) — false = วันนั้นไม่มีกิจกรรมอะไรเลย */
+  hasActivity: boolean;
+  /** ใบฝากที่ครอบรอบของวันนี้ (ใหม่สุดก่อน) */
+  deposits: DayDepositEntry[];
+  /** จำนวนรอบของวันนี้ที่ "ยังไม่ฝาก" (depositId = null) */
+  undepositedCount: number;
+  /** ยอดเงินรวมของรอบที่ยังไม่ฝาก */
+  undepositedCents: number;
+};
+
+const ISO_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function emptyDayDepositStatus(isoDay: string): DayDepositStatus {
+  return { isoDay, hasActivity: false, deposits: [], undepositedCount: 0, undepositedCents: 0 };
+}
+
+/**
+ * สถานะฝากเงินของรอบเก็บเงินทั้งหมดใน "สาขา × วัน" เดียว — ให้ตรงกับช่อง "รวมวันนั้น" ในเมทริกซ์เป๊ะ.
+ *
+ * day boundary ใช้ตรรกะเดียวกับ getMatrixData ด้านบน: events.collected_at ตัดเป็นวันไทย
+ * (AT TIME ZONE 'Asia/Bangkok') · event_type IN (COLLECTION, INITIAL) · resolve สาขาจาก
+ * session.branch_id OR group.branch_id (รองรับตู้ย้ายสาขา/legacy group) — ไม่งั้นตัวเลขจะไม่ตรงกับ
+ * ที่ผู้ใช้เห็นในตาราง.
+ *
+ * ไม่มี Prisma relation ตรงจาก CfCollectionSession.depositId → CfCashDeposit (ดู schema.prisma:2527) —
+ * join ด้วยมือเหมือน loadBranchNames ด้านบน (manual join pattern เดียวกับทั้งไฟล์นี้).
+ *
+ * อ่านอย่างเดียว · org+branch scope (userBranchIds) · ทุก error/edge case คืนค่าว่าง (กันหน้าแตก).
+ */
+export async function getDayDepositStatus(
+  opts: { branchCode: string; isoDay: string },
+): Promise<DayDepositStatus> {
+  const empty = emptyDayDepositStatus(opts.isoDay);
+  if (!ISO_DAY_RE.test(opts.isoDay)) return empty;
+  try {
+    const session = await requireSession();
+    const { orgId, branchIds } = await scope(session);
+
+    const branch = await prisma.branch.findFirst({
+      where: {
+        orgId,
+        businessType: "claw_machine",
+        code: opts.branchCode,
+        ...(branchIds === "ALL" ? {} : { id: { in: branchIds } }),
+      },
+      select: { id: true },
+    });
+    if (!branch) return empty;
+
+    // 1. sessionId ทั้งหมดที่มี event (COLLECTION/INITIAL) ตกวันนี้ ของสาขานี้ — boundary เดียวกับเมทริกซ์
+    const sessionRows = await prisma.$queryRaw<{ session_id: string }[]>`
+      SELECT DISTINCT e.session_id::text AS session_id
+      FROM cf_collection_events e
+      JOIN cf_collection_sessions s ON s.id = e.session_id
+      LEFT JOIN cf_machine_groups g ON g.id = s.group_id
+      WHERE e.org_id = ${orgId}::uuid
+        AND e.session_id IS NOT NULL
+        AND e.event_type IN ('COLLECTION', 'INITIAL')
+        AND (e.collected_at AT TIME ZONE 'Asia/Bangkok')::date = ${opts.isoDay}::date
+        AND (s.branch_id = ${branch.id}::uuid OR g.branch_id = ${branch.id}::uuid)
+    `;
+    const sessionIds = [...new Set(sessionRows.map((r) => r.session_id))];
+    if (sessionIds.length === 0) return empty;
+
+    // 2. โหลดรอบจริง (depositId + ยอดเงิน) — ใช้ตัดสินฝากแล้ว/ยังไม่ฝาก ต่อรอบ
+    const sessions = await prisma.cfCollectionSession.findMany({
+      where: { id: { in: sessionIds }, orgId },
+      select: { id: true, depositId: true, totalCashCents: true },
+    });
+    if (sessions.length === 0) return empty;
+
+    let undepositedCount = 0;
+    let undepositedCents = 0;
+    const byDeposit = new Map<string, { count: number; cents: number }>();
+    for (const s of sessions) {
+      if (!s.depositId) {
+        undepositedCount += 1;
+        undepositedCents += s.totalCashCents;
+        continue;
+      }
+      const g = byDeposit.get(s.depositId) ?? { count: 0, cents: 0 };
+      g.count += 1;
+      g.cents += s.totalCashCents;
+      byDeposit.set(s.depositId, g);
+    }
+
+    // 3. join ใบฝาก (manual — ไม่มี Prisma relation session→deposit) · org-scoped กันข้ามองค์กร
+    const depositIds = [...byDeposit.keys()];
+    const depositRows = depositIds.length > 0
+      ? await prisma.cfCashDeposit.findMany({
+          where: { id: { in: depositIds }, orgId },
+          select: { id: true, depositCode: true, depositedAt: true, slipPhotoUrl: true, amountCents: true },
+          orderBy: { depositedAt: "desc" },
+        })
+      : [];
+
+    const deposits: DayDepositEntry[] = depositRows.map((d) => {
+      const g = byDeposit.get(d.id) ?? { count: 0, cents: 0 };
+      return {
+        depositId: d.id,
+        depositCode: d.depositCode,
+        depositedAt: d.depositedAt.toISOString(),
+        slipPhotoUrl: d.slipPhotoUrl ?? null,
+        amountCents: d.amountCents,
+        sessionsThisDay: g.count,
+        coveredCentsThisDay: g.cents,
+      };
+    });
+
+    return { isoDay: opts.isoDay, hasActivity: true, deposits, undepositedCount, undepositedCents };
+  } catch {
+    return empty;
+  }
+}

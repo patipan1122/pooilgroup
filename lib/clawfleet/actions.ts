@@ -35,6 +35,7 @@ import { computeCfDrift } from "./drift";
 import { getBranchMainWarehouseId } from "./stock-queries";
 import { transferMainRoomBetweenBranchesTx, transferMachineStockOnBranchMoveTx, CfSourceOverIssueError } from "./stock-source";
 import { getBranchRawReadings, getMachineDayRefills, type RawReadingRow, type CellRefill } from "./raw-readings-queries";
+import { getDayDepositStatus, type DayDepositStatus } from "./matrix-queries";
 import { isAllowedPhotoUrl } from "@/lib/chairops/utils/url-guard";
 
 type Result = { ok: true } | { ok: false; error: string };
@@ -1726,6 +1727,29 @@ export async function getMatrixCellReadings(
     // เรียงเก่า→ใหม่ ในช่องเดียว (ตั้งต้นอยู่บนสุด · รอบเก็บไล่ลงมา) — อ่านง่ายกว่า
     const rows = [...res.rows].reverse();
     return { ok: true, data: { rows, refills } };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "โหลดข้อมูลไม่สำเร็จ" };
+  }
+}
+
+// =============================================================
+// Pinpoint 6pt #1 (2026-10-10) · โหลด "สถานะฝากเงิน" ของสาขา×วันเดียว — สำหรับ popup ที่โผล่เมื่อกด
+//   ช่อง "รวมวันนั้น" (คอลัมน์ขวาสุดของแถววัน) ในรายงานเจาะสาขา. ดู getDayDepositStatus เพื่ออ่านตรรกะ
+//   เต็ม (ทำไม 1 วันอาจมีได้ทั้งใบฝากหลายใบ + รอบที่ยังค้างมือพร้อมกัน).
+// =============================================================
+const DayDepositStatusSchema = z.object({
+  branchCode: z.string().min(1, "ไม่ระบุสาขา"),
+  isoDay: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "รูปแบบวันไม่ถูกต้อง"),
+});
+
+export async function getMatrixDayDepositStatus(
+  input: unknown,
+): Promise<ResultOf<DayDepositStatus>> {
+  const parsed = DayDepositStatusSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  try {
+    const data = await getDayDepositStatus(parsed.data);
+    return { ok: true, data };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "โหลดข้อมูลไม่สำเร็จ" };
   }

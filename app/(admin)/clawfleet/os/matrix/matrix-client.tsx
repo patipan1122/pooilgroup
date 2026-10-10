@@ -18,8 +18,10 @@ import { assignMachineToStaff } from "@/lib/clawfleet/assignment-actions";
 import { ChecklistClient, type ChecklistBranch } from "./checklist-client";
 import { RawReadingsClient } from "./raw-readings-client";
 import { CellDetailModal } from "./cell-detail-modal";
-import { getMatrixCellReadings } from "@/lib/clawfleet/actions";
+import { DayDepositModal } from "./day-deposit-modal";
+import { getMatrixCellReadings, getMatrixDayDepositStatus } from "@/lib/clawfleet/actions";
 import type { RawReadingRow, CellRefill } from "@/lib/clawfleet/raw-readings-queries";
+import type { DayDepositEntry } from "@/lib/clawfleet/matrix-queries";
 
 export type AssignableStaff = { id: string; name: string };
 
@@ -236,6 +238,30 @@ export function MatrixClient({
     sub: string;
     key: { machineId: string; iso: string } | null;
   }>({ open: false, loading: false, rows: [], refills: [], title: "", sub: "", key: null });
+
+  // Pinpoint 6pt #1 · popup "สถานะฝากเงิน" ของช่องรวมวันนั้น (คอลัมน์ขวาสุดของแถววัน) — โหลดตอนกด
+  //   key = iso ของ request ล่าสุด → กัน response เก่ามาทับค่าใหม่เมื่อกดสลับวันเร็ว ๆ (เหมือน cell ด้านบน)
+  const [dayDeposit, setDayDeposit] = useState<{
+    open: boolean;
+    loading: boolean;
+    title: string;
+    sub: string;
+    key: string | null;
+    deposits: DayDepositEntry[];
+    undepositedCount: number;
+    undepositedCents: number;
+    hasActivity: boolean;
+  }>({
+    open: false,
+    loading: false,
+    title: "",
+    sub: "",
+    key: null,
+    deposits: [],
+    undepositedCount: 0,
+    undepositedCents: 0,
+    hasActivity: false,
+  });
 
   // CEO 2026-08-06 · จำ "ช่องที่เพิ่งยืนยันตรวจ/ยกเลิก" ในจอ (optimistic) → เปลี่ยนสีทันที ไม่ต้อง refresh ทั้งหน้า
   //   key = `${machineId}:${iso}` · true = เพิ่งตรวจ (ฟ้า) · false = เพิ่งยกเลิก (แดง) · ไม่มี key = ใช้ค่า server
@@ -585,6 +611,46 @@ export function MatrixClient({
       key: { machineId: gm.machineId, iso },
     });
     loadCell(gm.machineId, iso);
+  };
+
+  /** กดช่อง "รวมวันนั้น" (คอลัมน์ขวาสุดของแถววัน) → เปิด popup สถานะฝากเงิน + โหลดข้อมูลของวันนั้น */
+  const openDayTotal = (ri: number) => {
+    if (empty) return; // sample path — ไม่มี event จริง
+    const iso = grid.iso[ri];
+    const dayLabel = matrix.dayRows[ri]?.dateLabel ?? iso;
+    setDayDeposit({
+      open: true,
+      loading: true,
+      title: "สถานะฝากเงิน",
+      sub: `${dayLabel} · ${branch?.name ?? ""}`,
+      key: iso,
+      deposits: [],
+      undepositedCount: 0,
+      undepositedCents: 0,
+      hasActivity: false,
+    });
+    void getMatrixDayDepositStatus({ branchCode, isoDay: iso })
+      .then((res) => {
+        setDayDeposit((s) =>
+          s.key === iso
+            ? {
+                ...s,
+                loading: false,
+                deposits: res.ok ? res.data.deposits : [],
+                undepositedCount: res.ok ? res.data.undepositedCount : 0,
+                undepositedCents: res.ok ? res.data.undepositedCents : 0,
+                hasActivity: res.ok ? res.data.hasActivity : false,
+              }
+            : s,
+        );
+      })
+      .catch(() =>
+        setDayDeposit((s) =>
+          s.key === iso
+            ? { ...s, loading: false, deposits: [], undepositedCount: 0, undepositedCents: 0, hasActivity: false }
+            : s,
+        ),
+      );
   };
 
   const noData = !empty && grid.machines.length === 0;
@@ -1095,7 +1161,10 @@ export function MatrixClient({
                       background: "#FAFBFC",
                       borderBottom: "1px solid #F0F1F4",
                       borderLeft: "1px solid #E3E6EA",
+                      ...(empty ? {} : { cursor: "pointer" }),
                     }}
+                    onClick={empty ? undefined : () => openDayTotal(ri)}
+                    title={empty ? undefined : "กดดูสถานะฝากเงิน + สลิป"}
                   >
                     {metric === "dolls" ? (
                       <div style={{ fontWeight: 700, color: r.dollsTotal > 0 ? "#B45309" : "#9AA1AB", fontSize: 12.5, lineHeight: 1.2 }}>
@@ -1179,6 +1248,19 @@ export function MatrixClient({
             loadCell(cell.key.machineId, cell.key.iso); // โหลดช่องเดียว (เบา) → ปุ่ม/ป้ายในป๊อปอัปอัปเดตตาม server
           }
         }}
+      />
+
+      {/* popup "สถานะฝากเงิน" ของช่องรวมวันนั้น (Pinpoint 6pt #1) */}
+      <DayDepositModal
+        open={dayDeposit.open}
+        onClose={() => setDayDeposit((s) => ({ ...s, open: false }))}
+        title={dayDeposit.title}
+        sub={dayDeposit.sub}
+        loading={dayDeposit.loading}
+        deposits={dayDeposit.deposits}
+        undepositedCount={dayDeposit.undepositedCount}
+        undepositedCents={dayDeposit.undepositedCents}
+        hasActivity={dayDeposit.hasActivity}
       />
 
       {/* drill modal รายตู้ */}
