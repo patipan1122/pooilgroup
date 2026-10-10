@@ -98,7 +98,23 @@ export default async function DocumentDetailPage({
     }
   }
 
-  const downloadUrl = await getSignedDownloadUrl(doc.fileKey).catch(() => null);
+  // Previously this silently swallowed any signing error into `null`, so a
+  // failure here looked identical to "nothing to see" — no indication to the
+  // user that something actually went wrong. Now we capture the reason and
+  // surface it (see downloadError below) instead of a button that just
+  // vanishes with no explanation.
+  let downloadUrl: string | null = null;
+  let downloadError: string | null = null;
+  try {
+    downloadUrl = await getSignedDownloadUrl(doc.fileKey);
+  } catch (err) {
+    console.error("[docuflow document detail] getSignedDownloadUrl failed", {
+      documentId: id,
+      fileKey: doc.fileKey,
+      err,
+    });
+    downloadError = "เปิดไฟล์ไม่สำเร็จ — ลองใหม่อีกครั้ง หรือติดต่อแอดมินถ้ายังไม่ได้";
+  }
   const isPdf = doc.mimeType === "application/pdf";
   const isImage = doc.mimeType?.startsWith("image/") ?? false;
 
@@ -288,6 +304,11 @@ export default async function DocumentDetailPage({
               ดาวน์โหลด
             </DfButton>
           )}
+          {!downloadUrl && downloadError && (
+            <DfPill tone="danger">
+              <AlertTriangle size={11} /> {downloadError}
+            </DfPill>
+          )}
           {adminTier && <DeleteDocumentButton id={doc.id} name={doc.name} />}
         </div>
       </div>
@@ -308,6 +329,7 @@ export default async function DocumentDetailPage({
           >
             <ViewerTabs
               downloadUrl={downloadUrl}
+              downloadError={downloadError}
               mimeType={doc.mimeType}
               docName={doc.name}
               meta={[
@@ -417,14 +439,29 @@ export default async function DocumentDetailPage({
                   <PenLine size={14} />
                   ส่งให้เซ็น
                 </DfButton>
-                <DfButton
-                  variant="ghost"
-                  href={downloadUrl ?? "#"}
-                  style={{ justifyContent: "center" }}
-                >
-                  <Download size={14} />
-                  ดาวน์โหลด
-                </DfButton>
+                {downloadUrl ? (
+                  <DfButton
+                    variant="ghost"
+                    href={downloadUrl}
+                    style={{ justifyContent: "center" }}
+                  >
+                    <Download size={14} />
+                    ดาวน์โหลด
+                  </DfButton>
+                ) : (
+                  // Previously this fell back to href="#" — a dead link that
+                  // looked clickable but silently did nothing. Disabled +
+                  // titled so the failure is visible instead of invisible.
+                  <DfButton
+                    variant="ghost"
+                    disabled
+                    title={downloadError ?? "เปิดไฟล์ไม่สำเร็จ"}
+                    style={{ justifyContent: "center", opacity: 0.5, cursor: "not-allowed" }}
+                  >
+                    <Download size={14} />
+                    ดาวน์โหลด
+                  </DfButton>
+                )}
               </div>
             </DfCard>
           )}

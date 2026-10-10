@@ -12,7 +12,12 @@ const CSP = [
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
   "connect-src 'self' https://*.supabase.co https://*.upstash.io https://*.r2.cloudflarestorage.com https://api.telegram.org https://*.line.me https://*.line-scdn.net wss://*.supabase.co",
-  "frame-src 'self' https://liff.line.me https://*.line.me",
+  // DocuFlow embeds the signed-URL PDF preview in an <iframe src={r2SignedUrl}>
+  // (components/docuflow/viewer-tabs.tsx). That domain is *.r2.cloudflarestorage.com,
+  // the same host already trusted above for connect-src — frame-src had been left
+  // without it, so the browser silently blocked every PDF preview (console-only
+  // CSP violation, nothing shown to the user). Bug: 2026-10-10.
+  "frame-src 'self' https://liff.line.me https://*.line.me https://*.r2.cloudflarestorage.com",
   "frame-ancestors 'self' https://liff.line.me",
   "base-uri 'self'",
   "form-action 'self'",

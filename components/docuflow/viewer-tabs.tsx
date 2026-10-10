@@ -13,6 +13,8 @@ import {
   FileText,
   Clock,
   MessageCircle,
+  AlertTriangle,
+  Download,
 } from "lucide-react";
 
 interface MetaItem {
@@ -35,6 +37,9 @@ interface Comment {
 
 interface Props {
   downloadUrl: string | null;
+  /** Set when getSignedDownloadUrl threw — distinguishes "actually failed to
+   *  open" from "this file type just doesn't have an inline preview yet". */
+  downloadError?: string | null;
   mimeType: string | null;
   docName: string;
   meta: MetaItem[];
@@ -46,6 +51,7 @@ type Tab = "preview" | "data" | "history" | "comments";
 
 export function ViewerTabs({
   downloadUrl,
+  downloadError = null,
   mimeType,
   docName,
   meta,
@@ -142,12 +148,23 @@ export function ViewerTabs({
               <iframe
                 src={downloadUrl}
                 title={docName}
-                // Defense-in-depth: the PDF lives on R2's signed-URL
-                // domain (different origin), but we still sandbox to deny
-                // top-level navigation, popups, and form posts. Allow
-                // same-origin so the browser's built-in PDF viewer can
-                // fetch its own assets.
-                sandbox="allow-same-origin allow-scripts"
+                // 2026-10-10: `sandbox` used to be set here (even just
+                // "allow-same-origin allow-scripts"). Per the HTML spec, ANY
+                // sandbox attribute permanently sets the "sandboxed plugins
+                // browsing context flag" with no token to un-set it — so
+                // Chrome's built-in PDF viewer (a MimeHandlerView plugin)
+                // refused to load at all, rendering a broken-file icon
+                // instead of the document (verified: same broken icon with
+                // allow-scripts, allow-same-origin, and allow-popups all
+                // added together — only removing `sandbox` entirely let the
+                // PDF render). That's the actual bug CEO reported as
+                // "uploaded files can't be opened at all": this iframe was
+                // never able to show a PDF in Chrome, sandboxed or not.
+                // Safe to drop sandboxing here because `downloadUrl` only
+                // ever points at an R2 object that passed upload-time
+                // magic-byte validation as application/pdf
+                // (lib/docuflow/mime-validate.ts) — never arbitrary HTML —
+                // and this branch only renders when isPdf is already true.
                 referrerPolicy="no-referrer"
                 style={{
                   width: "100%",
@@ -172,7 +189,40 @@ export function ViewerTabs({
                 }}
               />
             )}
-            {(!downloadUrl || (!isPdf && !isImage)) && (
+            {!downloadUrl && (
+              // getSignedDownloadUrl actually failed — this is a real error,
+              // not just "unsupported file type for inline preview".
+              <div
+                style={{
+                  padding: 40,
+                  textAlign: "center",
+                  color: "var(--df-danger)",
+                }}
+              >
+                <AlertTriangle
+                  size={28}
+                  style={{ display: "block", margin: "0 auto 10px" }}
+                />
+                <p style={{ marginTop: 10, fontSize: 14, fontWeight: 600 }}>
+                  เปิดไฟล์ไม่สำเร็จ
+                </p>
+                <p
+                  style={{
+                    marginTop: 6,
+                    fontSize: 13,
+                    color: "var(--df-muted)",
+                  }}
+                >
+                  {downloadError ?? "ไม่สามารถสร้างลิงก์เปิดไฟล์ได้ ลองรีเฟรชหน้านี้ หรือติดต่อแอดมิน"}
+                </p>
+              </div>
+            )}
+
+            {downloadUrl && !isPdf && !isImage && (
+              // Signing succeeded, we just don't render this mimeType inline
+              // (e.g. .docx/.doc/.zip — DocuFlow's upload whitelist allows
+              // them, but there's no in-browser viewer for them). The
+              // download link definitely works — make that obvious.
               <div
                 style={{
                   padding: 40,
@@ -185,10 +235,24 @@ export function ViewerTabs({
                   style={{ display: "block", margin: "0 auto 10px" }}
                 />
                 <p style={{ marginTop: 10, fontSize: 14 }}>
-                  ไฟล์นี้ไม่รองรับ Preview
-                  <br />
-                  กด &ldquo;ดาวน์โหลด&rdquo; ด้านบนเพื่อเปิดไฟล์
+                  ไฟล์นี้ไม่รองรับ Preview ในหน้านี้
                 </p>
+                <a
+                  href={downloadUrl}
+                  style={{
+                    marginTop: 14,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontSize: 14,
+                    fontWeight: 600,
+                    color: "var(--df-brand)",
+                    textDecoration: "none",
+                  }}
+                >
+                  <Download size={15} />
+                  ดาวน์โหลดเพื่อเปิดไฟล์
+                </a>
               </div>
             )}
           </div>
