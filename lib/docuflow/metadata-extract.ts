@@ -14,7 +14,7 @@
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSignedDownloadUrl } from "./r2";
-import { extractPdfText } from "./pdf-extract";
+// NOT a static import — see fetchDocumentText() below for why.
 
 /* ============================================================
    Types
@@ -204,6 +204,19 @@ async function fetchDocumentText(
 
   if (mimeType === "application/pdf" || fileKey.toLowerCase().endsWith(".pdf")) {
     const buf = Buffer.from(await res.arrayBuffer());
+    // Dynamic import, not static — pdf-extract.ts pulls in `pdf-parse`,
+    // which references the browser-only `DOMMatrix` global at MODULE
+    // EVALUATION time (not just when a function runs). A static top-level
+    // import here meant every importer of this file — including
+    // loadCachedMetadataMap(), called unconditionally by the document
+    // detail page's RenewalHistorySection on every page load — crashed
+    // the whole page with a 500 the instant Node tried to evaluate
+    // pdf-extract.ts, even though loadCachedMetadataMap() never calls
+    // extractPdfText() at all. Deferring the import to here means
+    // pdf-extract.ts is only ever evaluated when this function actually
+    // runs (i.e. a real metadata-extraction request), not on every page
+    // render. Bug: 2026-10-10, found live in production.
+    const { extractPdfText } = await import("./pdf-extract");
     // Reuse the capability-H helper (caps at 10k chars, normalises whitespace)
     const out = await extractPdfText(buf);
     if (out.text.startsWith("ไม่สามารถอ่านไฟล์")) return "";
