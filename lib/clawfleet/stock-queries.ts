@@ -122,20 +122,40 @@ export async function getCfBranchStockProducts(
   });
   if (products.length === 0) return [];
 
-  // ผลรวม qty ต่อ product — แยกเป็น "ในตู้" (machineId != null) กับ "คลังสาขา" (machineId null)
+  // ผลรวม qty ต่อ product — "คลังสาขา" (machineId null)
   // warehouseId ละไว้ → warehouseWhere คืน {} → WHERE เดิมเป๊ะ (รวมทุกห้อง = ยอดสาขาเดิม · zero regression)
   const moves = await prisma.cfStockMovement.groupBy({
     by: ["productId"],
     where: { orgId, branchId, machineId: null, ...warehouseWhere(warehouseId, mainWarehouseId) },
     _sum: { qty: true },
   });
-  const inMachineMoves = await prisma.cfStockMovement.groupBy({
-    by: ["productId"],
-    where: { orgId, branchId, machineId: { not: null } },
-    _sum: { qty: true },
+  // ★ FIX (CEO 2026-10-10 · production data-integrity bug) — "ในตู้" เดิมคำนวณจาก Σ qty ใน
+  //   cf_stock_movements ที่ machineId != null ซึ่งเป็น ledger ที่มีแค่ LOAD_TO_MACHINE เขียนเข้า
+  //   (ไม่มี movement type ไหนบันทึก "ลูกค้าคีบออกจากตู้") → ยอดนี้สะสมตลอดชีพ ไม่เคยลดลงจริง
+  //   (พิสูจน์แล้วบนโปรดักชัน: สาขาหนึ่งยอด ledger-sum = 3,164 ตัว แต่ยอดจริงจาก cf_machines.last_doll_stock
+  //   (คอลัมน์ที่ trigger บน cf_collection_events อัปเดตอัตโนมัติ = ground truth เดียวกับหน้า matrix) = 853 ตัว).
+  //   แก้โดยอ่านยอดจริง "ตอนนี้" ต่อตู้ (lastDollStock) แล้วผูกเข้า product ผ่าน loadout ปัจจุบัน
+  //   (CfMachineLoadout effectiveTo:null — ยืนยันแล้วว่าทุกตู้ในองค์กรนี้มี loadout active แค่ 1 แถว/ตู้
+  //   ไม่มีตู้ไหนผสมหลาย SKU) — ไม่กระทบ warehouseId (inMachines ยังคิดทั้งสาขาเหมือนเดิม ไม่ผูกห้องใน v1).
+  const machinesWithLoadout = await prisma.cfMachine.findMany({
+    where: { orgId, branchId, isActive: true },
+    select: {
+      lastDollStock: true,
+      loadouts: {
+        where: { effectiveTo: null },
+        orderBy: { effectiveFrom: "desc" },
+        select: { productId: true },
+        take: 1,
+      },
+    },
   });
+  const imMap = new Map<string, number>();
+  for (const m of machinesWithLoadout) {
+    const pid = m.loadouts[0]?.productId;
+    if (!pid) continue; // ตู้ยังไม่ตั้ง loadout (เช่น ตู้ใหม่ยังไม่ setup สินค้า) → ไม่ผูกกับ product ไหน ข้าม
+    imMap.set(pid, (imMap.get(pid) ?? 0) + m.lastDollStock);
+  }
   const whMap = new Map(moves.map((m) => [m.productId, m._sum.qty ?? 0]));
-  const imMap = new Map(inMachineMoves.map((m) => [m.productId, m._sum.qty ?? 0]));
 
   return products
     .map((p): CfStockProductRow => ({
@@ -148,8 +168,8 @@ export async function getCfBranchStockProducts(
       unitCostCents: p.unitCostCents,
       defaultPriceCoins: p.defaultPriceCoins,
       warehouse: whMap.get(p.id) ?? 0,
-      // ในตู้ = − (movement ของ LOAD_TO_MACHINE ที่ machineId != null) → ทำให้เป็นบวก
-      inMachines: Math.abs(imMap.get(p.id) ?? 0),
+      // ในตู้ = ยอดจริงตอนนี้ (ดูคอมเมนต์ด้านบน) — ไม่ใช่ ledger สะสมตลอดชีพอีกต่อไป
+      inMachines: imMap.get(p.id) ?? 0,
       reorderLevel: CF_REORDER_LEVEL,
     }))
     // โชว์เฉพาะที่มีความเคลื่อนไหวหรือมีของ (กันแสดงสินค้าทุกตัวของ org ที่ไม่เคยรับเข้าสาขานี้)
@@ -212,6 +232,87 @@ export async function getCfCounts(orgId: string, branchId: string): Promise<CfCo
     },
   });
   return rows;
+}
+
+// =============================================================
+// Point 1 (2026-10-10) — รายละเอียดใบนับสต็อก (ประวัติ "นับสต็อก" เดิมมีแต่หัวใบ กดดูรายการไม่ได้)
+//   READ-ONLY — แสดงเท่านั้น ไม่แตะการสร้าง/ส่ง/อนุมัติใบนับ (flow เดิมผ่าน submitStockCount/reviewCfStockCount)
+// =============================================================
+export type CfStockCountDetailLine = {
+  productId: string;
+  productName: string;
+  systemQty: number; // ของในระบบก่อนนับ
+  countedQty: number; // นับได้จริง
+  diff: number; // countedQty - systemQty
+  reason: string | null;
+};
+export type CfStockCountDetail = {
+  id: string;
+  countCode: string;
+  branchId: string;
+  branchName: string;
+  warehouseName: string | null; // null = คลังหลัก (main) ของสาขา
+  note: string | null;
+  itemsCounted: number;
+  totalDiff: number;
+  countedById: string;
+  countedByName: string | null;
+  countedAtISO: string;
+  status: string; // APPLIED | PENDING | APPROVED | REJECTED
+  reviewedById: string | null;
+  reviewedByName: string | null;
+  reviewedAtISO: string | null;
+  reviewNote: string | null;
+  photoUrls: string[];
+  lines: CfStockCountDetailLine[];
+};
+
+/**
+ * รายละเอียดใบนับสต็อก 1 ใบ (READ-ONLY) — scope org + สาขาที่ user เห็น (allowed).
+ * null = ไม่พบใบนี้ หรือใบนี้อยู่นอกสาขาที่ user มีสิทธิ์ดู (กัน cross-branch/cross-tenant).
+ */
+export async function getCfStockCountDetail(
+  orgId: string,
+  allowed: string[] | "ALL",
+  countId: string,
+): Promise<CfStockCountDetail | null> {
+  const branchWhere = allowed === "ALL" ? {} : { branchId: { in: allowed } };
+  const row = await prisma.cfStockCount.findFirst({
+    where: { id: countId, orgId, ...branchWhere },
+    select: {
+      id: true, countCode: true, branchId: true, note: true,
+      itemsCounted: true, totalDiff: true, countedById: true, countedByName: true, countedAt: true,
+      status: true, reviewedById: true, reviewedByName: true, reviewedAt: true, reviewNote: true,
+      photoUrls: true,
+      branch: { select: { name: true } },
+      warehouse: { select: { name: true } },
+      lines: {
+        select: { productId: true, productName: true, systemQty: true, countedQty: true, diff: true, reason: true },
+        orderBy: { productName: "asc" },
+      },
+    },
+  });
+  if (!row) return null;
+  return {
+    id: row.id,
+    countCode: row.countCode,
+    branchId: row.branchId,
+    branchName: row.branch?.name ?? "สาขา",
+    warehouseName: row.warehouse?.name ?? null,
+    note: row.note,
+    itemsCounted: row.itemsCounted,
+    totalDiff: row.totalDiff,
+    countedById: row.countedById,
+    countedByName: row.countedByName,
+    countedAtISO: row.countedAt.toISOString(),
+    status: row.status,
+    reviewedById: row.reviewedById,
+    reviewedByName: row.reviewedByName,
+    reviewedAtISO: row.reviewedAt ? row.reviewedAt.toISOString() : null,
+    reviewNote: row.reviewNote,
+    photoUrls: row.photoUrls,
+    lines: row.lines,
+  };
 }
 
 export type CfLossRow = {

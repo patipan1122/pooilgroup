@@ -11,7 +11,10 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { assertCfAdmin, userBranchIds, isCfBranchManager, isCfStaff, cfHasAdminPower } from "./role-guard";
-import { getBranchMainWarehouseId, getCfProductHistoryScoped, type CfProductHistory } from "./stock-queries";
+import {
+  getBranchMainWarehouseId, getCfProductHistoryScoped, type CfProductHistory,
+  getCfStockCountDetail, type CfStockCountDetail,
+} from "./stock-queries";
 import { transferMainRoomBetweenBranchesTx } from "./stock-source";
 
 type Result<T = void> = { ok: true; data: T } | { ok: false; error: string };
@@ -2526,4 +2529,16 @@ export async function loadCfProductHistory(productId: string): Promise<CfProduct
   const orgId = session.user.org_id;
   const allowed = await userBranchIds(session);
   return getCfProductHistoryScoped(orgId, productId, allowed);
+}
+
+/**
+ * Point 1 (2026-10-10) — โหลดรายละเอียดใบนับสต็อก 1 ใบ (คลิกแถวในประวัติ "นับสต็อก" → ดูรายการนับ) — READ-ONLY.
+ *   scope: org ของผู้ใช้ + สาขาที่ผู้ใช้เห็น (แอดมิน=ทุกสาขา · พนักงาน=สาขาตน) — mirror loadCfProductHistory.
+ */
+export async function loadCfStockCountDetail(countId: string): Promise<CfStockCountDetail | null> {
+  if (!countId || typeof countId !== "string") return null;
+  const session = await requireSession();
+  const orgId = session.user.org_id;
+  const allowed = await userBranchIds(session);
+  return getCfStockCountDetail(orgId, allowed, countId);
 }

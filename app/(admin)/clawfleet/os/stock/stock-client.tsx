@@ -20,13 +20,14 @@ import { bahtN, num, thDate } from "@/components/clawfleet/os/format";
 import {
   transferStock, receiveStock, submitStockCount, reviewCfStockCount, recordLoss, reviewCfLoss,
   createShipment, confirmShipmentReceived, lookupCfProductByBarcode, loadCfProductHistory,
+  loadCfStockCountDetail,
 } from "@/lib/clawfleet/stock-actions";
 import { createBranchReturn } from "@/lib/clawfleet/branch-return-actions";
 import {
   fetchReceivedTransfersForReturn, fetchReturnableFromTransfer,
 } from "@/lib/clawfleet/branch-return-picker-actions";
 import type { ReceivedTransferRow, ReturnableLine } from "@/lib/clawfleet/branch-return-queries";
-import type { CfReceiptDoc, CfProductHistory } from "@/lib/clawfleet/stock-queries";
+import type { CfReceiptDoc, CfProductHistory, CfStockCountDetail } from "@/lib/clawfleet/stock-queries";
 import { MachinesLoadoutTab, BranchMgmtLink, type MachineSeed, type LoadoutItemSeed } from "./machine-detail";
 
 /* ───────────────────────── seed types (จาก server) ───────────────────────── */
@@ -425,9 +426,20 @@ function OverviewTab({
     return m;
   }, [receiptAllDocs]);
 
-  // ── โหมดดู: "ทุกสาขา" (ค่าเริ่มต้น · ภาพรวมสาขาละบรรทัด) หรือ "สาขานี้" (เจาะสาขาที่เลือกจากตัวสลับใหญ่) ──
-  //   CEO 2026-08-02: เปิดหน้ามาเห็นทุกสาขาก่อน · กด "สาขานี้" เพื่อโฟกัสสาขาที่เลือก (เหมือน flow เดิม)
-  const [allBranches, setAllBranches] = useState(true);
+  // ── โหมดดู: "ทุกสาขา" (ภาพรวมสาขาละบรรทัด) หรือ "สาขานี้" (เจาะสาขาที่เลือกจากตัวสลับใหญ่) ──
+  //   Point 2 (2026-10-10) — เดิม default=true (ทุกสาขา) เสมอ ไม่ sync กับตัวสลับสาขาใหญ่ด้านบน
+  //   (aria-label="เลือกสาขาที่จะดู" → router.push ?branch=...) → เลือกสาขาบนสุดแล้วแท็บนี้ยังโชว์ทุกสาขา
+  //   ต้องมากดปุ่ม "สาขานี้" ซ้ำอีกที. แก้ให้ default ตาม selectedBranchId เสมอ (มีสาขาที่เลือก → scoped ทันที)
+  //   — ยังกดสลับกลับเป็น "ทุกสาขา" มือได้ตามเดิม ไม่ fight กับการกดมือถ้า selectedBranchId ไม่เปลี่ยน.
+  //   ปรับ state "ระหว่าง render" (ไม่ใช่ useEffect) ตาม pattern ที่ React แนะนำสำหรับ
+  //   "reset/adjust state เมื่อ prop เปลี่ยน" (react.dev/learn/you-might-not-need-an-effect) —
+  //   กัน eslint react-hooks/set-state-in-effect (setState sync ใน effect body) ด้วย.
+  const [prevSelectedBranchId, setPrevSelectedBranchId] = useState(selectedBranchId);
+  const [allBranches, setAllBranches] = useState(!selectedBranchId);
+  if (selectedBranchId !== prevSelectedBranchId) {
+    setPrevSelectedBranchId(selectedBranchId);
+    setAllBranches(!selectedBranchId);
+  }
   const selName = realBranches.find((b) => b.id === (selectedBranchId ?? ""))?.name ?? null;
   const canScope = selName != null; // มีสาขาที่เลือกไว้ให้เจาะได้ไหม (ถ้าไม่มี → มีแต่โหมดทุกสาขา)
   const scoped = !allBranches && canScope; // เจาะดูสาขาเดียว = เฉพาะตอนสลับไปโหมด "สาขานี้"
@@ -751,9 +763,19 @@ function OverviewTab({
                                   <ProductThumbZoom url={r.imageUrl} name={r.name} onZoom={(url) => setLightbox({ url, name: r.name })} />
                                   <div style={{ flex: 1, minWidth: 0 }}>
                                     <div style={{ fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</div>
-                                    <div style={{ fontSize: 10.5, color: "#9AA1AB" }}>{r.inMachines > 0 ? `ในตู้ ${num(r.inMachines)}` : "บนชั้นทั้งหมด"}</div>
                                   </div>
-                                  <span className="num" style={{ fontSize: 13, fontWeight: 700, color: r.net < 0 ? "#B42318" : "#1A1D21", flex: "0 0 auto" }}>{num(r.net)}</span>
+                                  {/* Point 3 (2026-10-10): เดิมโชว์ net ตัวใหญ่ตัวเดียว + "ในตู้ N" เป็น subtext จางๆ ด้านล่างชื่อ
+                                      → CEO มองไม่เห็นว่ายังมีของในตู้ชัดเจน (โดยเฉพาะตอนบนชั้น=0). แยกเป็น 2 กลุ่มเท่ากันแทน. */}
+                                  <div style={{ display: "flex", gap: 10, flex: "0 0 auto" }}>
+                                    <div style={{ textAlign: "right" }}>
+                                      <div className="num" style={{ fontSize: 13, fontWeight: 700, color: "#1A1D21" }}>{num(r.inMachines)}</div>
+                                      <div style={{ fontSize: 9.5, color: "#9AA1AB", fontWeight: 600 }}>ในตู้</div>
+                                    </div>
+                                    <div style={{ textAlign: "right" }}>
+                                      <div className="num" style={{ fontSize: 13, fontWeight: 700, color: r.net < 0 ? "#B42318" : "#1A1D21" }}>{num(r.net)}</div>
+                                      <div style={{ fontSize: 9.5, color: "#9AA1AB", fontWeight: 600 }}>บนชั้น</div>
+                                    </div>
+                                  </div>
                                 </div>
                               ))}
                             </div>
@@ -2012,6 +2034,89 @@ function countStatusPill(status: string): { bg: string; color: string; label: st
   return null; // APPLIED (ต่ำกว่าเกณฑ์ · ปรับทันที) → ไม่ต้องมี pill (ปกติ)
 }
 
+/* Point 1 (2026-10-10): รายละเอียดใบนับสต็อก 1 ใบ — โหลดตอนเปิด (mirror ProductHistoryModal) · read-only
+   แสดงเท่านั้น ไม่มีปุ่มแก้ไข/อนุมัติในนี้ (อนุมัติ/ตีกลับทำที่แถวในตารางเหมือนเดิม — CountsTab). */
+function CountDetailModal({ countId, onClose }: { countId: string; onClose: () => void }) {
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<CfStockCountDetail | null>(null);
+  const [err, setErr] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    loadCfStockCountDetail(countId)
+      .then((d) => { if (alive) { setData(d); setLoading(false); } })
+      .catch(() => { if (alive) { setErr(true); setLoading(false); } });
+    return () => { alive = false; };
+  }, [countId]);
+
+  const pill = data ? countStatusPill(data.status) : null;
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      width={560}
+      title={data ? `ใบนับสต็อก · ${data.countCode}` : "ใบนับสต็อก"}
+      sub={data ? `${data.branchName}${data.warehouseName ? ` · ${data.warehouseName}` : ""} · ${fmtDate(data.countedAtISO)}` : undefined}
+    >
+      <div style={{ padding: "16px 20px" }}>
+        {loading ? (
+          <div style={{ fontSize: 13, color: "#9AA1AB", padding: "24px 0", textAlign: "center" }}>กำลังโหลด…</div>
+        ) : err || !data ? (
+          <div style={{ fontSize: 13, color: "#B42318", padding: "24px 0", textAlign: "center" }}>โหลดรายละเอียดไม่สำเร็จ · ลองปิดแล้วเปิดใหม่</div>
+        ) : (
+          <>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, padding: "5px 13px", borderRadius: 20, background: pill?.bg ?? "#E7F4EC", color: pill?.color ?? "#15803D" }}>
+                {pill ? (<><pill.Icon size={13} /> {pill.label}</>) : "ปรับยอดแล้ว"}
+              </span>
+              {data.photoUrls.length > 0 && <span style={{ fontSize: 11.5, color: "#6B7280" }}>{data.photoUrls.length} รูปแนบ</span>}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+              <div style={{ background: "#F8F9FB", borderRadius: 9, padding: "9px 12px" }}>
+                <div style={{ fontSize: 11, color: "#9AA1AB", marginBottom: 2 }}>ผู้นับ</div>
+                <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{data.countedByName ?? "—"}</div>
+              </div>
+              <div style={{ background: "#F8F9FB", borderRadius: 9, padding: "9px 12px" }}>
+                <div style={{ fontSize: 11, color: "#9AA1AB", marginBottom: 2 }}>วันที่นับ</div>
+                <div className="num" style={{ fontSize: 13, fontWeight: 600 }}>{fmtDate(data.countedAtISO)}</div>
+              </div>
+              <div style={{ background: "#F8F9FB", borderRadius: 9, padding: "9px 12px" }}>
+                <div style={{ fontSize: 11, color: "#9AA1AB", marginBottom: 2 }}>จำนวนรายการ</div>
+                <div className="num" style={{ fontSize: 13, fontWeight: 600 }}>{num(data.itemsCounted)} รายการ</div>
+              </div>
+              <div style={{ background: "#F8F9FB", borderRadius: 9, padding: "9px 12px" }}>
+                <div style={{ fontSize: 11, color: "#9AA1AB", marginBottom: 2 }}>ผลต่างรวม</div>
+                <div className="num" style={{ fontSize: 13, fontWeight: 700, color: data.totalDiff === 0 ? "#15803D" : "#B42318" }}>{data.totalDiff > 0 ? "+" : ""}{num(data.totalDiff)}</div>
+              </div>
+              {data.reviewedByName && (
+                <div style={{ background: "#F8F9FB", borderRadius: 9, padding: "9px 12px", gridColumn: "1 / -1" }}>
+                  <div style={{ fontSize: 11, color: "#9AA1AB", marginBottom: 2 }}>ตรวจโดย</div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{data.reviewedByName}{data.reviewedAtISO ? ` · ${fmtDate(data.reviewedAtISO)}` : ""}</div>
+                </div>
+              )}
+            </div>
+            {data.note && <div style={{ fontSize: 12, color: "#6B7280", fontStyle: "italic", marginBottom: 12 }}>หมายเหตุ: “{data.note}”</div>}
+            {data.reviewNote && <div style={{ fontSize: 12, color: "#B45309", fontStyle: "italic", marginBottom: 12 }}>เหตุผลตรวจ: “{data.reviewNote}”</div>}
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#9AA1AB", marginBottom: 7 }}>รายการนับ</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {data.lines.length === 0 && <div style={{ fontSize: 12, color: "#9AA1AB" }}>ไม่มีรายการในใบนี้</div>}
+              {data.lines.map((l, i) => (
+                <div key={`${l.productId}-${i}`} style={{ display: "flex", alignItems: "center", gap: 10, background: "#fff", border: "1px solid #ECEEF1", borderRadius: 8, padding: "8px 12px" }}>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.productName}</span>
+                  <span className="num" style={{ fontSize: 11, color: "#9AA1AB", flex: "0 0 auto" }}>ระบบ {num(l.systemQty)}</span>
+                  <span className="num" style={{ fontSize: 12.5, fontWeight: 700, flex: "0 0 auto" }}>นับ {num(l.countedQty)}</span>
+                  <span className="num" style={{ fontSize: 12.5, fontWeight: 700, flex: "0 0 auto", color: l.diff === 0 ? "#15803D" : l.diff > 0 ? "#4F46E5" : "#B42318" }}>{l.diff > 0 ? "+" : ""}{num(l.diff)}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 function CountsTab({ docs, realBranches, products, defaultBranchId, onHandMap, viewerId, canReview }: {
   docs: DocCountSeed[]; realBranches: BranchOption[]; products: ProductOption[]; defaultBranchId: string;
   onHandMap: Record<string, number>; // ยอด "ระบบมี" ต่อสินค้า (ของสาขาเอกสารที่ server โหลดมา)
@@ -2032,6 +2137,8 @@ function CountsTab({ docs, realBranches, products, defaultBranchId, onHandMap, v
   const [reviewing, setReviewing] = useState<string | null>(null); // countId ที่กำลังตัดสิน
   const [reviewErr, setReviewErr] = useState<string | null>(null);
   const [reviewPending, startReview] = useTransition();
+  // Point 1 (2026-10-10): แถวประวัติเดิมไม่มีทางกดดูรายละเอียด — เพิ่ม modal อ่านอย่างเดียว (mirror ReceiptDetailModal)
+  const [countDetailId, setCountDetailId] = useState<string | null>(null);
   const pendingCount = docs.filter((d) => d.status === "PENDING").length;
   const canCreate = realBranches.length >= 1 && products.length >= 1;
 
@@ -2121,7 +2228,13 @@ function CountsTab({ docs, realBranches, products, defaultBranchId, onHandMap, v
           const showReviewBtns = isPending && canReview && !isCounter;
           const rowBusy = reviewPending && reviewing === d.id;
           return (
-            <div key={d.id} style={{ display: "grid", gridTemplateColumns: "0.9fr 1fr 0.6fr 0.7fr 1.3fr 0.8fr", padding: "13px 20px", alignItems: "center", borderBottom: "1px solid #F4F5F7", fontSize: 13, background: isPending ? "#FFFDF8" : undefined }}>
+            <div
+              key={d.id}
+              className="co-rowlink"
+              onClick={() => setCountDetailId(d.id)}
+              title="กดดูรายละเอียดใบนับ — รายการนับ · ยอดระบบ/ยอดนับจริง · ผู้นับ/ผู้อนุมัติ"
+              style={{ display: "grid", gridTemplateColumns: "0.9fr 1fr 0.6fr 0.7fr 1.3fr 0.8fr", padding: "13px 20px", alignItems: "center", borderBottom: "1px solid #F4F5F7", fontSize: 13, background: isPending ? "#FFFDF8" : undefined, cursor: "pointer" }}
+            >
               <span className="num" style={{ fontWeight: 700, color: "#4F46E5" }}>{d.code}</span>
               <span style={{ color: "#454B54" }}>{d.countedBy || "—"}</span>
               <span className="num" style={{ textAlign: "right" }}>{num(d.itemsCounted)} รายการ</span>
@@ -2134,10 +2247,10 @@ function CountsTab({ docs, realBranches, products, defaultBranchId, onHandMap, v
                 )}
                 {showReviewBtns && (
                   <span style={{ display: "inline-flex", gap: 6 }}>
-                    <button type="button" onClick={() => review(d.id, "approve")} disabled={rowBusy} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11.5, fontWeight: 600, color: "#fff", background: rowBusy ? "#9BC4A8" : "#15803D", border: "none", borderRadius: 7, padding: "4px 9px", cursor: rowBusy ? "default" : "pointer" }}>
+                    <button type="button" onClick={(e) => { e.stopPropagation(); review(d.id, "approve"); }} disabled={rowBusy} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11.5, fontWeight: 600, color: "#fff", background: rowBusy ? "#9BC4A8" : "#15803D", border: "none", borderRadius: 7, padding: "4px 9px", cursor: rowBusy ? "default" : "pointer" }}>
                       <Check size={12} /> อนุมัติ
                     </button>
-                    <button type="button" onClick={() => review(d.id, "reject")} disabled={rowBusy} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11.5, fontWeight: 600, color: "#B42318", background: "#fff", border: "1px solid #E7C6C2", borderRadius: 7, padding: "4px 9px", cursor: rowBusy ? "default" : "pointer" }}>
+                    <button type="button" onClick={(e) => { e.stopPropagation(); review(d.id, "reject"); }} disabled={rowBusy} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11.5, fontWeight: 600, color: "#B42318", background: "#fff", border: "1px solid #E7C6C2", borderRadius: 7, padding: "4px 9px", cursor: rowBusy ? "default" : "pointer" }}>
                       <X size={12} /> ตีกลับ
                     </button>
                   </span>
@@ -2195,6 +2308,11 @@ function CountsTab({ docs, realBranches, products, defaultBranchId, onHandMap, v
           {error && <ErrorRow msg={error} />}
         </div>
       </Modal>
+
+      {/* Point 1 (2026-10-10): กดแถวประวัติ → ดูรายละเอียดใบนับ (read-only · mirror ReceiptDetailModal) */}
+      {countDetailId && (
+        <CountDetailModal countId={countDetailId} onClose={() => setCountDetailId(null)} />
+      )}
     </div>
   );
 }

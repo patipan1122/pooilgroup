@@ -354,9 +354,16 @@ async function loadWarehouseRows(
   if (products.length === 0) return { rows: [], perBranchStock: {} };
 
   // ยอดคลังต่อ product (รวมทุกสาขา) + ยอดต่อ product×สาขา (สำหรับ distribution bar)
-  // machineId null = GROSS (รับเข้าคลัง · ยังไม่หักที่ยกไปตู้) · machineId NOT null = ที่โหลดเข้าตู้แล้ว
+  // machineId null = GROSS (รับเข้าคลัง · ยังไม่หักที่ยกไปตู้)
   // net "บนชั้น" = gross − inMachines (ของที่หยิบมาโหลดได้จริง) — display-only ไม่แตะ ledger writes
-  const [totals, machineTotals, perBranch, perBranchMachines, branchMachineDolls] = await Promise.all([
+  //
+  // ★ FIX (CEO 2026-10-10) — ไฟล์นี้เคยมี "สำเนา" คำนวณ inMachines แบบ Σ qty จาก cf_stock_movements
+  //   (machineId != null) ซ้ำกับ lib/clawfleet/stock-queries.ts (getCfBranchStockProducts) — เป็น
+  //   ledger สะสมตลอดชีพที่ไม่เคยลดลง (ไม่มี movement type ไหนบันทึก "ลูกค้าคีบออกจากตู้") → เพี้ยนสูง
+  //   เหมือนกัน (ดูคอมเมนต์ยาวใน getCfBranchStockProducts). แก้ด้วยสูตรเดียวกัน: อ่านยอดจริง "ตอนนี้"
+  //   จาก cf_machines.last_doll_stock (ground truth · trigger อัปเดตอัตโนมัติ) ผูกเข้า product ผ่าน
+  //   loadout ปัจจุบัน (CfMachineLoadout effectiveTo:null — ยืนยันแล้วว่าทุกตู้มี loadout active แค่ 1 แถว).
+  const [totals, perBranch, machinesWithLoadout, branchMachineDolls] = await Promise.all([
     prisma.cfStockMovement.groupBy({
       by: ["productId"],
       where: { orgId, machineId: null, ...branchFilter },
@@ -364,19 +371,22 @@ async function loadWarehouseRows(
       _max: { occurredAt: true },
     }),
     prisma.cfStockMovement.groupBy({
-      by: ["productId"],
-      where: { orgId, machineId: { not: null }, ...branchFilter },
-      _sum: { qty: true },
-    }),
-    prisma.cfStockMovement.groupBy({
       by: ["productId", "branchId"],
       where: { orgId, machineId: null, ...branchFilter },
       _sum: { qty: true },
     }),
-    prisma.cfStockMovement.groupBy({
-      by: ["productId", "branchId"],
-      where: { orgId, machineId: { not: null }, ...branchFilter },
-      _sum: { qty: true },
+    prisma.cfMachine.findMany({
+      where: { orgId, isActive: true, ...branchFilter },
+      select: {
+        branchId: true,
+        lastDollStock: true,
+        loadouts: {
+          where: { effectiveTo: null },
+          orderBy: { effectiveFrom: "desc" },
+          select: { productId: true },
+          take: 1,
+        },
+      },
     }),
     // ตุ๊กตา "ในตู้" ต่อสาขา = ผลรวมมิเตอร์ตู้ (lastDollStock) — ให้เลข "ตุ๊กตาในสต็อก" รายสาขาตรงกับที่หน้าเจาะสาขาใช้
     prisma.cfMachine.groupBy({
@@ -386,11 +396,16 @@ async function loadWarehouseRows(
     }),
   ]);
   const totalMap = new Map(totals.map((t) => [t.productId, { qty: t._sum.qty ?? 0, last: t._max.occurredAt }]));
-  // in-machines ต่อ product (abs ของผลรวม signed — ledger บันทึกตอนโหลดเข้าตู้เป็นเลขติดลบฝั่งตู้)
-  const machineMap = new Map(machineTotals.map((t) => [t.productId, Math.abs(t._sum.qty ?? 0)]));
-  // in-machines ต่อ product×สาขา (สำหรับคิด net รายสาขาในหน้าเจาะสาขา)
+  // in-machines ต่อ product (รวมทุกสาขาในสโคป) + ต่อ product×สาขา — ยอดจริงตอนนี้ (lastDollStock ผ่าน loadout)
+  const machineMap = new Map<string, number>();
   const branchMachineMap = new Map<string, number>();
-  for (const r of perBranchMachines) branchMachineMap.set(`${r.productId}|${r.branchId}`, Math.abs(r._sum.qty ?? 0));
+  for (const m of machinesWithLoadout) {
+    const pid = m.loadouts[0]?.productId;
+    if (!pid) continue; // ตู้ยังไม่ตั้ง loadout → ไม่ผูกกับ product ไหน ข้าม
+    machineMap.set(pid, (machineMap.get(pid) ?? 0) + m.lastDollStock);
+    const keyPB = `${pid}|${m.branchId}`;
+    branchMachineMap.set(keyPB, (branchMachineMap.get(keyPB) ?? 0) + m.lastDollStock);
+  }
   // เก็บ branchId ในแต่ละแถว dist ด้วย — ให้ฝั่ง client เจาะดูรายสาขาโดย match ด้วย id
   // (ไม่ใช่ชื่อสาขา) กันเคสสาขาชื่อซ้ำแล้วนับยอดขาด (branch.name ไม่ unique)
   // qty=gross ต่อสาขา · inMachines=ที่โหลดเข้าตู้ในสาขานั้น (client คิด net=qty−inMachines รายสาขาเอง)
@@ -415,8 +430,7 @@ async function loadWarehouseRows(
   //   lowCount = สินค้าที่ "มีของในสาขา" และยอดคลัง ≤ เกณฑ์รวม (CF_REORDER_LEVEL)
   const costMap = new Map(products.map((p) => [p.id, p.unitCostCents]));
   const machineDollMap = new Map(branchMachineDolls.map((m) => [m.branchId, m._sum.lastDollStock ?? 0]));
-  const imByKey = new Map<string, number>(); // `${branchId}|${productId}` → ในตู้ (abs)
-  for (const r of perBranchMachines) imByKey.set(`${r.branchId}|${r.productId}`, Math.abs(r._sum.qty ?? 0));
+  // branchMachineMap คีย์ = `${productId}|${branchId}` (ยอดจริงตอนนี้ — ดูคอมเมนต์ด้านบนจุดที่สร้างแผนที่นี้)
   const agg = new Map<string, { whDolls: number; valueCents: number; low: number }>();
   const bucket = (bid: string) => {
     let a = agg.get(bid);
@@ -425,16 +439,18 @@ async function loadWarehouseRows(
   };
   for (const r of perBranch) {
     const wh = r._sum.qty ?? 0;
-    const im = imByKey.get(`${r.branchId}|${r.productId}`) ?? 0;
+    const im = branchMachineMap.get(`${r.productId}|${r.branchId}`) ?? 0;
     const cost = costMap.get(r.productId) ?? 0;
     const a = bucket(r.branchId);
     a.whDolls += Math.max(0, wh);         // ตุ๊กตาในคลัง (clamp ลบ=0 · ตรงกับ getV2BranchStock)
     a.valueCents += wh * cost;            // มูลค่าส่วนคลัง
     if ((wh !== 0 || im !== 0) && wh <= CF_REORDER_LEVEL) a.low += 1; // ใกล้หมด = มีของ + ยอดคลัง ≤ เกณฑ์
   }
-  for (const r of perBranchMachines) {
-    const im = Math.abs(r._sum.qty ?? 0);
-    bucket(r.branchId).valueCents += im * (costMap.get(r.productId) ?? 0); // + มูลค่าส่วนที่โหลดเข้าตู้
+  for (const [key, im] of branchMachineMap) {
+    const sep = key.indexOf("|");
+    const branchIdOfKey = key.slice(sep + 1);
+    const productIdOfKey = key.slice(0, sep);
+    bucket(branchIdOfKey).valueCents += im * (costMap.get(productIdOfKey) ?? 0); // + มูลค่าส่วนที่อยู่ในตู้ตอนนี้
   }
   const perBranchStock: PerBranchStock = {};
   for (const b of branches) {
