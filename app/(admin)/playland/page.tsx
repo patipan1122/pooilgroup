@@ -21,6 +21,8 @@ import {
   listBookings,
 } from "@/lib/playland/queries";
 import { getAllowedBranchList } from "@/lib/playland/branch-context";
+import { canPlaylandManage } from "@/lib/playland/role-guard";
+import { getPlaylandRole } from "@/lib/playland/position-resolve";
 import PlaylandApp, {
   type PlaylandKid,
   type PlaylandPackageVM,
@@ -83,6 +85,8 @@ export default async function PlaylandPage({
   const session = await requireSession();
   const orgId = session.user.org_id;
   const cashierName = session.user.name || session.user.email || "พนักงาน";
+  const plRole = await getPlaylandRole(session.user.id, orgId, session.user.role);
+  const canManage = canPlaylandManage(plRole); // การ์ด "ดูรายงาน" โชว์เฉพาะผู้จัดการขึ้นไป — ข้อมูลรายได้ไม่ควรเห็นได้ทุกคน
 
   // พนักงานเห็น/ลงเงินได้เฉพาะสาขาที่ผูก (ผูกแล้ว) — กันลงเงินผิดสาขา
   const branches = await getAllowedBranchList(orgId);
@@ -146,6 +150,7 @@ export default async function PlaylandPage({
       sec,
       dayPass,
       charges: [{ label: `ค่าเล่น ${pkgName}`, amount: Math.round(sess.packagePriceCents / 100) }],
+      phone: sess.member?.phone ?? null,
     };
   });
 
@@ -232,6 +237,7 @@ export default async function PlaylandPage({
       maxCapacity={maxCapacity}
       activeCount={activeCount}
       initialScreen={initialScreen}
+      canManage={canManage}
       key={`${branchId}:${openShift?.id ?? "noshift"}`}
     />
   );

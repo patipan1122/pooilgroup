@@ -3,7 +3,7 @@ import { requirePlaylandManager } from "@/lib/playland/role-guard";
 import { getPlaylandRole } from "@/lib/playland/position-resolve";
 import { prisma } from "@/lib/prisma";
 import { getBranchContext } from "@/lib/playland/branch-context";
-import { thb, thbShort, fmtDate, fmtDateTime } from "@/lib/playland/format";
+import { thb, thbShort, fmtDate, fmtDateTime, PAYMENT_METHOD_LABEL } from "@/lib/playland/format";
 import { BranchSwitcher } from "@/components/playland/branch-switcher";
 import { OwnerReportPanel, type ExpenseRow } from "@/components/playland/reports/owner-report-panel";
 import { BarChart3, Download, Users, Clock, Coins, Wallet, TrendingUp } from "lucide-react";
@@ -149,10 +149,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   }
 
   // แยกเงินตามวิธีรับ (ลิ้นชัก = เฉพาะเงินสด · ที่เหลือเข้าบัญชี/ออนไลน์)
-  const METHOD_LABEL: Record<string, string> = {
-    CASH: "เงินสด", STRIPE: "บัตร/ออนไลน์", PROMPTPAY: "พร้อมเพย์", KBANK: "โอน KBank", SCB: "โอน SCB",
-    TRUEMONEY: "ทรูมันนี่", LINEPAY: "LINE Pay", CHARGE_TO_MEMBER: "ค้างจ่าย", COMPLIMENTARY: "ฟรี/อภินันท์",
-  };
+  const METHOD_LABEL = PAYMENT_METHOD_LABEL;
   const methodRows = Object.entries(byMethod).filter(([, v]) => v !== 0).sort(([, a], [, b]) => b - a);
   const cashTotal = byMethod["CASH"] ?? 0;
   const nonCashTotal = total - cashTotal;

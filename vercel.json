@@ -20,6 +20,7 @@
     { "path": "/api/cron/clawhub-screenshot-ttl", "schedule": "0 19 * * *" },
     { "path": "/api/playland/cron/expire-sessions", "schedule": "0 21 * * *" },
     { "path": "/api/playland/cron/expire-bookings", "schedule": "5 21 * * *" },
+    { "path": "/api/playland/cron/device-watchdog", "schedule": "*/5 * * * *" },
     { "path": "/api/chairops/cron/recompute-drifts", "schedule": "0 22 * * *" },
     { "path": "/api/chairops/cron/sop-check", "schedule": "30 22 * * *" },
     { "path": "/api/chairops/cron/ceo-digest", "schedule": "0 1 * * *" },

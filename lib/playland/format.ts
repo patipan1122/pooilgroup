@@ -61,6 +61,7 @@ export function memberTypeLabel(t: string): string {
 
 export function sessionStatusLabel(s: string): string {
   return ({
+    PENDING_ENTRY: "รอเข้าเล่น", // จ่ายเงินแล้ว รอสแกนหน้า/สายรัดที่ประตู
     ACTIVE: "กำลังเล่น",
     PAUSED: "พักออก",
     COMPLETED: "ออกแล้ว",
@@ -72,6 +73,7 @@ export function sessionStatusLabel(s: string): string {
 
 export function sessionStatusChipClass(s: string): string {
   return ({
+    PENDING_ENTRY: "pl-chip pl-chip-info",
     ACTIVE: "pl-chip pl-chip-ok",
     PAUSED: "pl-chip pl-chip-warn",
     COMPLETED: "pl-chip pl-chip-muted",
@@ -133,4 +135,13 @@ export function packageLabel(p: { name: string; type: string; minutes: number | 
   if (p.type === "DAY_PASS") return `${p.name} · ทั้งวัน · ${thb(p.price)}`;
   if (p.type === "PER_MINUTE") return `${p.name} · ${thb(p.price)}/นาที`;
   return `${p.name} · ${p.minutes ?? 0} นาที · ${thb(p.price)}`;
+}
+
+// วิธีชำระเงิน — single source of truth (reports/page.tsx + shift-report/page.tsx ใช้ร่วมกัน · กันป้ายชื่อเพี้ยนระหว่างหน้า)
+export const PAYMENT_METHOD_LABEL: Record<string, string> = {
+  CASH: "เงินสด", STRIPE: "บัตร/ออนไลน์", PROMPTPAY: "พร้อมเพย์", KBANK: "โอน KBank", SCB: "โอน SCB",
+  TRUEMONEY: "ทรูมันนี่", LINEPAY: "LINE Pay", CHARGE_TO_MEMBER: "ค้างจ่าย", COMPLIMENTARY: "ฟรี/อภินันท์",
+};
+export function paymentMethodLabel(m: string): string {
+  return PAYMENT_METHOD_LABEL[m] || m;
 }

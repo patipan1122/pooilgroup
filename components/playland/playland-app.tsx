@@ -70,6 +70,7 @@ export interface PlaylandKid {
   sec: number; // remaining seconds
   dayPass?: boolean;
   charges: { label: string; amount: number }[];
+  phone?: string | null; // เบอร์โทรผู้ปกครอง (จาก member) — โชว์ในหน้าเด็กที่กำลังเล่นเพื่อโทรตาม
 }
 export interface PlaylandPackageVM {
   id: string;
@@ -146,6 +147,7 @@ interface Props {
   maxCapacity?: number | null; // ความจุสนาม (จำนวนเด็กสูงสุด) · null = ไม่ตั้ง → ไม่โชว์/ไม่เตือน
   activeCount?: number; // จำนวน session ที่ active ตอน server render (seed ของตัวนับ)
   initialScreen?: Screen; // deep-link from redirected old routes (?screen=)
+  canManage?: boolean; // ผู้จัดการ/เจ้าของขึ้นไป (lib/playland/role-guard canPlaylandManage) → เห็นการ์ด "ดูรายงาน"
 }
 
 export type Screen =
@@ -609,6 +611,7 @@ export default function PlaylandApp(props: Props) {
   const [extPay, setExtPay] = useState<PayMethod>("CASH");
   const [extConfirm, setExtConfirm] = useState<{ id: string; mins: number; p: number } | null>(null);
   const [boardQuery, setBoardQuery] = useState(""); // ค้นชื่อเด็กบนกระดาน (หาเร็วตอนเช็คเอาท์)
+  const [detailKidId, setDetailKidId] = useState<string | null>(null); // กดดูข้อมูลเด็ก (เบอร์ผู้ปกครอง) จากบอร์ด
   const applyExtend = async (opt: { id: string; mins: number; p: number }) => {
     if (busyRef.current) return; // กันกดรัว = ต่อเวลา/เก็บเงินซ้ำ
     const kidId = s.extKidId;
@@ -1244,6 +1247,7 @@ export default function PlaylandApp(props: Props) {
   };
   const co = s.kids.find((k) => k.id === s.coKidId);
   const ext = s.kids.find((k) => k.id === s.extKidId);
+  const detail = s.kids.find((k) => k.id === detailKidId);
   // ค่าปรับเกินเวลาของคนที่กำลังเช็คเอาท์ (โชว์ให้แคชเชียร์เห็นก่อนกดเก็บเงิน)
   const otRate = props.overtimeRatePerMinuteCents ?? DEFAULT_OVERTIME_RATE_PER_MIN_CENTS;
   const coOt = co && !co.dayPass ? overtimeFromSec(co.sec, otRate) : { minutes: 0, cents: 0 };
@@ -1399,11 +1403,14 @@ export default function PlaylandApp(props: Props) {
                 ) })}
               </div>
 
-              {/* ── เครื่องมือหน้าร้าน (พนักงาน) — งานแอดมิน/รายงานย้ายไปหลังบ้านแล้ว (CEO 2026-06-25) ── */}
+              {/* ── เครื่องมือหน้าร้าน (พนักงาน) — "ดูรายงาน" กลับเข้ามาแล้ว (CEO 2026-10-10, ยกเลิกมติย้ายออก 2026-06-25) เฉพาะผู้จัดการขึ้นไป ── */}
               <div style={{ fontSize: 13, fontWeight: 600, color: "#a9978a", letterSpacing: "0.06em", textTransform: "uppercase", margin: "22px 0 12px" }}>เครื่องมือหน้าร้าน</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 16 }}>
+              <div style={{ display: "grid", gridTemplateColumns: props.canManage ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr", gap: 16 }}>
                 {hubCard({ onClick: () => go("monitor"), bg: "#1c2740", title: "จอ Monitor", sub: "โชว์เวลาทั้งร้าน", icon: (
                   <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21h8M12 17v4" /></svg>
+                ) })}
+                {props.canManage && hubCard({ onClick: () => router.push("/playland/shift-report"), bg: "#2D6CB1", title: "ดูรายงาน", sub: "กะปัจจุบัน · ย้อนหลังได้", icon: (
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><path d="M7 15l4-5 3 3 5-7" /></svg>
                 ) })}
                 {hubCard({ onClick: () => go("settings"), bg: "#6b6052", title: "เครื่องมือ · ช่วยเหลือ", sub: "เครื่องพิมพ์ · วิธีใช้ · รีเฟรช", icon: (
                   <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><path d="M12 17h.01" /></svg>
@@ -1454,7 +1461,7 @@ export default function PlaylandApp(props: Props) {
                   const color = k.dayPass ? "#1F8A5B" : over ? "#E74C3C" : colorFor(k.sec);
                   return (
                     <div key={k.id} style={{ background: "#fff", borderRadius: 18, padding: 18, border: `2px solid ${over || nearEnd ? "#E74C3C" : "#eef0ec"}`, position: "relative" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+                      <div onClick={() => setDetailKidId(k.id)} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
                         <div style={{ width: 48, height: 48, borderRadius: "50%", background: "#f4ede0", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img src={mascotSrc(k.mascot)} alt="" style={{ width: 40 }} />
@@ -1535,6 +1542,35 @@ export default function PlaylandApp(props: Props) {
                       </div>
                     </div>
                   )}
+                </div>
+              </div>
+            )}
+
+            {/* detail modal — กดดูข้อมูลเด็ก/เบอร์ผู้ปกครองจากบอร์ด */}
+            {detail != null && (
+              <div onClick={() => setDetailKidId(null)} style={{ position: "absolute", inset: 0, background: "rgba(28,39,64,.45)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div onClick={(e) => e.stopPropagation()} style={{ width: 420, maxWidth: "calc(100vw - 32px)", background: "#fff", borderRadius: 22, boxShadow: "0 20px 60px rgba(0,0,0,.3)", overflow: "hidden" }}>
+                  <div style={{ padding: "24px 30px 16px", display: "flex", alignItems: "center", gap: 14, borderBottom: "1px solid #f2ebdd" }}>
+                    <div style={{ width: 50, height: 50, borderRadius: "50%", background: "#fdeceb", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={mascotSrc(detail.mascot)} alt="" style={{ width: 42 }} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 21 }}>{detail.name}</div>
+                      <div style={{ fontSize: 14, color: "#8a7f70" }}>{detail.pkg}</div>
+                    </div>
+                    <div onClick={() => setDetailKidId(null)} style={{ cursor: "pointer", width: 36, height: 36, borderRadius: "50%", background: "#f4ede0", display: "flex", alignItems: "center", justifyContent: "center", color: "#8a7f70", fontSize: 18 }}>✕</div>
+                  </div>
+                  <div style={{ padding: "24px 30px" }}>
+                    <div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 8 }}>เบอร์โทรผู้ปกครอง</div>
+                    {detail.phone ? (
+                      <a href={`tel:${detail.phone}`} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, background: "#eaf3eb", color: "#1F8A5B", textDecoration: "none", borderRadius: 14, padding: "16px 20px", fontFamily: FREDOKA, fontWeight: 700, fontSize: 22 }}>
+                        📞 {detail.phone}
+                      </a>
+                    ) : (
+                      <div style={{ background: "#f7f2ea", borderRadius: 14, padding: "16px 20px", color: "#a9978a", fontSize: 15, textAlign: "center" }}>ไม่มีเบอร์โทรในระบบ</div>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
