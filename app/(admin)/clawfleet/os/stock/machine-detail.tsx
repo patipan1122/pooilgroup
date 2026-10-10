@@ -24,6 +24,9 @@ export type MachineSeed = {
   branchName: string;
   kind: string; // CLAW | EXCHANGER
   isActive: boolean;
+  // Pinpoint #5: ยอดตุ๊กตาจริงที่อยู่ในตู้ตอนนี้ (มิเตอร์ cf_machine.last_doll_stock)
+  //  — ต่างจากจำนวน SKU ที่ตั้งไว้ในโหลดเอาต์ (loadout.length)
+  lastDollStock: number;
 };
 export type LoadoutItemSeed = {
   productId: string;
@@ -123,9 +126,9 @@ export function MachinesLoadoutTab({
         pad={false}
       >
         <div style={{ overflowX: "auto" }}>
-          <div style={{ minWidth: 520 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1.1fr 0.8fr 0.9fr 0.3fr", padding: "10px 20px", fontSize: 11, fontWeight: 600, color: "#9AA1AB", borderBottom: "1px solid #F4F5F7" }}>
-              <span>รหัสตู้</span><span>สาขา</span><span>ชนิด</span><span style={{ textAlign: "right" }}>สินค้าในตู้</span><span />
+          <div style={{ minWidth: 580 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 0.7fr 0.75fr 0.85fr 0.3fr", padding: "10px 20px", fontSize: 11, fontWeight: 600, color: "#9AA1AB", borderBottom: "1px solid #F4F5F7" }}>
+              <span>รหัสตู้</span><span>สาขา</span><span>ชนิด</span><span style={{ textAlign: "right" }}>สินค้า (SKU)</span><span style={{ textAlign: "right" }}>ตุ๊กตาในตู้ตอนนี้</span><span />
             </div>
             {scopedMachines.map((m) => {
               const loadout = loadoutByMachine[m.id] ?? [];
@@ -134,7 +137,7 @@ export function MachinesLoadoutTab({
                   key={m.id}
                   className="co-rowlink"
                   onClick={() => setOpenMachine(m)}
-                  style={{ display: "grid", gridTemplateColumns: "1fr 1.1fr 0.8fr 0.9fr 0.3fr", padding: "13px 20px", alignItems: "center", borderBottom: "1px solid #F4F5F7", fontSize: 13, cursor: "pointer" }}
+                  style={{ display: "grid", gridTemplateColumns: "1fr 1fr 0.7fr 0.75fr 0.85fr 0.3fr", padding: "13px 20px", alignItems: "center", borderBottom: "1px solid #F4F5F7", fontSize: 13, cursor: "pointer" }}
                 >
                   <span style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
                     <IconBox bg="#F1F2F7" color="#4F46E5" size={30} radius={8}><span className="num" style={{ fontSize: 10.5, fontWeight: 700 }}>{m.code}</span></IconBox>
@@ -143,6 +146,8 @@ export function MachinesLoadoutTab({
                   <span style={{ color: "#454B54" }}>{m.branchName}</span>
                   <span style={{ color: "#6B7280", fontSize: 12 }}>{m.kind === "EXCHANGER" ? "ตู้แลกเหรียญ" : "ตู้คีบ"}{!m.isActive && <span style={{ color: "#B45309", marginLeft: 6, fontSize: 11 }}>· ปิดใช้งาน</span>}</span>
                   <span className="num" style={{ textAlign: "right", fontWeight: 600, color: loadout.length > 0 ? "#1A1D21" : "#C2C7CF" }}>{loadout.length > 0 ? `${num(loadout.length)} รายการ` : "—"}</span>
+                  {/* Pinpoint #5: จำนวนตุ๊กตาจริงในตู้ตอนนี้ (มิเตอร์) — ต่างจากคอลัมน์ก่อนหน้าที่นับแค่ชนิด SKU */}
+                  <span className="num" style={{ textAlign: "right", fontWeight: 700, color: m.lastDollStock > 0 ? "#4F46E5" : "#C2C7CF" }}>{m.lastDollStock > 0 ? `${num(m.lastDollStock)} ตัว` : "—"}</span>
                   <span style={{ textAlign: "right", color: "#C2C7CF", display: "flex", justifyContent: "flex-end" }}><ChevronRight size={16} /></span>
                 </div>
               );
@@ -157,7 +162,7 @@ export function MachinesLoadoutTab({
         onClose={() => setOpenMachine(null)}
         width={560}
         title={openMachine ? `ไส้ในตู้ ${openMachine.code}` : ""}
-        sub={openMachine ? `${openMachine.branchName} · ${openMachine.kind === "EXCHANGER" ? "ตู้แลกเหรียญ" : "ตู้คีบ"}` : undefined}
+        sub={openMachine ? `${openMachine.branchName} · ${openMachine.kind === "EXCHANGER" ? "ตู้แลกเหรียญ" : "ตู้คีบ"} · ตุ๊กตาในตู้ตอนนี้ ${num(openMachine.lastDollStock)} ตัว` : undefined}
       >
         {openMachine && (
           <div style={{ padding: "16px 20px" }}>

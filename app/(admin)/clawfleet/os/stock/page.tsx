@@ -116,6 +116,7 @@ export default async function StockPage({
         branchName: m.branchName,
         kind: m.kind,
         isActive: m.isActive,
+        lastDollStock: m.lastDollStock, // Pinpoint #5: ยอดตุ๊กตาจริงในตู้ตอนนี้ (ต่างจาก loadout.length = จำนวน SKU)
       }));
       const loadouts = await Promise.all(machines.map((m) => getMachineLoadout(m.id)));
       loadoutByMachine = {};

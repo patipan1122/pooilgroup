@@ -877,6 +877,9 @@ export type CfMachineListRow = {
   branchName: string;
   kind: string; // CLAW | EXCHANGER
   isActive: boolean;
+  // Pinpoint #5: ยอดตุ๊กตาจริงที่อยู่ในตู้ตอนนี้ (มิเตอร์ต่อตู้ อัปเดตจาก cf_collection_events trigger)
+  //  — ต่างจาก loadout.length ที่หน้า client ใช้อยู่เดิม (= จำนวน SKU ที่ตั้งไว้ในตู้ ไม่ใช่จำนวนชิ้นจริง)
+  lastDollStock: number;
 };
 
 /** รายชื่อตู้ทั้งหมดในสโคปผู้ใช้ พร้อมชื่อสาขา — เรียงตามสาขาแล้ว code */
@@ -899,6 +902,7 @@ export async function getCfMachinesForBranchAdmin(): Promise<CfMachineListRow[]>
         branchId: true,
         kind: true,
         isActive: true,
+        lastDollStock: true,
         branch: { select: { name: true } },
       },
     });
@@ -910,6 +914,7 @@ export async function getCfMachinesForBranchAdmin(): Promise<CfMachineListRow[]>
       branchName: m.branch?.name ?? "สาขา",
       kind: m.kind,
       isActive: m.isActive,
+      lastDollStock: m.lastDollStock,
     }));
   } catch {
     return [];

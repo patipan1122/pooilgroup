@@ -476,6 +476,20 @@ function OverviewTab({
     return rows;
   }, [scoped, warehouseAll, viewBranchId]);
 
+  // Pinpoint #6: per-SKU breakdown ของสาขาที่ "กางแถวดูอยู่ตอนนี้" (open) — ไม่ใช่สาขาที่ scoped
+  //   reuse วิธีกรองเดียวกับ `warehouse` ด้านบน (w.dist มีของทุกสาขาอยู่แล้วจาก server · ไม่ต้องยิง query ใหม่)
+  //   ทำให้กางแถวในแท็บภาพรวมเห็นรายชิ้นได้ทันที ไม่ต้องกดชื่อสาขาเข้าโหมด "สาขานี้" แล้วเลื่อนหาการ์ดแยกอีกที
+  const openBranchSkuRows = useMemo(() => {
+    if (!open) return [];
+    const rows: { id: string; name: string; imageUrl: string | null; qty: number; inMachines: number; net: number }[] = [];
+    for (const w of warehouseAll) {
+      const here = w.dist.find((d) => d.branchId === open);
+      if (!here || here.qty <= 0) continue;
+      rows.push({ id: w.id, name: w.name, imageUrl: w.imageUrl, qty: here.qty, inMachines: here.inMachines, net: here.qty - here.inMachines });
+    }
+    return rows.sort((a, b) => b.qty - a.qty);
+  }, [open, warehouseAll]);
+
   // แถวสต็อกรายสาขา — โหมดสาขานี้: เหลือแถวเดียว · โหมดทุกสาขา: ทุกสาขา เรียงมูลค่ามาก→น้อย · สาขาไม่มีของไปล่างสุด
   const visibleBranchRows = useMemo(() => {
     if (scoped) return branchRows.filter((b) => b.branchId === viewBranchId);
@@ -711,6 +725,45 @@ function OverviewTab({
                           )}
                           <div style={{ fontSize: 11, color: "#9AA1AB", marginTop: 4 }}>กดที่ใบเพื่อดู: ส่งมาจากใคร · กี่ตัว · มูลค่า · ครบ/ค้างรับ · รายการในใบ</div>
                         </div>
+                      </div>
+
+                      {/* Pinpoint #6: per-SKU breakdown ของสาขานี้ — ตรงนี้เลย ไม่ต้องกดชื่อสาขาเข้าโหมด "สาขานี้"
+                          แล้วเลื่อนหาการ์ดแยกอีกที (reuse warehouseAll.dist ที่ server คำนวณมาให้ทุกสาขาอยู่แล้ว) */}
+                      <div style={{ marginTop: 16, borderTop: "1px dashed #E2E5EA", paddingTop: 14 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 9 }}>
+                          สินค้าคงคลังรายชิ้น{b.branch ? ` · สาขา${b.branch}` : ""} ({num(openBranchSkuRows.length)} SKU)
+                        </div>
+                        {openBranchSkuRows.length === 0 ? (
+                          <div style={{ fontSize: 11.5, color: "#9AA1AB", background: "#F8F9FB", borderRadius: 9, padding: "10px 12px" }}>
+                            ยังไม่มีสินค้าคงคลังที่สาขานี้
+                          </div>
+                        ) : (
+                          <>
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))", gap: 8 }}>
+                              {openBranchSkuRows.slice(0, 12).map((r) => (
+                                <div
+                                  key={r.id}
+                                  className="co-rowlink"
+                                  onClick={(e) => { e.stopPropagation(); const full = warehouseAll.find((x) => x.id === r.id); if (full) setWhItem(full); }}
+                                  title="กดดูรายละเอียดสินค้า — กระจายอยู่สาขาไหนบ้าง"
+                                  style={{ display: "flex", alignItems: "center", gap: 9, background: "#F8F9FB", border: "1px solid #EEF0F3", borderRadius: 9, padding: "8px 10px", cursor: "pointer" }}
+                                >
+                                  <ProductThumbZoom url={r.imageUrl} name={r.name} onZoom={(url) => setLightbox({ url, name: r.name })} />
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</div>
+                                    <div style={{ fontSize: 10.5, color: "#9AA1AB" }}>{r.inMachines > 0 ? `ในตู้ ${num(r.inMachines)}` : "บนชั้นทั้งหมด"}</div>
+                                  </div>
+                                  <span className="num" style={{ fontSize: 13, fontWeight: 700, color: r.net < 0 ? "#B42318" : "#1A1D21", flex: "0 0 auto" }}>{num(r.net)}</span>
+                                </div>
+                              ))}
+                            </div>
+                            {openBranchSkuRows.length > 12 && (
+                              <div style={{ fontSize: 11, color: "#9AA1AB", marginTop: 8 }}>
+                                + อีก {num(openBranchSkuRows.length - 12)} รายการ · กดชื่อสาขาด้านบนเพื่อดูครบในโหมด “{b.branch}”
+                              </div>
+                            )}
+                          </>
+                        )}
                       </div>
                     </div>
                   )}
@@ -1945,7 +1998,11 @@ function CountsTab({ docs, realBranches, products, defaultBranchId, onHandMap, v
   const [pending, startTransition] = useTransition();
   const [branchId, setBranchId] = useState(defaultBranchId);
   const [note, setNote] = useState("");
-  const [lines, setLines] = useState<FormLine[]>([{ productId: products[0]?.id ?? "", qty: "" }]);
+  // Pinpoint #3: เปิดฟอร์มนับมาต้องเห็น "รายการสินค้าทุกตัว" พร้อมให้กรอกยอดทันที (เหมือนเช็คลิสต์ที่มีอยู่แล้ว)
+  // แทนที่จะเริ่มจาก 1 แถวว่างแล้วให้ผู้ใช้กด "+เพิ่มรายการ" เลือกสินค้าทีละตัว — ยังเพิ่ม/ลบแถวเองได้ตามเดิม (เคส edge case)
+  const seedLines = (): FormLine[] =>
+    products.length > 0 ? products.map((p) => ({ productId: p.id, qty: "" })) : [{ productId: "", qty: "" }];
+  const [lines, setLines] = useState<FormLine[]>(() => seedLines());
   const [error, setError] = useState<string | null>(null);
   // Wave 4b · การอนุมัติ/ตีกลับต่อใบ (แยก transition จากฟอร์มสร้าง · mirror LossesTab)
   const [reviewing, setReviewing] = useState<string | null>(null); // countId ที่กำลังตัดสิน
@@ -1969,7 +2026,7 @@ function CountsTab({ docs, realBranches, products, defaultBranchId, onHandMap, v
   // ถ้าเลือกนับสาขาอื่นในฟอร์ม (branchId ≠ defaultBranchId) ยอดระบบจะไม่ตรง → ซ่อนคอลัมน์ กันเข้าใจผิด
   const onHandUsable = branchId === defaultBranchId;
 
-  function reset() { setBranchId(defaultBranchId); setNote(""); setLines([{ productId: products[0]?.id ?? "", qty: "" }]); setError(null); }
+  function reset() { setBranchId(defaultBranchId); setNote(""); setLines(seedLines()); setError(null); }
 
   function setLinesWrap(fn: (prev: FormLine[]) => FormLine[]) { setLines(fn); }
   // ยิงบาร์โค้ด → เพิ่มบรรทัดสินค้านั้น (นับ) · โฟกัสให้กรอกยอดนับ (ไม่ auto +1 เพราะ qty = ยอดนับจริง)
@@ -2087,7 +2144,8 @@ function CountsTab({ docs, realBranches, products, defaultBranchId, onHandMap, v
         <div style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
           <div>
             <label style={FIELD_LABEL}>สาขาที่นับ</label>
-            <select value={branchId} onChange={(e) => setBranchId(e.target.value)} style={FIELD_INPUT}>
+            {/* สลับสาขา → รายการสินค้าเซ็ตใหม่ (เช็คลิสต์เดียวกัน แต่ยอดนับที่พิมพ์ไว้ของสาขาเดิมไม่ควรติดมาสาขาใหม่) */}
+            <select value={branchId} onChange={(e) => { setBranchId(e.target.value); setLines(seedLines()); }} style={FIELD_INPUT}>
               {realBranches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
           </div>
@@ -2633,6 +2691,12 @@ function DistributionTab({ realBranches, products, shipments: shipmentSeeds, mov
   const detail = ships.find((s) => s.id === detailId) ?? null;
   const canCreate = realBranches.length >= 1 && products.length >= 1;
 
+  // Pinpoint #4: ใบที่ "รอสาขารับ" อยู่ตอนนี้ — เอาปลายทางมาโชว์ใกล้แบนเนอร์เลย ไม่ต้องไล่หาในตาราง
+  const pendingShips = useMemo(
+    () => ships.filter((s) => !s.isReceived && s.dbStatus !== "CANCELLED"),
+    [ships],
+  );
+
   const stats = useMemo(() => {
     const pending = ships.filter((s) => !s.isReceived && s.dbStatus !== "CANCELLED").length;
     const received = ships.filter((s) => s.isReceived && !s.hasDiff).length;
@@ -2666,11 +2730,18 @@ function DistributionTab({ realBranches, products, shipments: shipmentSeeds, mov
         <NeedDataBanner msg="ยังไม่มีใบกระจาย — กด “สร้างใบกระจาย” เพื่อส่งของจากคลังกลางไปสาขา" />
       )}
 
-      {/* info banner */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#7A8089", background: "#F8F9FB", border: "1px solid #EDEFF2", borderRadius: 10, padding: "10px 14px", marginBottom: 16 }}>
+      {/* info banner — Pinpoint #4: ชี้แจงให้ชัดว่า "การกระจาย" ของตู้คีบ ≠ "โอนสินค้า" (DcTransfer) ที่อื่นในแอป */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#7A8089", background: "#F8F9FB", border: "1px solid #EDEFF2", borderRadius: 10, padding: "10px 14px", marginBottom: pendingShips.length > 0 ? 6 : 16 }}>
         <Info size={15} style={{ flex: "0 0 15px", color: "#9AA1AB" }} />
-        คลังกลางสร้างใบกระจาย → สาขา → สาขากด “ตรวจรับ” ยืนยันของครบตรงกับใบ · รับแล้วล็อกไม่ให้รับซ้ำ
+        “การกระจาย” ที่นี่ คือคลังกลางของตู้คีบส่งของไปสาขา (สร้างใบ → จัดส่ง → สาขากด “ตรวจรับ” ยืนยันของครบ) — <b>คนละระบบกับ “โอนสินค้า”</b> ที่อื่นในแอป · รับแล้วล็อกไม่ให้รับซ้ำ
       </div>
+      {/* ปลายทางของใบที่กำลังรอสาขารับอยู่ตอนนี้ — ไม่ต้องไล่หาในตาราง (CEO คลิกแบนเนอร์แล้วงงว่าของไปไหน) */}
+      {pendingShips.length > 0 && (
+        <div style={{ fontSize: 11.5, color: "#6B7280", marginBottom: 16, paddingLeft: 2 }}>
+          รอสาขารับอยู่ตอนนี้ → {pendingShips.slice(0, 4).map((s) => s.to).join(" · ")}
+          {pendingShips.length > 4 ? ` +อีก ${pendingShips.length - 4} สาขา` : ""}
+        </div>
+      )}
 
       {/* shipment stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-[18px]">
