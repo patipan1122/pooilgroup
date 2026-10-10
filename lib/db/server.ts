@@ -10,7 +10,17 @@ import { validateProductionEnv } from "@/lib/env-validate";
 // Run env validation on first import — fails-closed in prod if config is bad
 validateProductionEnv();
 
-export async function serverClient() {
+/**
+ * @param opts.companyId When set, sent as the `x-company-id` request header on
+ * every PostgREST call this client makes. The `current_selected_company_id()`
+ * RLS backstop (prisma/migrations/20261010_branches_company_rls_backstop.sql)
+ * reads this header server-side — so a request that forgot an explicit
+ * `.eq("company_id", ...)` still only gets rows for that company, not both.
+ * `company_id` is NOT identity (unlike `org_id`'s JWT claim) — the same user
+ * legitimately works in either company, picking one per-request via the
+ * header, not per-session via the JWT.
+ */
+export async function serverClient(opts?: { companyId?: string }) {
   const cookieStore = await cookies();
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -30,6 +40,9 @@ export async function serverClient() {
           }
         },
       },
+      global: opts?.companyId
+        ? { headers: { "x-company-id": opts.companyId } }
+        : undefined,
     },
   );
 }

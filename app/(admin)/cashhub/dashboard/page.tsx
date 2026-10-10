@@ -20,7 +20,7 @@ export default async function DashboardPage({
   const session = await requireSession();
   requireExecutiveRole(session.user.role);
   const sp = await searchParams;
-  const companyId = await resolveCompanyFilter(sp.company);
+  const companyId = await resolveCompanyFilter(session.user.org_id, sp.company);
   const period: Period =
     sp.view === "daily"
       ? "daily"

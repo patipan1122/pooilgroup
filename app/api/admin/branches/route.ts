@@ -26,14 +26,20 @@ const CreateSchema = z.object({
   // (Pooil Oil / JP Sync / etc. — picked from org's Companies)
   companyId: zUUID("เลือกนิติบุคคลก่อน"),
   businessType: z.enum(BUSINESS_TYPES),
-  province: z.string().max(50).optional().or(z.literal("")),
-  region: z.string().max(50).optional().or(z.literal("")),
-  address: z.string().max(500).optional().or(z.literal("")),
-  phone: z.string().max(50).optional().or(z.literal("")),
+  // .nullable() added 2026-10-10: the form (branch-form.tsx) has always sent
+  // `null` (not undefined/"") for these when left blank — `x.trim() || null`
+  // — so every create with an empty province/region/address/phone/line group
+  // 400'd with a generic "Invalid input" (found while testing the company-
+  // scoping fix; pre-existing, unrelated to it — the client payload shape
+  // was never the thing that changed).
+  province: z.string().max(50).nullable().optional().or(z.literal("")),
+  region: z.string().max(50).nullable().optional().or(z.literal("")),
+  address: z.string().max(500).nullable().optional().or(z.literal("")),
+  phone: z.string().max(50).nullable().optional().or(z.literal("")),
   lat: z.number().min(-90).max(90).nullable().optional(),
   lng: z.number().min(-180).max(180).nullable().optional(),
   managerId: zUUID().nullable().optional(),
-  lineGroupId: z.string().max(120).optional().or(z.literal("")),
+  lineGroupId: z.string().max(120).nullable().optional().or(z.literal("")),
   reportDeadline: z
     .string()
     .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "เวลาต้องเป็น HH:mm")

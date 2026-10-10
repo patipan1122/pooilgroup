@@ -54,7 +54,7 @@ async function loadPostings(
       orgId,
       ...(filter ? { status: filter } : {}),
       // กรองตามบริษัทที่เลือกบน "ตัวสลับด้านบน" แบบเป๊ะ ๆ (companyId ตรงเท่านั้น).
-      // เลือก "ทุกบริษัท" → companyId=undefined → ไม่กรอง (โชว์รวมทุกบริษัท).
+      // CEO 2026-10-10: ไม่มี "ทุกบริษัท" อีกแล้ว — resolveCompanyFilter คืนบริษัทจริงเสมอ.
       ...(companyId ? { companyId } : {}),
       ...(tag ? { tags: { has: tag } } : {}),
     },
@@ -121,7 +121,7 @@ export default async function PostingsListPage({
   await requireRecruitAccess(session.user);
   const params = await searchParams;
   const filter = params.status as PostingStatus | undefined;
-  const companyFilter = await resolveCompanyFilter(params.company);
+  const companyFilter = await resolveCompanyFilter(session.user.org_id, params.company);
   const tagFilter = params.tag || undefined;
 
   const postings = await loadPostings(

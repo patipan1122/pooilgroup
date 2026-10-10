@@ -47,8 +47,8 @@ export default async function RecruitInboxPage({
       : null
   ) as ApplicationStatus | null;
 
-  // บริษัท = "ตัวสลับด้านบน" (URL ?company= > คุกกี้ > ทุกบริษัท) — กรองทั้งหน้าให้ตรงกัน
-  const companyFilter = await resolveCompanyFilter(params.company);
+  // บริษัท = "ตัวสลับด้านบน" (URL ?company= > คุกกี้ > บริษัทแรก) — กรองทั้งหน้าให้ตรงกัน
+  const companyFilter = await resolveCompanyFilter(session.user.org_id, params.company);
 
   // Counts by status for filter sidebar
   const [counts, postings, postingsCount, orgPostingsCount] = await Promise.all([

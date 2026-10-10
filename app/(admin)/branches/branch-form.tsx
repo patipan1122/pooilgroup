@@ -51,6 +51,9 @@ interface CreateProps {
   mode: "create";
   managers: ManagerOption[];
   companies: CompanyOption[];
+  /** Pre-select the company the header switcher is currently on, so the
+      form doesn't silently default away from it (see branches/new/page.tsx). */
+  defaultCompanyId?: string;
 }
 
 interface EditProps {
@@ -72,8 +75,12 @@ export function BranchForm(props: Props) {
 
   const [code, setCode] = useState(initial?.code ?? "");
   const [name, setName] = useState(initial?.name ?? "");
+  const defaultCompanyId = props.mode === "create" ? props.defaultCompanyId : undefined;
   const [companyId, setCompanyId] = useState<string>(
-    initial?.company_id ?? (companies[0]?.id ?? ""),
+    initial?.company_id ??
+      (defaultCompanyId && companies.some((c) => c.id === defaultCompanyId)
+        ? defaultCompanyId
+        : (companies[0]?.id ?? "")),
   );
   const [businessType, setBusinessType] = useState(
     initial?.business_type ?? "fuel_station",

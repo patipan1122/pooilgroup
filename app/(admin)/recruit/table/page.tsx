@@ -77,7 +77,7 @@ export default async function RecruitTablePage({
       ? (params.status as ApplicationStatus)
       : null;
   const postingFilter = params.posting ?? null;
-  const companyFilter = await resolveCompanyFilter(params.company);
+  const companyFilter = await resolveCompanyFilter(orgId, params.company);
   const query = (params.q ?? "").trim();
   const sort: Sort = (SORTS as readonly string[]).includes(params.sort ?? "")
     ? (params.sort as Sort)

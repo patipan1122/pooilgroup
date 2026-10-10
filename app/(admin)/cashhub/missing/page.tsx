@@ -36,7 +36,7 @@ export default async function MissingPage({
 
   const sp = await searchParams;
   const days = Math.max(1, Math.min(30, parseInt(sp.days ?? "7", 10) || 7));
-  const companyId = await resolveCompanyFilter(sp.company);
+  const companyId = await resolveCompanyFilter(session.user.org_id, sp.company);
 
   const admin = adminClient();
   const today = bkkToday();

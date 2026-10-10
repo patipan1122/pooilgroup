@@ -7,7 +7,7 @@ import { requireRecruitWrite } from "@/lib/recruit/role-guard";
 import { prisma } from "@/lib/prisma";
 import { PostingEditor } from "@/components/recruit/posting-editor";
 import { EMPTY_FORM_SCHEMA } from "@/lib/recruit/types";
-import { readCompanyCookie } from "@/lib/auth/company-context";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 
 export const dynamic = "force-dynamic";
 
@@ -29,9 +29,12 @@ export default async function NewPostingPage() {
     a.localeCompare(b, "th"),
   );
 
-  // บริษัทของประกาศใหม่ = บริษัทที่เลือกอยู่บน "ตัวสลับบริษัทด้านบน" (คุกกี้) — ไม่มีตัวเลือก
-  // ในฟอร์มแล้ว. ถ้าเลือก "ทุกบริษัท" อยู่ (คุกกี้ว่าง) → ประกาศเป็นแบบใช้รวม (companyId=null).
-  const activeCompanyId = await readCompanyCookie();
+  // บริษัทของประกาศใหม่ = บริษัทที่เลือกอยู่บน "ตัวสลับบริษัทด้านบน" — ไม่มีตัวเลือกในฟอร์มแล้ว.
+  // CEO 2026-10-10: ไม่มี "ทุกบริษัท" บนตัวสลับอีกต่อไป — resolveCompanyFilter คืนบริษัทจริง
+  // เสมอ (fallback บริษัทแรกถ้ายังไม่เคยเลือก) ดังนั้นประกาศใหม่จะผูกกับบริษัทเสมอ.
+  // (companyId ของ RecruitJobPosting ยัง nullable ในฐานข้อมูล — ประกาศเก่าที่เคย null
+  // ยังทำงาน "ทุกบริษัท (ใช้รวม)" ตามปกติ · แค่ไม่มีทางสร้างประกาศใหม่แบบ null ได้อีกแล้ว)
+  const activeCompanyId = await resolveCompanyFilter(session.user.org_id, undefined);
   const defaultCompanyId =
     activeCompanyId && companies.some((c) => c.id === activeCompanyId)
       ? activeCompanyId

@@ -2,14 +2,26 @@ import {} from "lucide-react";
 import Link from "next/link";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import { BranchForm } from "../branch-form";
 import { BackButton } from "@/components/ui/back-button";
 
 export const dynamic = "force-dynamic";
 
-export default async function NewBranchPage() {
+export default async function NewBranchPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ company?: string }>;
+}) {
   const session = await requireRole("super_admin", "org_admin", "admin");
   const admin = adminClient();
+  const sp = await searchParams;
+  // Default the form's company picker to whatever the header switcher is
+  // currently on — without this, creating a branch while viewing "JP Sync
+  // Group" silently defaulted to "Pooil Oil" (first company by code) unless
+  // the admin noticed and changed the dropdown themselves (audit 2026-10-10:
+  // exactly the kind of quiet cross-company mix-up CEO asked to eliminate).
+  const defaultCompanyId = await resolveCompanyFilter(session.user.org_id, sp.company);
 
   // Active companies + managers in parallel
   const [managersRes, companiesRes] = await Promise.all([
@@ -59,6 +71,7 @@ export default async function NewBranchPage() {
         mode="create"
         managers={managersRes.data ?? []}
         companies={companies}
+        defaultCompanyId={defaultCompanyId || undefined}
       />
     </div>
   );

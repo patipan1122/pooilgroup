@@ -3,7 +3,7 @@ import { AdminShell } from "@/components/layout/admin-shell";
 import { ImpersonationBar } from "@/components/impersonation-bar";
 import {
   loadCompaniesForOrg,
-  readCompanyCookie,
+  resolveCompanyFilter,
 } from "@/lib/auth/company-context";
 import { loadNavCounts } from "@/lib/nav/counts";
 import { loadUserModules } from "@/lib/auth/module-access";
@@ -49,7 +49,13 @@ export default async function AdminLayout({
 
   const [companies, currentCompanyId, navCounts, userModules] = await Promise.all([
     loadCompaniesForOrg(session.user.org_id),
-    readCompanyCookie(),
+    // Always a concrete company now (no more "all") — defaults to the first
+    // company in the org so the switcher shows a real selection on first
+    // login, not a blank "ทั้งหมด" state. No ?company= param available this
+    // high up (layout wraps every route), so pass undefined — pages below
+    // that DO have a URL param still resolve it themselves via
+    // resolveCompanyFilter(orgId, sp.company) and take precedence there.
+    resolveCompanyFilter(session.user.org_id, undefined),
     // Only admins see Manage/System zones — skip the count query for others.
     isAdmin
       ? loadNavCounts(session.user.org_id)

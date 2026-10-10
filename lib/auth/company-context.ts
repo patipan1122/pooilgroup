@@ -1,8 +1,14 @@
 // Selected-company context — global filter that lives in a cookie
 // Used by all CashHub pages (and beyond) to scope data by legal entity.
 //
-// "all" or empty = show everything for the org.
-// {companyId} = show only that company.
+// CEO decision 2026-10-10: there is no "all/none" state anymore — every page
+// must always be scoped to exactly one concrete company, no combined view
+// survives anywhere (previously "all"/empty cookie meant "show everything").
+// readCompanyCookie() stays a raw, possibly-undefined primitive (first login,
+// before the switcher has ever been touched). resolveCompanyFilter() is the
+// "always concrete" entrypoint pages should use — it falls back to the first
+// company in the org (by code) when nothing is selected yet, mirroring the
+// same fallback app/(admin)/ledger/_scope.ts already uses.
 
 import { cookies } from "next/headers";
 import { unstable_cache } from "next/cache";
@@ -17,15 +23,29 @@ export async function readCompanyCookie(): Promise<string | undefined> {
 }
 
 /**
- * Resolve the active company filter. Precedence:
- *   explicit URL param > cookie > undefined (= all)
+ * Resolve the active company filter — ALWAYS a concrete company id (never
+ * "all"/undefined). Precedence:
+ *   explicit URL param (if it's a real company in this org) >
+ *   cookie (if it's a real company in this org) >
+ *   first company in the org, ordered by code (same tie-break as
+ *   app/(admin)/ledger/_scope.ts's resolveScope()).
+ *
+ * Returns "" only when the org has zero active companies configured at all
+ * (not a real scenario for Pooilgroup today — 2 companies always exist —
+ * but kept so a brand-new/mid-setup org degrades to an empty result instead
+ * of throwing). Callers should treat "" as "nothing to show yet".
  */
 export async function resolveCompanyFilter(
+  orgId: string,
   urlParam: string | undefined,
-): Promise<string | undefined> {
-  if (urlParam === "all") return undefined;
-  if (urlParam) return urlParam;
-  return readCompanyCookie();
+): Promise<string> {
+  const companies = await loadCompaniesForOrg(orgId);
+  if (companies.length === 0) return "";
+
+  const cookieVal = await readCompanyCookie();
+  const candidate = urlParam && urlParam !== "all" ? urlParam : cookieVal;
+  if (candidate && companies.some((c) => c.id === candidate)) return candidate;
+  return companies[0].id;
 }
 
 async function _loadCompaniesForOrg(

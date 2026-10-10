@@ -4,26 +4,57 @@
 import Link from "next/link";
 import { Building2, Download, Plus, Upload } from "lucide-react";
 import { requireRole } from "@/lib/auth/session";
-import { adminClient } from "@/lib/db/server";
+import { adminClient, serverClient } from "@/lib/db/server";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import { Section } from "@/components/ui/section";
 import { thaiDateLong } from "@/lib/utils/format";
 import { BranchesTableView, type FlatBranch } from "./branches-table-view";
 
 export const dynamic = "force-dynamic";
 
-export default async function BranchesPage() {
+export default async function BranchesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ company?: string }>;
+}) {
   const session = await requireRole("super_admin", "org_admin", "admin");
   const orgId = session.user.org_id;
   const admin = adminClient();
 
+  // Company-switcher fix (audit 2026-10-10): this page used to query ALL
+  // branches of both companies regardless of the switcher — it never called
+  // the company resolver at all. Resolve the selected company (always
+  // concrete now, CEO decision) and scope the branches read to it.
+  //
+  // The branches query goes through serverClient({ companyId }) — RLS-
+  // enforcing, with the company declared via the x-company-id header so the
+  // new `branches_company_scope` backstop policy applies — PLUS an explicit
+  // `.eq("company_id", ...)` kept anyway for defense-in-depth (and because
+  // the RLS backstop migration has NOT been applied to production yet at the
+  // time of this change — see prisma/migrations/20261010_branches_company_rls_backstop.sql,
+  // pending CEO review/apply). The other 3 queries (companies/users/
+  // user_branches) are intentionally left on adminClient() — they aren't
+  // company-scoped data and converting them is out of scope for this fix.
+  const sp = await searchParams;
+  const companyId = await resolveCompanyFilter(orgId, sp.company);
+  const scoped = await serverClient({ companyId: companyId || undefined });
+
+  // companyId is "" only when the org has zero active companies configured
+  // at all (not a real case for Pooilgroup today — 2 companies always exist
+  // — but resolveCompanyFilter() documents it as possible for a brand-new
+  // org). Skip the branches read entirely rather than sending an empty
+  // string into a uuid column filter (would error, not just return 0 rows).
   const [branchesQ, companiesQ, usersQ, ubQ] = await Promise.all([
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (admin.from as any)("branches")
-      .select(
-        "id, code, name, business_type, company_id, province, region, phone, manager_id, is_active, created_at",
-      )
-      .eq("org_id", orgId)
-      .order("code"),
+    companyId
+      ? scoped
+          .from("branches")
+          .select(
+            "id, code, name, business_type, company_id, province, region, phone, manager_id, is_active, created_at",
+          )
+          .eq("org_id", orgId)
+          .eq("company_id", companyId)
+          .order("code")
+      : Promise.resolve({ data: [] as never[] }),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (admin.from as any)("companies")
       .select("id, code, name")
@@ -95,6 +126,9 @@ export default async function BranchesPage() {
 
   const totalActive = flat.filter((b) => b.is_active).length;
   const totalInactive = flat.length - totalActive;
+  // Page is now always scoped to one company (CEO decision 2026-10-10) — show
+  // which one instead of the stale "X บริษัท" total-across-both-companies count.
+  const currentCompanyName = companyById.get(companyId)?.name ?? "";
 
   return (
     <div className="relative">
@@ -116,7 +150,8 @@ export default async function BranchesPage() {
               <span className="text-zinc-500">{thaiDateLong(new Date())}</span>
             </p>
             <h1 className="text-4xl sm:text-6xl font-extrabold tracking-[-0.04em] font-display mt-5 leading-[0.95]">
-              <span className="brand-gradient-text">สาขา</span> ทั้งหมด
+              <span className="brand-gradient-text">สาขา</span>{" "}
+              {currentCompanyName || "ทั้งหมด"}
             </h1>
             <p className="text-base sm:text-lg text-zinc-600 mt-5 max-w-2xl leading-relaxed">
               <strong className="font-bold text-zinc-900 tabular-num">
@@ -134,11 +169,8 @@ export default async function BranchesPage() {
                   </span>
                 </>
               )}
-              <span className="text-zinc-400 mx-1.5">·</span>
-              <strong className="font-bold text-zinc-900 tabular-num">
-                {companies.length}
-              </strong>{" "}
-              บริษัท
+              {/* สลับบริษัทที่มุมบนขวาของเฮดเดอร์ (CompanySwitcher) — หน้านี้แสดง
+                  เฉพาะสาขาของบริษัทที่เลือกไว้เสมอ ไม่ใช่รวมทุกบริษัทอีกต่อไป */}
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">

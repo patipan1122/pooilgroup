@@ -34,8 +34,8 @@ export default async function PipelinePage({
   await requireRecruitAccess(session.user);
   const params = await searchParams;
   const postingFilter = params.posting ?? null;
-  // บริษัท = "ตัวสลับด้านบน" (URL ?company= > คุกกี้ > ทุกบริษัท) — ไม่มีตัวเลือกในหน้านี้แล้ว
-  const companyFilter = (await resolveCompanyFilter(params.company)) ?? null;
+  // บริษัท = "ตัวสลับด้านบน" (URL ?company= > คุกกี้ > บริษัทแรก) — ไม่มีตัวเลือกในหน้านี้แล้ว
+  const companyFilter = await resolveCompanyFilter(session.user.org_id, params.company);
   const selectedId = params.selected ?? null;
 
   const [postings, apps, countsByStatus] = await Promise.all([

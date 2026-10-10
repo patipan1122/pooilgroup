@@ -43,7 +43,7 @@ export default async function ExecutiveDashboardPage({
   // remaining = super_admin | org_admin | admin | area_manager → allowed
 
   const sp = await searchParams;
-  const companyId = await resolveCompanyFilter(sp.company);
+  const companyId = await resolveCompanyFilter(session.user.org_id, sp.company);
 
   // โหลดทุกอย่างผ่าน canonical loader (Single Source of Truth)
   const data = await loadDashboard(session.user.org_id, companyId);
