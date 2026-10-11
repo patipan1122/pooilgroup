@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 
@@ -20,6 +21,20 @@ interface DialogProps {
 }
 
 export function Dialog({ open, onClose, title, children, className, backdrop = "blur" }: DialogProps) {
+  // Portal to document.body (bug found 2026-10-11 while verifying the
+  // company-switcher confirm dialog on mobile): any ancestor with its own
+  // stacking context — e.g. admin-shell's <header class="sticky z-40">,
+  // which CompanySwitcher renders inside — traps a nested z-50 inside that
+  // ancestor's z-40 context. It can never out-rank a *sibling* fixed element
+  // like the bottom tab bar (also z-40, painted later in the DOM → wins the
+  // tie), no matter what z-index this component declares internally.
+  // elementFromPoint() confirmed real taps on the confirm button were
+  // landing on the bottom nav instead. Portaling to <body> escapes every
+  // ancestor's stacking context so z-50 is finally compared where it's
+  // declared — fixes this for all ~22 call sites, not just the switcher.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
@@ -35,7 +50,7 @@ export function Dialog({ open, onClose, title, children, className, backdrop = "
 
   if (!open) return null;
 
-  return (
+  const dialog = (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div
         className={cn(
@@ -70,4 +85,10 @@ export function Dialog({ open, onClose, title, children, className, backdrop = "
       </div>
     </div>
   );
+
+  // Before the client has mounted (first paint / hydration), document.body
+  // isn't something we should portal into yet — render inline for that one
+  // frame. Once mounted, always portal so stacking escapes every ancestor.
+  if (!mounted) return dialog;
+  return createPortal(dialog, document.body);
 }
