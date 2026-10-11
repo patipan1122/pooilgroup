@@ -10,6 +10,7 @@ import { PipelineBoard } from "@/components/recruit/pipeline-board";
 import { ApplicationDetail } from "@/components/recruit/application-detail";
 import { ViewToggle } from "@/components/recruit/view-toggle";
 import { resolveCompanyFilter } from "@/lib/auth/company-context";
+import { postingCompanyScope, relatedPostingCompanyScope } from "@/lib/recruit/company-scope";
 import {
   ClipboardList,
   Inbox as InboxIcon,
@@ -43,7 +44,7 @@ export default async function PipelinePage({
       where: {
         orgId: session.user.org_id,
         status: { in: ["OPEN", "CLOSED"] },
-        ...(companyFilter ? { companyId: companyFilter } : {}),
+        ...postingCompanyScope(companyFilter),
       },
       select: { id: true, title: true, companyId: true },
       orderBy: { createdAt: "desc" },
@@ -54,9 +55,7 @@ export default async function PipelinePage({
         orgId: session.user.org_id,
         draft: false,
         ...(postingFilter ? { postingId: postingFilter } : {}),
-        ...(companyFilter
-          ? { posting: { companyId: companyFilter } }
-          : {}),
+        ...relatedPostingCompanyScope(companyFilter),
         status: { notIn: ["WITHDRAWN"] },
       },
       // select (not include) — the kanban card (mapCard below) only reads the
@@ -86,7 +85,7 @@ export default async function PipelinePage({
         orgId: session.user.org_id,
         draft: false,
         // KPI ด้านบนนับตามบริษัทที่เลือกด้วย → เลขบนสุดตรงกับบอร์ดที่เห็น
-        ...(companyFilter ? { posting: { companyId: companyFilter } } : {}),
+        ...relatedPostingCompanyScope(companyFilter),
       },
       _count: { _all: true },
     }),
