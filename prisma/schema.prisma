@@ -152,6 +152,7 @@ model Company {
   ledgerLineChannels           LedgerLineChannel[]
   ledgerExportBatches          LedgerExportBatch[]
   documentTypes                DocumentType[]
+  documentGroups                DocumentGroup[]
 
   @@unique([orgId, code])
   @@index([orgId, isActive])
@@ -1125,19 +1126,44 @@ model DocumentType {
 model DocumentGroup {
   id          String   @id @default(uuid()) @db.Uuid
   orgId       String   @map("org_id") @db.Uuid
+  /// Nested-folder tree (CEO feedback 2026-10-11, replaces the derived
+  /// business-type buckets in the "ตามบริษัท" tree view) — nullable
+  /// because pre-existing top-level groups (Phase 1) aren't scoped to any
+  /// one company. Folders created via the new per-company drill-down UI
+  /// always set this.
+  companyId     String?  @map("company_id") @db.Uuid
+  /// Self-relation for unlimited-depth nesting. RESTRICT (not CASCADE/
+  /// SetNull) — deleting a folder that still has children must fail
+  /// loudly, not silently orphan or mass-delete the subtree. No
+  /// re-parenting (move-folder-to-different-parent) support in this
+  /// version — create/rename/delete only, so no cycle-prevention logic
+  /// is needed yet.
+  parentGroupId String? @map("parent_group_id") @db.Uuid
   name        String
   description String?
   isActive    Boolean  @default(true) @map("is_active")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org         Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  company     Company?       @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  parentGroup DocumentGroup? @relation("DocumentGroupParent", fields: [parentGroupId], references: [id], onDelete: Restrict)
+  childGroups DocumentGroup[] @relation("DocumentGroupParent")
   documents Document[]
   moveLogsFrom DocumentGroupMoveLog[] @relation("DocumentGroupMoveLogFrom")
   moveLogsTo   DocumentGroupMoveLog[] @relation("DocumentGroupMoveLogTo")
 
-  @@unique([orgId, name])
+  // NOTE: the old blanket @@unique([orgId, name]) is intentionally dropped
+  // — nesting means the same folder name ("เอกสาร", "ก่อสร้าง") is
+  // expected to repeat under different parents/companies. Duplicate-
+  // sibling checking (same orgId+companyId+parentGroupId+name) is done at
+  // the application layer in lib/docuflow/document-groups.ts instead of a
+  // DB constraint, since Postgres unique constraints treat NULL columns
+  // (company_id/parent_group_id at the top level) as never-equal, which
+  // would silently defeat a naive composite unique index for the
+  // top-level case anyway.
   @@index([orgId, isActive])
+  @@index([orgId, companyId, parentGroupId])
   @@map("document_groups")
   @@schema("public")
 }

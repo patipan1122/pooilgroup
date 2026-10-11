@@ -14,7 +14,6 @@ import {
   FileText,
   Globe2,
   Building2,
-  Store,
   UserCircle,
   Search,
   AlertTriangle,
@@ -27,12 +26,20 @@ import type {
   DocumentTree,
   DocLite,
   CompanyNode,
-  BizTypeNode,
-  BranchNode,
   PersonNode,
 } from "@/lib/docuflow/tree";
+import { DocumentGroupDrillDown } from "./document-group-drilldown";
 
-export function TreeBrowser({ tree }: { tree: DocumentTree }) {
+export function TreeBrowser({
+  tree,
+  adminTier = false,
+}: {
+  tree: DocumentTree;
+  /** Can create/delete folders in the nested-folder browser below each
+   *  company (CEO feedback 2026-10-11). View-only (browsing) doesn't need
+   *  this — only mutating the folder structure does. */
+  adminTier?: boolean;
+}) {
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(() => {
     // Default-expand top level
@@ -118,7 +125,7 @@ export function TreeBrowser({ tree }: { tree: DocumentTree }) {
           <DocList docs={tree.groupDocs.filter(matchDoc)} depth={1} />
         </TreeNode>
 
-        {/* ───── บริษัท → ธุรกิจ → สาขา → docs ───── */}
+        {/* ───── บริษัท → โฟลเดอร์ที่สร้างเอง (ไม่จำกัดชั้น) → docs ───── */}
         {tree.companies.map((c) => (
           <CompanyBranch
             key={c.id}
@@ -126,6 +133,7 @@ export function TreeBrowser({ tree }: { tree: DocumentTree }) {
             isOpen={isOpen}
             toggle={toggle}
             matchDoc={matchDoc}
+            adminTier={adminTier}
           />
         ))}
 
@@ -164,11 +172,13 @@ function CompanyBranch({
   isOpen,
   toggle,
   matchDoc,
+  adminTier,
 }: {
   company: CompanyNode;
   isOpen: (key: string) => boolean;
   toggle: (key: string) => void;
   matchDoc: (d: DocLite) => boolean;
+  adminTier: boolean;
 }) {
   const expiringBadge = company.expiringCount > 0 && (
     <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-md px-1.5 py-0.5">
@@ -196,97 +206,17 @@ function CompanyBranch({
           docs={company.directDocs.filter(matchDoc)}
         />
       )}
-      {company.bizTypes.map((bt) => (
-        <BizTypeSubtree
-          key={`${company.id}-${bt.type}`}
+      {/* Nested folders (CEO feedback 2026-10-11) — replaces the old
+          auto-generated "ประเภทธุรกิจ" bucket list for this one screen.
+          business_type stays a real DocumentOwnership level everywhere
+          else (upload picker, level filter, etc.), untouched. */}
+      <div style={{ padding: "10px 12px 14px", paddingLeft: 1 * 24 + 12 }}>
+        <DocumentGroupDrillDown
           companyId={company.id}
-          bizType={bt}
-          isOpen={isOpen}
-          toggle={toggle}
-          matchDoc={matchDoc}
+          companyName={company.name}
+          canManage={adminTier}
         />
-      ))}
-    </TreeNode>
-  );
-}
-
-function BizTypeSubtree({
-  companyId,
-  bizType,
-  isOpen,
-  toggle,
-  matchDoc,
-}: {
-  companyId: string;
-  bizType: BizTypeNode;
-  isOpen: (key: string) => boolean;
-  toggle: (key: string) => void;
-  matchDoc: (d: DocLite) => boolean;
-}) {
-  const key = `biz:${companyId}:${bizType.type}`;
-  const expiringBadge = bizType.expiringCount > 0 && (
-    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-md px-1.5 py-0.5">
-      <AlertTriangle className="size-3" />
-      {bizType.expiringCount}
-    </span>
-  );
-
-  return (
-    <TreeNode
-      icon={<span className="text-base leading-none">{bizType.emoji}</span>}
-      label={bizType.label}
-      sublabel={`${bizType.totalDocCount} เอกสาร · ${bizType.branches.length} สาขา`}
-      right={expiringBadge}
-      open={isOpen(key)}
-      onToggle={() => toggle(key)}
-      depth={1}
-    >
-      {bizType.directDocs.filter(matchDoc).length > 0 && (
-        <FolderRow
-          icon={<FileText className="size-4" />}
-          label="ของประเภทธุรกิจ"
-          count={bizType.directDocs.filter(matchDoc).length}
-          depth={2}
-          docs={bizType.directDocs.filter(matchDoc)}
-        />
-      )}
-      {bizType.branches.map((br) => (
-        <BranchSubtree
-          key={br.id}
-          branch={br}
-          isOpen={isOpen}
-          toggle={toggle}
-          matchDoc={matchDoc}
-        />
-      ))}
-    </TreeNode>
-  );
-}
-
-function BranchSubtree({
-  branch,
-  isOpen,
-  toggle,
-  matchDoc,
-}: {
-  branch: BranchNode;
-  isOpen: (key: string) => boolean;
-  toggle: (key: string) => void;
-  matchDoc: (d: DocLite) => boolean;
-}) {
-  const filtered = branch.docs.filter(matchDoc);
-  const key = `branch:${branch.id}`;
-  return (
-    <TreeNode
-      icon={<Store className="size-4" />}
-      label={`${branch.code} · ${branch.name}`}
-      sublabel={`${filtered.length} เอกสาร`}
-      open={isOpen(key)}
-      onToggle={() => toggle(key)}
-      depth={2}
-      empty={branch.docs.length === 0}
-    >
-      <DocList docs={filtered} depth={3} />
+      </div>
     </TreeNode>
   );
 }

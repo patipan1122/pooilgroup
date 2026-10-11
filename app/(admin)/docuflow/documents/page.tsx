@@ -404,7 +404,7 @@ export default async function DocumentsListPage({
           className="df-fade-up df-fade-up-100"
         >
           <DfCard padding={0} style={{ overflow: "hidden" }}>
-            <TreeBrowser tree={tree} />
+            <TreeBrowser tree={tree} adminTier={adminTier} />
           </DfCard>
         </DfSection>
       )}
