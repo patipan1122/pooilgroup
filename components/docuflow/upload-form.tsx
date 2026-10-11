@@ -41,6 +41,15 @@ import { Dialog } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils/cn";
 import type { DocumentTypeOption } from "@/lib/docuflow/document-types";
 import type { DocumentGroupRecord } from "@/lib/docuflow/document-groups";
+import { createDocumentGroupViaApi } from "@/lib/docuflow/document-groups-client";
+import { QuickCreateDocGroupDialog } from "./quick-create-document-group-dialog";
+import { TagCombobox } from "./tag-combobox";
+import {
+  CostFieldsSection,
+  EMPTY_COST_FIELDS,
+  hasCostFields,
+  type CostFields,
+} from "./cost-fields-section";
 
 const DEFAULT_ALERT_DAYS = [90, 30, 7];
 const PROXY_MAX_BYTES = 25 * 1024 * 1024;
@@ -248,14 +257,17 @@ export function UploadForm({
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [uploadMode, setUploadMode] = useState<UploadMode>("multiple");
   const [completedDocs, setCompletedDocs] = useState<CompletedDoc[]>([]);
+  // Tag picker — CEO click-report item 3 (2026-09-30): "ควรจะเป็นแบบ dropdown
+  // เลือกเอา จะได้ดูว่าอันไหนเคยสร้างแล้ว แต่ถ้ายังไม่มีแท็กก็สามารถกดสร้าง
+  // แท็กได้เลย". Suggestions come from `availableTags` (org-wide distinct
+  // tags, server prop via loadDocumentTags). Dropdown-first interaction +
+  // explicit "+ เพิ่ม tag ใหม่" create action lives in <TagCombobox> below
+  // (CEO click-report item 4, 2026-10-10) — this component only owns the
+  // final selected-tags array.
   const [tags, setTags] = useState<string[]>([]);
-  const [tagInput, setTagInput] = useState("");
-  // Tag combobox — CEO click-report item 3: "ควรจะเป็นแบบ dropdown เลือกเอา
-  // จะได้ดูว่าอันไหนเคยสร้างแล้ว แต่ถ้ายังไม่มีแท็กก็สามารถกดสร้างแท็กได้เลย".
-  // Suggestions come from `availableTags` (org-wide distinct tags, server
-  // prop via loadDocumentTags) but free-text Enter/comma still works — this
-  // is suggest-while-typing, not a forced select-from-list.
-  const [tagOpen, setTagOpen] = useState(false);
+  // Cost/expense metadata (CEO spec, Must #6) — collapsed, optional,
+  // standalone reference info. See cost-fields-section.tsx.
+  const [costFields, setCostFields] = useState<CostFields>(EMPTY_COST_FIELDS);
   const fileNameSyncRef = useRef(false);
   // True when the auto-filled document name looks like an opaque id/hash
   // rather than something a person typed — e.g. a file forwarded via LINE
@@ -381,13 +393,6 @@ export function UploadForm({
       .slice(0, 40);
   }, [q, allScopes]);
 
-  const tagQuery = tagInput.trim().toLowerCase();
-  const filteredTagSuggestions = useMemo(() => {
-    const selected = new Set(tags.map((t) => t.toLowerCase()));
-    const pool = availableTags.filter((t) => !selected.has(t.toLowerCase()));
-    if (!tagQuery) return pool.slice(0, 20);
-    return pool.filter((t) => t.toLowerCase().includes(tagQuery)).slice(0, 20);
-  }, [tagQuery, availableTags, tags]);
 
   // Group document types by business type for the <optgroup> select below —
   // makes a long list scannable instead of one flat alphabetical dump.
@@ -466,27 +471,18 @@ export function UploadForm({
   // only, no company/UUID field so the strict-UUID bug class from the
   // doc-type quick-create postmortem doesn't apply here).
   async function handleQuickCreateGroup(input: { name: string }) {
-    const res = await fetch("/api/docuflow/document-groups", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: input.name }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || "สร้างกลุ่มเอกสารไม่สำเร็จ");
-    }
-    const data = (await res.json()) as { documentGroup: DocumentGroupRecord };
+    const created = await createDocumentGroupViaApi(input);
     // flushSync — see the matching comment in handleQuickCreateDocType above
     // for why this is required (real race, not a timing hack): setValue()
     // for an uncontrolled <select> writes to the DOM synchronously, before
     // React would otherwise have committed the new <option> from the state
     // update below.
     flushSync(() => {
-      setLocalDocumentGroups((prev) => [...prev, data.documentGroup]);
+      setLocalDocumentGroups((prev) => [...prev, created]);
     });
-    setValue("documentGroupId", data.documentGroup.id);
+    setValue("documentGroupId", created.id);
     setQuickCreateGroupOpen(false);
-    toast.success(`สร้างกลุ่มเอกสาร "${data.documentGroup.name}" แล้ว`);
+    toast.success(`สร้างกลุ่มเอกสาร "${created.name}" แล้ว`);
   }
 
   function addScope(s: Scope) {
@@ -503,32 +499,20 @@ export function UploadForm({
     setScopes((prev) => prev.filter((_, i) => i !== idx));
   }
 
-  /** Free-text tags — search/filter only (not tied to checklist/type matching).
-   * Split on comma/Enter, trim, dedupe case-insensitively, cap length. */
-  function addTagFromInput() {
-    const raw = tagInput.trim().replace(/^#/, "");
+  /** Adds a tag (picked from the dropdown OR created via the combobox's
+   * explicit "+ เพิ่ม tag ใหม่" row — both paths land here identically).
+   * Dedupe case-insensitively, cap length. */
+  function addTag(tag: string) {
+    const raw = tag.trim().replace(/^#/, "");
     if (!raw) return;
     setTags((prev) => {
       if (prev.some((t) => t.toLowerCase() === raw.toLowerCase())) return prev;
       return [...prev, raw.slice(0, 40)];
     });
-    setTagInput("");
   }
 
   function removeTag(tag: string) {
     setTags((prev) => prev.filter((t) => t !== tag));
-  }
-
-  /** Pick an existing tag from the suggestion dropdown — same add-path as
-   * addTagFromInput (dedupe + cap), just skipping the trim/# handling since
-   * suggestions are already clean values from the DB. */
-  function selectTag(tag: string) {
-    setTags((prev) => {
-      if (prev.some((t) => t.toLowerCase() === tag.toLowerCase())) return prev;
-      return [...prev, tag.slice(0, 40)];
-    });
-    setTagInput("");
-    setTagOpen(false);
   }
 
   function cleanFileName(f: File) {
@@ -581,16 +565,6 @@ export function UploadForm({
     function onClick(e: MouseEvent) {
       if (!pickerRef.current) return;
       if (!pickerRef.current.contains(e.target as Node)) setScopeOpen(false);
-    }
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, []);
-
-  const tagPickerRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    function onClick(e: MouseEvent) {
-      if (!tagPickerRef.current) return;
-      if (!tagPickerRef.current.contains(e.target as Node)) setTagOpen(false);
     }
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
@@ -673,6 +647,27 @@ export function UploadForm({
     };
   }
 
+  /** Cost section is entirely optional — omit the whole `cost` key unless
+   * the admin actually filled something in, so an untouched (collapsed)
+   * section never sends a spurious empty payload. costAmount is parsed to
+   * a number here (string while typing, number over the wire) — the API
+   * does its own >= 0 / 2-decimal-place validation server-side regardless. */
+  function buildCost(fields: CostFields) {
+    if (!hasCostFields(fields)) return undefined;
+    const amount = fields.costAmount.trim()
+      ? Number(fields.costAmount)
+      : undefined;
+    return {
+      ...(amount !== undefined && Number.isFinite(amount)
+        ? { costAmount: amount }
+        : {}),
+      ...(fields.costLabel.trim()
+        ? { costLabel: fields.costLabel.trim() }
+        : {}),
+      ...(fields.costFrequency ? { costFrequency: fields.costFrequency } : {}),
+    };
+  }
+
   /** Same-browser convenience only (no DB write) — remembers the last-used
    * document type + storage scope for next time. Only called after at least
    * one file actually went through, so a total-failure attempt doesn't
@@ -700,7 +695,7 @@ export function UploadForm({
     setFileStatuses([]);
     setUploadMode("multiple");
     setTags([]);
-    setTagInput("");
+    setCostFields(EMPTY_COST_FIELDS);
     fileNameSyncRef.current = false;
     setNameLooksHashLike(false);
     reset({
@@ -729,6 +724,7 @@ export function UploadForm({
         ownerships: buildOwnerships(),
         tags,
         renewal: buildRenewal(values),
+        cost: buildCost(costFields),
       }),
     );
 
@@ -763,6 +759,7 @@ export function UploadForm({
         ownerships: buildOwnerships(),
         tags,
         renewal: buildRenewal(values),
+        cost: buildCost(costFields),
       }),
     });
     if (!res.ok) {
@@ -1368,72 +1365,17 @@ export function UploadForm({
         label="Tag"
         optional
         htmlFor="tagInput"
-        hint="เลือกจาก tag ที่เคยสร้างแล้ว หรือพิมพ์ใหม่แล้วกด Enter/, เพื่อสร้าง tag ใหม่"
+        hint='เลือกจาก tag ที่เคยสร้างแล้ว · ถ้ายังไม่มี พิมพ์แล้วกด "+ เพิ่ม tag ใหม่"'
       >
-        <div className="space-y-2" ref={tagPickerRef}>
-          {tags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {tags.map((t) => (
-                <span
-                  key={t}
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-[var(--color-brand-50)] border-2 border-[var(--color-brand-200)] text-xs"
-                >
-                  #{t}
-                  <button
-                    type="button"
-                    onClick={() => removeTag(t)}
-                    disabled={busy}
-                    className="text-zinc-400 hover:text-zinc-700"
-                    aria-label={`ลบ tag ${t}`}
-                  >
-                    <X size={12} />
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-          <div className="relative">
-            <Input
-              id="tagInput"
-              value={tagInput}
-              disabled={busy}
-              placeholder="พิมพ์ค้นหา tag เดิม หรือพิมพ์ tag ใหม่แล้วกด Enter"
-              onChange={(e) => {
-                setTagInput(e.target.value);
-                setTagOpen(true);
-              }}
-              onFocus={() => setTagOpen(true)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === ",") {
-                  e.preventDefault();
-                  addTagFromInput();
-                }
-              }}
-              onBlur={addTagFromInput}
-            />
-            {tagOpen && filteredTagSuggestions.length > 0 && (
-              <div className="absolute left-0 right-0 top-full mt-1 rounded-xl border-2 border-zinc-200 bg-white shadow-pop z-20 max-h-56 overflow-y-auto">
-                {filteredTagSuggestions.map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    // onMouseDown (not onClick) fires before the input's onBlur,
-                    // so addTagFromInput() (which would otherwise create a
-                    // duplicate free-text tag from tagInput) never runs first.
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      selectTag(t);
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-zinc-50 transition-colors border-b border-zinc-50 last:border-b-0"
-                  >
-                    <span className="text-zinc-400">#</span>
-                    <span className="flex-1 truncate text-zinc-800">{t}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+        <TagCombobox
+          id="tagInput"
+          selected={tags}
+          availableTags={availableTags}
+          onAdd={addTag}
+          onRemove={removeTag}
+          disabled={busy}
+          placeholder="พิมพ์ค้นหา tag เดิม…"
+        />
       </Field>
 
       <Field
@@ -1620,6 +1562,12 @@ export function UploadForm({
           </div>
         )}
       </div>
+
+      <CostFieldsSection
+        values={costFields}
+        onChange={setCostFields}
+        disabled={busy}
+      />
 
       {combining && (
         <div className="flex items-center gap-2 rounded-lg bg-[var(--color-brand-50)] px-3 py-2 text-sm font-medium text-[var(--color-brand-700)]">
@@ -1845,84 +1793,7 @@ function QuickCreateDocTypeDialog({
   );
 }
 
-/* ============================================================
-   QuickCreateDocGroupDialog — "+ สร้างใหม่" next to the กลุ่มเอกสาร
-   dropdown (CEO click-report item 2, 2026-09-30). Same shape/pattern
-   as QuickCreateDocTypeDialog above — copy, not shared code, since the
-   two dialogs' fields genuinely differ (DocumentGroup has no
-   businessType/company dimension). See the postmortem referenced at
-   the top of QuickCreateDocTypeDialog for why this MUST stay a <div>,
-   not a <form>: it renders inline inside UploadForm's own outer
-   <form>, and a nested <form> silently breaks the submit button (the
-   click falls through to the outer upload form instead).
-   ============================================================ */
-
-function QuickCreateDocGroupDialog({
-  open,
-  onClose,
-  onCreate,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onCreate: (input: { name: string }) => Promise<void>;
-}) {
-  const [name, setName] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  function handleClose() {
-    if (busy) return;
-    setName("");
-    onClose();
-  }
-
-  async function handleSubmit() {
-    if (!name.trim()) {
-      toast.error("ใส่ชื่อกลุ่มเอกสารก่อน");
-      return;
-    }
-    setBusy(true);
-    try {
-      await onCreate({ name: name.trim() });
-      setName("");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "สร้างกลุ่มเอกสารไม่สำเร็จ");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Dialog open={open} onClose={handleClose} title="สร้างกลุ่มเอกสารใหม่">
-      {/* Deliberately a <div>, not a <form> — see QuickCreateDocTypeDialog's
-          comment above for why (nested <form> inside UploadForm's outer
-          <form> silently breaks the submit button). */}
-      <div className="space-y-4">
-        <Field label="ชื่อกลุ่มเอกสาร" required htmlFor="qcg-name">
-          <Input
-            id="qcg-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                handleSubmit();
-              }
-            }}
-            disabled={busy}
-            autoFocus
-            placeholder="เช่น เอกสารต่ออายุประจำปี"
-          />
-        </Field>
-
-        <div className="flex justify-end gap-2 pt-2">
-          <Button type="button" variant="outline" onClick={handleClose} disabled={busy}>
-            ยกเลิก
-          </Button>
-          <Button type="button" onClick={handleSubmit} loading={busy}>
-            สร้างกลุ่มเอกสาร
-          </Button>
-        </div>
-      </div>
-    </Dialog>
-  );
-}
+// QuickCreateDocGroupDialog moved to ./quick-create-document-group-dialog.tsx
+// (2026-10-10, CEO click-report item 3) so /docuflow/documents can mount the
+// same dialog from a second entry point without a second implementation —
+// see quick-create-document-group-button.tsx.

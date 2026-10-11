@@ -47,6 +47,13 @@ export interface CanonicalDocument {
   driveFileId: string | null;
   driveFileUrl: string | null;
   driveExportedAt: Date | null;
+  /** Cost/expense metadata (Must #6, 2026-10-10) — standalone reference
+   *  info, NOT linked to Ledger/CashHub. costAmount is a plain number here
+   *  (converted from Prisma's Decimal) since every consumer just displays
+   *  or re-edits it — no money math is ever done on this field. */
+  costAmount: number | null;
+  costLabel: string | null;
+  costFrequency: string | null;
 }
 
 export interface CanonicalOwnership {
@@ -357,6 +364,16 @@ export function indexDocuments(
    Internal: shape Prisma row into CanonicalDocument
    ============================================================ */
 
+// Same structural Decimal-or-number shape used in lib/ledger/queries.ts —
+// costAmount only ever needs display/re-edit, never money math, so a plain
+// number out of this layer keeps every consumer Decimal-import-free.
+type DecimalLike = { toNumber: () => number } | number | null | undefined;
+
+function dec(v: DecimalLike): number | null {
+  if (v === null || v === undefined) return null;
+  return typeof v === "number" ? v : v.toNumber();
+}
+
 type DocumentWithRelations = {
   id: string;
   orgId: string;
@@ -395,6 +412,9 @@ type DocumentWithRelations = {
   driveFileId: string | null;
   driveFileUrl: string | null;
   driveExportedAt: Date | null;
+  costAmount: DecimalLike;
+  costLabel: string | null;
+  costFrequency: string | null;
 };
 
 function toCanonicalDocument(row: DocumentWithRelations): CanonicalDocument {
@@ -414,6 +434,9 @@ function toCanonicalDocument(row: DocumentWithRelations): CanonicalDocument {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     driveFileId: row.driveFileId,
+    costAmount: dec(row.costAmount),
+    costLabel: row.costLabel,
+    costFrequency: row.costFrequency,
     driveFileUrl: row.driveFileUrl,
     driveExportedAt: row.driveExportedAt,
     ownership: row.ownership.map((o) => ({

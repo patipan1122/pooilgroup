@@ -40,6 +40,7 @@ import { DocumentCard } from "@/components/docuflow/document-card";
 import { DocumentFilterSelect } from "@/components/docuflow/document-filter-select";
 import { DocumentViewTabs } from "@/components/docuflow/document-view-tabs";
 import { TreeBrowser } from "@/components/docuflow/tree-browser";
+import { QuickCreateDocumentGroupButton } from "@/components/docuflow/quick-create-document-group-button";
 import {
   DfButton,
   DfCard,
@@ -254,6 +255,11 @@ export default async function DocumentsListPage({
               <Sparkles size={15} />
               ถาม AI
             </DfButton>
+            {/* CEO click-report item 3 (2026-10-10): the quick-create
+                DocumentGroup dialog already existed inside the upload form,
+                but was only reachable from there — mounted here too, same
+                dialog + same API call (see quick-create-document-group-button.tsx). */}
+            {adminTier && <QuickCreateDocumentGroupButton />}
             {/* CEO click-report item 4 (2026-09-30): "ตั้งค่าประเภทเอกสาร" was
                 only reachable by scrolling to the bottom of the category grid
                 below, then landing on the settings HUB (an extra hop before

@@ -12,6 +12,11 @@ import { audit } from "@/lib/audit/log";
 import { loadDocumentById } from "@/lib/docuflow/data";
 import { getSignedDownloadUrl } from "@/lib/docuflow/r2";
 import { userCanAdminModule, userCanViewModule } from "@/lib/auth/module-access";
+import {
+  CostAmountSchema,
+  CostFrequencySchema,
+  CostLabelSchema,
+} from "@/lib/docuflow/cost-schema";
 
 export const dynamic = "force-dynamic";
 
@@ -70,6 +75,12 @@ const PatchSchema = z.object({
   description: z.string().max(2000).nullable().optional(),
   tags: z.array(z.string().min(1).max(64)).optional(),
   renewal: RenewalPatchSchema.optional(),
+  /** Standalone cost/expense reference metadata (Must #6) — nullable (not
+      just optional) so the editor can explicitly clear a field back out,
+      unlike the create-path's `cost` object where omitting = "don't set". */
+  costAmount: CostAmountSchema.nullable().optional(),
+  costLabel: CostLabelSchema.nullable().optional(),
+  costFrequency: CostFrequencySchema.nullable().optional(),
 });
 
 export async function PATCH(req: NextRequest, ctx: RouteContext) {
@@ -107,7 +118,15 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     return NextResponse.json({ error: "ไม่พบเอกสาร" }, { status: 404 });
   }
 
-  const { name, description, tags, renewal } = parsed.data;
+  const {
+    name,
+    description,
+    tags,
+    renewal,
+    costAmount,
+    costLabel,
+    costFrequency,
+  } = parsed.data;
 
   const oldDiff: Record<string, unknown> = {};
   const newDiff: Record<string, unknown> = {};
@@ -115,12 +134,24 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
   try {
     await prisma.$transaction(async (tx) => {
       // Update doc fields
-      if (name !== undefined || description !== undefined) {
+      const existingCostAmount = existing.costAmount
+        ? existing.costAmount.toNumber()
+        : null;
+      if (
+        name !== undefined ||
+        description !== undefined ||
+        costAmount !== undefined ||
+        costLabel !== undefined ||
+        costFrequency !== undefined
+      ) {
         await tx.document.update({
           where: { id },
           data: {
             ...(name !== undefined ? { name } : {}),
             ...(description !== undefined ? { description } : {}),
+            ...(costAmount !== undefined ? { costAmount } : {}),
+            ...(costLabel !== undefined ? { costLabel } : {}),
+            ...(costFrequency !== undefined ? { costFrequency } : {}),
           },
         });
         if (name !== undefined && name !== existing.name) {
@@ -130,6 +161,21 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
         if (description !== undefined && description !== existing.description) {
           oldDiff.description = existing.description;
           newDiff.description = description;
+        }
+        if (costAmount !== undefined && costAmount !== existingCostAmount) {
+          oldDiff.costAmount = existingCostAmount;
+          newDiff.costAmount = costAmount;
+        }
+        if (costLabel !== undefined && costLabel !== existing.costLabel) {
+          oldDiff.costLabel = existing.costLabel;
+          newDiff.costLabel = costLabel;
+        }
+        if (
+          costFrequency !== undefined &&
+          costFrequency !== existing.costFrequency
+        ) {
+          oldDiff.costFrequency = existing.costFrequency;
+          newDiff.costFrequency = costFrequency;
         }
       }
 

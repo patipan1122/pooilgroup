@@ -1039,6 +1039,17 @@ model Document {
   /// Added 2026-09-24, DocuFlow redesign CEO feedback follow-up.
   issueDate       DateTime? @map("issue_date") @db.Timestamptz(6)
 
+  /// Cost/expense metadata — standalone reference info stamped on the document itself,
+  /// explicitly NOT linked to Ledger/CashHub (CEO spec, WORKSHOP_docuflow-org-structure
+  /// 2026-10-10, Must #6). Nullable/additive — costAmount uses Decimal (not Float) to
+  /// avoid rounding error even though this is only reference metadata, not a real
+  /// accounting figure. costFrequency is a plain string (app-validated: monthly |
+  /// yearly | one_time) rather than a Postgres enum, matching this schema's existing
+  /// convention for small closed sets (e.g. DocumentRenewal.status).
+  costAmount    Decimal? @map("cost_amount") @db.Decimal(12, 2)
+  costLabel     String?  @map("cost_label")
+  costFrequency String?  @map("cost_frequency")
+
   /// Google Drive export tracking — opt-in, per-document "Export to Drive" button (one-way).
   /// Nullable/additive. Added 2026-09-23, DocuFlow redesign Track B Item 11 (schema only).
   driveFileId       String?   @map("drive_file_id")

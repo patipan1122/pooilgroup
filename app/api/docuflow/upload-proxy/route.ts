@@ -20,6 +20,7 @@ import { buildDocumentKey } from "@/lib/docuflow/r2";
 import { deleteObject, putObject } from "@/lib/r2/upload";
 import { validateDocumentMime } from "@/lib/docuflow/mime-validate";
 import { userCanAdminModule } from "@/lib/auth/module-access";
+import { CostInputSchema } from "@/lib/docuflow/cost-schema";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -81,6 +82,9 @@ const MetadataSchema = z.object({
   ownerships: z.array(OwnershipSchema).min(1),
   tags: z.array(z.string().min(1).max(64)).default([]),
   renewal: RenewalSchema.optional(),
+  /** Standalone cost/expense reference metadata (Must #6) — explicitly NOT
+      linked to Ledger/CashHub. Optional; the section is collapsed by default. */
+  cost: CostInputSchema.optional(),
 });
 
 const MAX_PROXY_SIZE = 25 * 1024 * 1024; // 25 MB
@@ -158,6 +162,7 @@ export async function POST(req: NextRequest) {
     ownerships,
     tags,
     renewal,
+    cost,
   } = parsed.data;
   const orgId = session.user.org_id;
 
@@ -210,6 +215,9 @@ export async function POST(req: NextRequest) {
           documentTypeId: documentTypeId ?? null,
           documentGroupId: documentGroupId ?? null,
           issueDate: issueDate ? new Date(issueDate) : null,
+          costAmount: cost?.costAmount ?? null,
+          costLabel: cost?.costLabel ?? null,
+          costFrequency: cost?.costFrequency ?? null,
           fileKey,
           filePublicUrl: publicUrl,
           mimeType,

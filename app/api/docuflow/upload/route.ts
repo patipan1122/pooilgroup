@@ -16,6 +16,7 @@ import { audit } from "@/lib/audit/log";
 import { buildDocumentKey, getUploadUrl } from "@/lib/docuflow/r2";
 import { validateDocumentMime } from "@/lib/docuflow/mime-validate";
 import { userCanAdminModule } from "@/lib/auth/module-access";
+import { CostInputSchema } from "@/lib/docuflow/cost-schema";
 
 export const dynamic = "force-dynamic";
 
@@ -88,6 +89,9 @@ const UploadSchema = z.object({
   ownership: OwnershipSchema.optional(),
   tags: z.array(z.string().min(1).max(64)).default([]),
   renewal: RenewalSchema.optional(),
+  /** Standalone cost/expense reference metadata (Must #6) — explicitly NOT
+      linked to Ledger/CashHub. Optional; the section is collapsed by default. */
+  cost: CostInputSchema.optional(),
 }).refine((v) => v.ownerships !== undefined || v.ownership !== undefined, {
   message: "ต้องระบุ ownership หรือ ownerships อย่างน้อยหนึ่ง",
   path: ["ownerships"],
@@ -144,6 +148,7 @@ export async function POST(req: NextRequest) {
     ownership: legacyOwnership,
     tags,
     renewal,
+    cost,
   } = parsed.data;
 
   // MIME / extension whitelist (B9 fix). Presigned flow can't sniff bytes
@@ -182,6 +187,9 @@ export async function POST(req: NextRequest) {
           documentTypeId: documentTypeId ?? null,
           documentGroupId: documentGroupId ?? null,
           issueDate: issueDate ? new Date(issueDate) : null,
+          costAmount: cost?.costAmount ?? null,
+          costLabel: cost?.costLabel ?? null,
+          costFrequency: cost?.costFrequency ?? null,
           fileKey,
           filePublicUrl: publicUrl,
           mimeType,
