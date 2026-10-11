@@ -42,6 +42,7 @@ import { DocumentFilterSelect } from "@/components/docuflow/document-filter-sele
 import { DocumentViewTabs } from "@/components/docuflow/document-view-tabs";
 import { TreeBrowser } from "@/components/docuflow/tree-browser";
 import { QuickCreateDocumentGroupButton } from "@/components/docuflow/quick-create-document-group-button";
+import { DocumentSearchInput } from "@/components/docuflow/document-search-input";
 import {
   DfButton,
   DfCard,
@@ -211,6 +212,7 @@ export default async function DocumentsListPage({
     : "/docuflow/documents";
 
   const activeFilterCount =
+    (search ? 1 : 0) +
     (filterLevel ? 1 : 0) +
     (filterStatus ? 1 : 0) +
     (filterTag ? 1 : 0) +
@@ -438,6 +440,14 @@ export default async function DocumentsListPage({
                     narrowing filter for the handful of existing deep links
                     that set it (see the SP interface comment above), it
                     just has no UI entry point of its own anymore. */}
+                <DocumentSearchInput
+                  current={search}
+                  preserve={(() => {
+                    const p = { ...preserve };
+                    delete p.search;
+                    return p;
+                  })()}
+                />
                 <DocumentFilterSelect
                   label="ระดับ"
                   paramKey="level"

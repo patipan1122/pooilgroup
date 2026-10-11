@@ -29,6 +29,7 @@ import { BUSINESS_TYPES } from "@/constants/business-types";
 import { BackButton } from "@/components/ui/back-button";
 import { DeleteDocumentButton } from "@/components/docuflow/delete-document-button";
 import { MoveDocumentButton } from "@/components/docuflow/move-document-button";
+import { EditDocumentButton } from "@/components/docuflow/edit-document-button";
 import { DriveExportButton } from "@/components/docuflow/drive-export-button";
 import { DocumentCostEditor } from "@/components/docuflow/document-cost-editor";
 import { RiskAnalysisPanel } from "@/components/docuflow/risk-analysis-panel";
@@ -318,6 +319,13 @@ export default async function DocumentDetailPage({
             <DfPill tone="danger">
               <AlertTriangle size={11} /> {downloadError}
             </DfPill>
+          )}
+          {adminTier && (
+            <EditDocumentButton
+              documentId={doc.id}
+              initialName={doc.name}
+              initialDescription={doc.description}
+            />
           )}
           {adminTier && <DeleteDocumentButton id={doc.id} name={doc.name} />}
         </div>

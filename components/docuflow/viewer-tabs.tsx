@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   Download,
 } from "lucide-react";
+import { PdfPreview } from "./pdf-preview";
 
 interface MetaItem {
   k: string;
@@ -156,36 +157,22 @@ export function ViewerTabs({
             }}
           >
             {downloadUrl && isPdf && (
-              <iframe
-                src={downloadUrl}
-                title={docName}
-                // 2026-10-10: `sandbox` used to be set here (even just
-                // "allow-same-origin allow-scripts"). Per the HTML spec, ANY
-                // sandbox attribute permanently sets the "sandboxed plugins
-                // browsing context flag" with no token to un-set it — so
-                // Chrome's built-in PDF viewer (a MimeHandlerView plugin)
-                // refused to load at all, rendering a broken-file icon
-                // instead of the document (verified: same broken icon with
-                // allow-scripts, allow-same-origin, and allow-popups all
-                // added together — only removing `sandbox` entirely let the
-                // PDF render). That's the actual bug CEO reported as
-                // "uploaded files can't be opened at all": this iframe was
-                // never able to show a PDF in Chrome, sandboxed or not.
-                // Safe to drop sandboxing here because `downloadUrl` only
-                // ever points at an R2 object that passed upload-time
-                // magic-byte validation as application/pdf
-                // (lib/docuflow/mime-validate.ts) — never arbitrary HTML —
-                // and this branch only renders when isPdf is already true.
-                referrerPolicy="no-referrer"
-                style={{
-                  width: "100%",
-                  height: 640,
-                  border: "none",
-                  borderRadius: 6,
-                  background: "#fff",
-                  boxShadow: "0 10px 40px -10px rgba(0,0,0,0.25)",
-                }}
-              />
+              // 2026-10-11: replaced the raw <iframe src={downloadUrl}>
+              // (previously fixed to just render AT ALL by dropping
+              // `sandbox` — see postmortems/docuflow-pdf-preview-csp-
+              // sandbox-2026-10-10.md) with a branded in-page viewer.
+              // That fix let Chrome's OWN native PDF.js plugin render
+              // inside the iframe — a separate browsing context DocuFlow's
+              // CSS has zero reach into, with its own dark surrounding
+              // chrome/toolbar/thumbnail sidebar that read as broken/
+              // confusing to the CEO ("ดูเอกสารแล้วงง สีดำเยอะ"). PdfPreview
+              // reuses the react-pdf/pdfjs-dist setup already proven
+              // elsewhere in DocuFlow's e-signature flow (lib/docuflow/
+              // pdfjs-config.ts) — plain white canvas, DocuFlow's own
+              // page-nav chrome, no native-viewer surface to fight.
+              <div style={{ width: "100%" }}>
+                <PdfPreview pdfUrl={downloadUrl} docName={docName} />
+              </div>
             )}
             {downloadUrl && isImage && (
               /* eslint-disable-next-line @next/next/no-img-element */
