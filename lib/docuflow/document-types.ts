@@ -82,6 +82,22 @@ function toDocumentTypeRecord(row: {
   return { ...row };
 }
 
+/**
+ * Company-switcher scoping Phase 3 (docuflow, 2026-10-11) — DocumentType.
+ * companyId is nullable (null = "applies to every company", an explicit
+ * design intent per the Prisma schema comment); a non-null value scopes a
+ * type to exactly one legal entity. When `companyId` is given, every
+ * list* helper below now hides types scoped to the OTHER company instead
+ * of showing every org's type regardless of which company is selected
+ * (the cross-company leakage the Phase 3 audit flagged — e.g. the upload
+ * form's "ประเภทเอกสาร" picker used to show a JP Sync-only type while
+ * uploading under Pool Oil). Omit `companyId` to get the old org-wide
+ * behavior (used nowhere post-Phase-3, kept optional for safety).
+ */
+function companyScopeWhere(companyId: string | undefined) {
+  return companyId ? { OR: [{ companyId: null }, { companyId }] } : {};
+}
+
 /* ============================================================
    listDocumentTypes — all active DocumentType rows for an org
    (no canonical fallback — this is the raw DB read)
@@ -89,9 +105,10 @@ function toDocumentTypeRecord(row: {
 
 export async function listDocumentTypes(
   orgId: string,
+  companyId?: string,
 ): Promise<DocumentTypeRecord[]> {
   const rows = await prisma.documentType.findMany({
-    where: { orgId, isActive: true },
+    where: { orgId, isActive: true, ...companyScopeWhere(companyId) },
     orderBy: { name: "asc" },
   });
   return rows.map(toDocumentTypeRecord);
@@ -107,9 +124,10 @@ export async function listDocumentTypes(
 
 export async function listAllDocumentTypesForAdmin(
   orgId: string,
+  companyId?: string,
 ): Promise<DocumentTypeRecord[]> {
   const rows = await prisma.documentType.findMany({
-    where: { orgId },
+    where: { orgId, ...companyScopeWhere(companyId) },
     orderBy: [{ isActive: "desc" }, { name: "asc" }],
   });
   return rows.map(toDocumentTypeRecord);
@@ -179,8 +197,9 @@ export async function listDocumentTypesForBusinessType(
 
 export async function listDocumentTypesForUpload(
   orgId: string,
+  companyId?: string,
 ): Promise<DocumentTypeOption[]> {
-  const rows = await listDocumentTypes(orgId);
+  const rows = await listDocumentTypes(orgId, companyId);
   return rows.map((row) => ({
     id: row.id,
     name: row.name,

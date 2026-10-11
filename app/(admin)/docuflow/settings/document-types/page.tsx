@@ -13,6 +13,7 @@
 
 import { ArrowLeft } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import { listAllDocumentTypesForAdmin } from "@/lib/docuflow/document-types";
 import {
   listSupportedBizTypes,
@@ -33,13 +34,26 @@ const EXTRA_BIZTYPE_META: Record<string, { label: string; emoji: string }> = {
   gas_fleet: { label: "รถก๊าซ/Delivery", emoji: "🚚" },
 };
 
-export default async function DocumentTypesSettingsPage() {
+interface PageProps {
+  searchParams: Promise<{ company?: string }>;
+}
+
+export default async function DocumentTypesSettingsPage({
+  searchParams,
+}: PageProps) {
   const session = await requireSession();
   await requireModuleAdmin(session.user, "docuflow");
   const orgId = session.user.org_id;
+  const { company } = await searchParams;
+
+  // Company-switcher scoping Phase 3 (2026-10-11) — same "no combined view"
+  // rule as every other page: only show types scoped to the currently
+  // selected company (or org-wide, companyId=null) rather than every
+  // company's types mixed together.
+  const companyId = await resolveCompanyFilter(orgId, company);
 
   const [documentTypes, companies] = await Promise.all([
-    listAllDocumentTypesForAdmin(orgId),
+    listAllDocumentTypesForAdmin(orgId, companyId || undefined),
     prisma.company.findMany({
       where: { orgId, isActive: true },
       select: { id: true, name: true },
@@ -100,6 +114,7 @@ export default async function DocumentTypesSettingsPage() {
         }))}
         businessTypeOptions={businessTypeOptions}
         companyOptions={companies}
+        defaultCompanyId={companyId || undefined}
       />
     </div>
   );

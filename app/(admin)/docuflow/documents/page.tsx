@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { userIsModuleAdmin, requireModuleView } from "@/lib/auth/module-access";
-import { prisma } from "@/lib/prisma";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import {
   loadDocuments,
   loadDocumentsSharedToBranch,
@@ -107,10 +107,18 @@ interface SP {
   status?: string;
   search?: string;
   branchId?: string;
+  /** Opt-in exact-match narrowing (ownership.companyId) — used by a few
+   *  existing deep links (branch-documents-section.tsx's "เอกสารจากบริษัท"
+   *  card, usually paired with level=company). NOT the page's default
+   *  scope — see `company` below for that. */
   companyId?: string;
   businessType?: string;
   documentTypeId?: string;
   shared?: string;
+  /** Global company-switcher param (lib/auth/company-context.ts) — the
+   *  SINGLE source of truth for which company's documents this page shows
+   *  by default. Company-switcher scoping Phase 3, 2026-10-11. */
+  company?: string;
 }
 
 export default async function DocumentsListPage({
@@ -138,7 +146,17 @@ export default async function DocumentsListPage({
   const filterDocumentTypeId = sp.documentTypeId || "";
   const sharedOnly = sp.shared === "1";
 
-  const [docs, allTags, docTypes, tree, companies, documentGroups] = await Promise.all([
+  // Company-switcher scoping Phase 3 (2026-10-11) — the global switcher's
+  // ?company=/cookie selection is now the SINGLE source of truth for which
+  // company's documents this page shows by default (previously `companyId`
+  // above was the only company signal, and it was a fully opt-in filter the
+  // page defaulted to "all companies mixed" without). `companyId` stays as
+  // an exact-match narrowing filter for the existing deep links that pass
+  // it (branch-documents-section.tsx), it just no longer drives the default
+  // scope — see lib/docuflow/data.ts's `visibleToCompanyId` doc comment.
+  const companyId = await resolveCompanyFilter(orgId, sp.company);
+
+  const [docs, allTags, docTypes, tree, documentGroups] = await Promise.all([
     sharedOnly && filterBranchId
       ? loadDocumentsSharedToBranch(orgId, filterBranchId, { limit: 200 })
       : loadDocuments(orgId, {
@@ -151,15 +169,11 @@ export default async function DocumentsListPage({
           expiryStatus: filterStatus || undefined,
           search: search || undefined,
           limit: 200,
+          visibleToCompanyId: companyId || undefined,
         }),
     loadDocumentTags(orgId),
-    listDocumentTypes(orgId),
-    view === "tree" ? buildDocumentTree(orgId) : Promise.resolve(null),
-    prisma.company.findMany({
-      where: { orgId, isActive: true },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }),
+    listDocumentTypes(orgId, companyId || undefined),
+    view === "tree" ? buildDocumentTree(orgId, companyId || undefined) : Promise.resolve(null),
     listDocumentGroups(orgId),
   ]);
 
@@ -173,10 +187,10 @@ export default async function DocumentsListPage({
   if (filterBusinessType) preserve.businessType = filterBusinessType;
   if (filterDocumentTypeId) preserve.documentTypeId = filterDocumentTypeId;
   if (sharedOnly) preserve.shared = "1";
+  if (sp.company) preserve.company = sp.company;
 
   const tagChips = allTags.slice(0, 12).map((t) => ({ value: t, label: `#${t}` }));
   const docTypeChips = docTypes.map((dt) => ({ value: dt.id, label: dt.name }));
-  const companyChips = companies.map((c) => ({ value: c.id, label: c.name }));
 
   const scopeLabel = (() => {
     if (sharedOnly && filterBranchId) return "เอกสารใช้ร่วมจากสาขาอื่น";
@@ -241,9 +255,9 @@ export default async function DocumentsListPage({
           ) : view === "category" ? (
             "เลือกประเภทเอกสารเพื่อดูรายการที่กรองแล้ว"
           ) : view === "tree" ? (
-            "เลือกบริษัท/สาขาเพื่อดูเอกสารตามโครงสร้างองค์กร"
+            "เลือกประเภทธุรกิจ/สาขาเพื่อดูเอกสารตามโครงสร้างองค์กร (บริษัทเลือกจากเมนูด้านบน)"
           ) : (
-            "ใช้ตัวกรองด้านล่างเพื่อค้นหาเอกสารตามบริษัท/ระดับ/สถานะ/แท็ก"
+            "ใช้ตัวกรองด้านล่างเพื่อค้นหาเอกสารตามระดับ/สถานะ/ประเภท/แท็ก (บริษัทเลือกจากเมนูด้านบน)"
           )
         }
         actions={
@@ -415,17 +429,15 @@ export default async function DocumentsListPage({
                   gap: 10,
                 }}
               >
-                <DocumentFilterSelect
-                  label="บริษัท"
-                  paramKey="companyId"
-                  current={filterCompanyId}
-                  options={companyChips}
-                  preserve={(() => {
-                    const p = { ...preserve };
-                    delete p.companyId;
-                    return p;
-                  })()}
-                />
+                {/* The "บริษัท" filter dropdown that used to live here was
+                    removed (Company-switcher scoping Phase 3, 2026-10-11) —
+                    it was a SECOND, independent "which company" control
+                    that could disagree with the header switcher pill. The
+                    header switcher is now the only company control on this
+                    page; `filterCompanyId`/`?companyId=` still works as a
+                    narrowing filter for the handful of existing deep links
+                    that set it (see the SP interface comment above), it
+                    just has no UI entry point of its own anymore. */}
                 <DocumentFilterSelect
                   label="ระดับ"
                   paramKey="level"

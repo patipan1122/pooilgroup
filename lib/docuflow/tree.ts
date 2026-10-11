@@ -112,13 +112,26 @@ function classifyExpiry(expiryDate: Date | null, today: Date): DocLite["expirySt
   return "ok";
 }
 
-export async function buildDocumentTree(orgId: string): Promise<DocumentTree> {
+/**
+ * @param companyId Company-switcher scoping Phase 3 (docuflow, 2026-10-11) —
+ *   when given, `companies` is narrowed to just that one company (the
+ *   header switcher already fixes "which company" for the whole page, so a
+ *   combined multi-company tree would contradict it). `groupDocs` and
+ *   `persons` are left unfiltered — same "always visible" rule
+ *   buildCompanyVisibilityFilter() uses in lib/docuflow/data.ts, since
+ *   level='group' is org-wide shared and level='person' can't be resolved
+ *   to a single company reliably (see that function's doc comment).
+ */
+export async function buildDocumentTree(
+  orgId: string,
+  companyId?: string,
+): Promise<DocumentTree> {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   const [companies, branches, docs, ownerships, users] = await Promise.all([
     prisma.company.findMany({
-      where: { orgId, isActive: true },
+      where: { orgId, isActive: true, ...(companyId ? { id: companyId } : {}) },
       orderBy: { name: "asc" },
       select: { id: true, code: true, name: true },
     }),
