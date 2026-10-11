@@ -411,6 +411,11 @@ function OverviewTab({
   const [receiptDoc, setReceiptDoc] = useState<CfReceiptDoc | null>(null);
   const [histProduct, setHistProduct] = useState<{ id: string; name: string } | null>(null);
   const [lightbox, setLightbox] = useState<{ url: string; name: string } | null>(null);
+  // ── ค้นหา/กรองตารางสินค้าคงคลัง (คลังสาขา/คลังกลาง) — CEO ขอ 2026-10-11 ──
+  //   client-side ล้วน (ข้อมูลโหลดมาหมดแล้วจาก `warehouse` useMemo) · ไม่ยิง query ใหม่
+  const [stockQuery, setStockQuery] = useState("");
+  const [stockCat, setStockCat] = useState<string>("all");
+  const [stockLowOnly, setStockLowOnly] = useState(false);
 
   // ── ใบรับต่อสาขา (received + รอรับ) จาก receiptAllDocs · match ด้วย branchId ──
   //   ใช้ทั้งชิป "ค้างรับ" หน้าแถว + รายละเอียดในแผงกาง (CEO pinpoint #2/#4/#6)
@@ -487,6 +492,25 @@ function OverviewTab({
     }
     return rows;
   }, [scoped, warehouseAll, viewBranchId]);
+
+  // หมวดที่มีจริงใน `warehouse` ตอนนี้ (ไม่ใช่ทุก enum — สาขานี้อาจไม่มีครบทุกหมวด) → ใช้ทำ dropdown กรอง
+  const warehouseCats = useMemo(() => {
+    const set = new Set<string>();
+    for (const w of warehouse) set.add(w.cat);
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "th"));
+  }, [warehouse]);
+
+  // ค้นหาชื่อสินค้า (partial, case-insensitive) + กรองหมวด + toggle "ใกล้หมด"
+  //   เกณฑ์ "ใกล้หมด" ใช้ตัวเดียวกับ badge ของแถว (net <= 20 และไม่ติดลบ) — ไม่คิดเกณฑ์ใหม่
+  const warehouseFiltered = useMemo(() => {
+    const q = stockQuery.trim().toLowerCase();
+    return warehouse.filter((w) => {
+      if (q && !w.name.toLowerCase().includes(q)) return false;
+      if (stockCat !== "all" && w.cat !== stockCat) return false;
+      if (stockLowOnly && !(w.net <= 20 && w.net >= 0)) return false;
+      return true;
+    });
+  }, [warehouse, stockQuery, stockCat, stockLowOnly]);
 
   // Pinpoint #6: per-SKU breakdown ของสาขาที่ "กางแถวดูอยู่ตอนนี้" (open) — ไม่ใช่สาขาที่ scoped
   //   reuse วิธีกรองเดียวกับ `warehouse` ด้านบน (w.dist มีของทุกสาขาอยู่แล้วจาก server · ไม่ต้องยิง query ใหม่)
@@ -816,7 +840,8 @@ function OverviewTab({
         </div>
       </div>
 
-      {/* central warehouse table — รายสินค้า/ราย SKU · เจาะดูตามคลังที่เลือกได้ (CEO pinpoint #2) */}
+      {/* central warehouse table — รายสินค้า/ราย SKU · เจาะดูตามคลังที่เลือกได้ (CEO pinpoint #2)
+          + ค้นหา/กรอง/แยกบนชั้น-ในตู้ (CEO ขอ 2026-10-11) */}
       <Card
         title={scoped ? `คลังสาขา${viewBranchName} · สินค้าคงคลัง` : "คลังกลาง · สินค้าคงคลัง"}
         sub={scoped
@@ -825,10 +850,58 @@ function OverviewTab({
         pad={false}
         style={{ marginBottom: 18 }}
       >
+        {/* แถบค้นหา + กรอง — client-side ล้วนเหนือ `warehouse` ที่โหลดมาแล้ว ไม่ยิง query ใหม่ */}
+        {warehouse.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", padding: "14px 20px", borderBottom: "1px solid #F4F5F7" }}>
+            <input
+              type="text"
+              value={stockQuery}
+              onChange={(e) => setStockQuery(e.target.value)}
+              placeholder="ค้นหาชื่อสินค้า…"
+              aria-label="ค้นหาสินค้าในคลัง"
+              style={{ ...FIELD_INPUT, width: "auto", flex: "1 1 200px", minWidth: 160 }}
+            />
+            {warehouseCats.length > 1 && (
+              <select
+                value={stockCat}
+                onChange={(e) => setStockCat(e.target.value)}
+                aria-label="กรองตามหมวดสินค้า"
+                style={{ ...FIELD_INPUT, width: "auto", flex: "0 0 auto" }}
+              >
+                <option value="all">ทุกหมวด</option>
+                {warehouseCats.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            )}
+            <button
+              type="button"
+              onClick={() => setStockLowOnly((v) => !v)}
+              aria-pressed={stockLowOnly}
+              style={{
+                flex: "0 0 auto", fontSize: 12, fontWeight: 600, padding: "9px 14px", borderRadius: 10,
+                border: stockLowOnly ? "1px solid #F3B0A8" : "1px solid #E3E6EA",
+                background: stockLowOnly ? "#FCEDEC" : "#fff",
+                color: stockLowOnly ? "#B42318" : "#5A6270",
+                cursor: "pointer",
+              }}
+            >
+              {stockLowOnly ? "✓ " : ""}ใกล้หมดเท่านั้น
+            </button>
+            {(stockQuery.trim() !== "" || stockCat !== "all" || stockLowOnly) && (
+              <span style={{ fontSize: 11.5, color: "#9AA1AB" }}>
+                พบ {num(warehouseFiltered.length)} จาก {num(warehouse.length)} รายการ
+              </span>
+            )}
+          </div>
+        )}
         <div style={{ overflowX: "auto" }}>
-          <div style={{ minWidth: 640 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr 0.7fr 1fr 0.7fr 1.1fr", padding: "10px 20px", ...TH_ITEM, borderBottom: "1px solid #F4F5F7" }}>
-              <span>สินค้า</span><span>หมวด</span><span style={{ textAlign: "right" }}>บนชั้น · ในตู้</span><span style={{ textAlign: "right" }}>รับเข้าล่าสุด</span><span style={{ textAlign: "right" }}>รับมาแล้ว (วัน)</span><span style={{ textAlign: "right" }}>สถานะอายุ</span>
+          <div style={{ minWidth: 560 }}>
+            {/* หมายเหตุ: "บนชั้น/ในตู้" ย้ายไปอยู่ใต้ชื่อสินค้าใน col "สินค้า" แทนที่จะเป็น col แยก —
+                เพื่อให้เห็นค่าทั้งสองได้เสมอ "โดยไม่ต้องเลื่อนจอแนวนอน" บนมือถือ 390px (คอลัมน์ที่เหลือ
+                ยังเลื่อนดูได้ปกติ แต่ตัวเลขสต็อกที่ CEO อยากเห็นชัดสุด ต้องไม่หายไปอยู่นอกจอ) */}
+            <div style={{ display: "grid", gridTemplateColumns: "2fr 0.85fr 0.95fr 0.75fr 0.9fr", padding: "10px 20px", ...TH_ITEM, borderBottom: "1px solid #F4F5F7" }}>
+              <span>สินค้า</span><span>หมวด</span><span style={{ textAlign: "right" }}>รับเข้าล่าสุด</span><span style={{ textAlign: "right" }}>รับมาแล้ว (วัน)</span><span style={{ textAlign: "right" }}>สถานะอายุ</span>
             </div>
             {warehouse.length === 0 ? (
               <div style={{ padding: "10px 4px" }}>
@@ -838,27 +911,53 @@ function OverviewTab({
                   sub={scoped ? "ลองเลือก “ทุกคลัง” หรือรับสินค้าเข้าสาขานี้ก่อน" : "รับสินค้าเข้าคลังที่แท็บ “รับของ” แล้วรายการสินค้าจะขึ้นที่นี่"}
                 />
               </div>
-            ) : warehouse.map((w) => {
+            ) : warehouseFiltered.length === 0 ? (
+              <div style={{ padding: "10px 4px" }}>
+                <EmptyState
+                  icon={<Warehouse size={26} />}
+                  title="ไม่พบสินค้าที่ตรงกับคำค้นหา/ตัวกรอง"
+                  sub="ลองแก้คำค้นหา หรือกด “ล้างตัวกรอง” เพื่อดูสินค้าทั้งหมดอีกครั้ง"
+                />
+                <div style={{ textAlign: "center", marginTop: 10 }}>
+                  <button
+                    type="button"
+                    onClick={() => { setStockQuery(""); setStockCat("all"); setStockLowOnly(false); }}
+                    style={{ fontSize: 12.5, fontWeight: 600, color: "#4F46E5", background: "none", border: "none", cursor: "pointer", padding: "6px 10px" }}
+                  >
+                    ล้างตัวกรอง
+                  </button>
+                </div>
+              </div>
+            ) : warehouseFiltered.map((w) => {
               const t = AGE_TONE[w.tag];
               // "ใกล้หมด" คิดจาก net (บนชั้น) — ของที่หยิบมาโหลดตู้ได้จริง ไม่ใช่ gross ที่รวมของในตู้ไปแล้ว
               const low = w.net <= 20;
               const neg = w.net < 0; // ข้อมูล drift → net ติดลบ (โชว์ตามจริง เตือนด้วยสี ไม่ clamp)
               return (
-                <div key={w.id} className="co-rowlink" onClick={() => setWhItem(w)} style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr 0.7fr 1fr 0.7fr 1.1fr", padding: "13px 20px", alignItems: "center", borderBottom: "1px solid #F4F5F7", fontSize: 13, cursor: "pointer" }}>
-                  <span style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
-                    {/* รูปสินค้าย่อ · กดขยายดูได้ (ไม่เปิด modal SKU) · CEO pinpoint #5 */}
-                    <ProductThumbZoom url={w.imageUrl} name={w.name} onZoom={(url) => setLightbox({ url, name: w.name })} />
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{w.name}</span>
-                    {low && !neg && <span style={{ flex: "0 0 auto", fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "#FCEDEC", color: "#B42318" }}>ใกล้หมด</span>}
+                <div key={w.id} className="co-rowlink" onClick={() => setWhItem(w)} style={{ display: "grid", gridTemplateColumns: "2fr 0.85fr 0.95fr 0.75fr 0.9fr", padding: "13px 20px", alignItems: "center", borderBottom: "1px solid #F4F5F7", fontSize: 13, cursor: "pointer" }}>
+                  <span style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
+                    <span style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
+                      {/* รูปสินค้าย่อ · กดขยายดูได้ (ไม่เปิด modal SKU) · CEO pinpoint #5 */}
+                      <ProductThumbZoom url={w.imageUrl} name={w.name} onZoom={(url) => setLightbox({ url, name: w.name })} />
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{w.name}</span>
+                      {low && !neg && <span style={{ flex: "0 0 auto", fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "#FCEDEC", color: "#B42318" }}>ใกล้หมด</span>}
+                    </span>
+                    {/* บนชั้น (พร้อมโหลด) และในตู้ = สองค่าแยกกันเท่ากันเสมอ ไม่ว่าค่าไหนจะเป็น 0 — CEO 2026-10-11:
+                        "แยกสต็อคที่อยู่ในสต็อคกับสต็อคที่อยู่ในตู้แยกกัน อย่าปน" · วางใต้ชื่อสินค้า (คอลัมน์แรก)
+                        แทนที่จะเป็นคอลัมน์แยกทางขวา เพื่อให้ไม่หลุดจอตอนเลื่อนแนวนอนบนมือถือ 390px
+                        (reuse pattern ตัวเลขหนา+label จาง จาก openBranchSkuRows ด้านบน) */}
+                    <span style={{ display: "flex", gap: 14, paddingLeft: 41 }}>
+                      <span style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                        <span className="num" style={{ fontSize: 13, fontWeight: 700, color: neg ? "#B42318" : low ? "#B45309" : "#1A1D21" }}>{num(w.net)}</span>
+                        <span style={{ fontSize: 10.5, color: "#9AA1AB", fontWeight: 600 }}>บนชั้น</span>
+                      </span>
+                      <span style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                        <span className="num" style={{ fontSize: 13, fontWeight: 700, color: "#1A1D21" }}>{num(w.inMachines)}</span>
+                        <span style={{ fontSize: 10.5, color: "#9AA1AB", fontWeight: 600 }}>ในตู้</span>
+                      </span>
+                    </span>
                   </span>
                   <span style={{ color: "#6B7280", fontSize: 12 }}>{w.cat}</span>
-                  {/* บนชั้น (net = รับเข้า − ที่โหลดเข้าตู้) = headline · ในตู้ = secondary (โชว์เฉพาะเมื่อ >0) */}
-                  <span style={{ textAlign: "right", display: "inline-flex", flexDirection: "column", alignItems: "flex-end", lineHeight: 1.25 }}>
-                    <span className="num" style={{ fontWeight: 700, color: neg ? "#B42318" : low ? "#B45309" : "#1A1D21" }}>{num(w.net)}</span>
-                    {w.inMachines > 0 && (
-                      <span className="num" style={{ fontSize: 11, color: "#9AA1AB", fontWeight: 500 }}>ในตู้ {num(w.inMachines)}</span>
-                    )}
-                  </span>
                   <span className="num" style={{ textAlign: "right", fontSize: 12, color: "#6B7280" }}>{w.recvISO ? fmtDate(w.recvISO) : "—"}</span>
                   <span className="num" style={{ textAlign: "right", fontSize: 12, color: "#6B7280" }}>{w.recvISO ? `${w.ageDays} วัน` : "—"}</span>
                   <span style={{ textAlign: "right" }}>
