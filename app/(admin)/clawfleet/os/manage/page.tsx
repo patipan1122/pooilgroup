@@ -16,18 +16,26 @@ import { getV2ManageBranches, getV2Branches } from "@/lib/clawfleet/queries";
 import { getCfMachinesForBranchAdmin, getCfStockOverview, getCfWarehousesForBranch, getCfBranchStockProducts, type CfWarehouseRow } from "@/lib/clawfleet/stock-queries";
 import { getAwaitingSetupMachines } from "@/lib/clawfleet/baseline-queries";
 import { getStockSourceMap } from "@/lib/clawfleet/stock-source";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import { ManageClient, type ManageBranchVM, type BranchStockVM, type MachineOption, type BranchOption, type WarehouseVM, type TransferProductVM } from "./manage-client";
 
 export const dynamic = "force-dynamic";
 
-export default async function ManagePage() {
+export default async function ManagePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ company?: string }>;
+}) {
+  const sp = await searchParams;
   // ── gate: แอดมินเท่านั้น (server action ก็ assert ซ้ำอยู่แล้ว · นี่แค่ซ่อนหน้า) ──
   let orgId = "";
+  let companyId: string | undefined;
   try {
     const session = await requireCfSession();
     orgId = session.user.org_id;
     const isAdmin = await cfHasAdminPower(session);
     if (!isAdmin) redirect("/clawfleet/os/dashboard");
+    companyId = await resolveCompanyFilter(orgId, sp.company);
   } catch (e) {
     // redirect() โยน error พิเศษของ Next → ต้องปล่อยผ่าน (ไม่กลืน)
     if (e && typeof e === "object" && "digest" in e && String((e as { digest?: string }).digest).startsWith("NEXT_REDIRECT")) {
@@ -43,10 +51,10 @@ export default async function ManagePage() {
   let awaiting: Awaited<ReturnType<typeof getAwaitingSetupMachines>> = [];
   try {
     [manageBranches, machineRows, branchRows, awaiting] = await Promise.all([
-      getV2ManageBranches(),
-      getCfMachinesForBranchAdmin(),
-      getV2Branches(),
-      getAwaitingSetupMachines(),
+      getV2ManageBranches(companyId),
+      getCfMachinesForBranchAdmin(companyId),
+      getV2Branches(companyId),
+      getAwaitingSetupMachines(undefined, companyId),
     ]);
   } catch {
     // graceful: DB ว่าง/ยังไม่ migrate → หน้าโชว์ EmptyState จริง (ไม่กุข้อมูลปลอม)
@@ -165,6 +173,7 @@ export default async function ManagePage() {
       productsByBranch={productsByBranch}
       orgId={orgId} // ส่งต่อให้ PhotoCaptureButton (แนบรูปตู้ขึ้น R2)
       isAdmin // หน้านี้อยู่หลัง admin-gate (ผู้ที่ไม่ใช่แอดมินถูก redirect ไปแล้ว)
+      companyId={companyId} // สาขาใหม่ (เพิ่มสาขา) ต้องเข้าบริษัทนี้ (CEO company-switcher Phase 4)
     />
   );
 }

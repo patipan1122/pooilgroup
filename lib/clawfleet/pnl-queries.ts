@@ -167,9 +167,11 @@ function daysAgoLabel(d: Date | null, missing: string): string {
   return `${n} วันก่อน`;
 }
 
-/** รวม org-scope + branch-scope จาก session (เหมือน v2-queries.ts) */
-async function scope(session: Session): Promise<{ orgId: string; branchIds: string[] | "ALL" }> {
-  const bs = await userBranchIds(session);
+/** รวม org-scope + branch-scope จาก session (เหมือน v2-queries.ts)
+ *  companyId (optional, additive) — ClawFleet company-switcher Phase 4: เมื่อส่งมา
+ *  จะจำกัด branchIds ให้เหลือแค่สาขาของบริษัทนั้นด้วย (ดู userBranchIds). */
+async function scope(session: Session, companyId?: string): Promise<{ orgId: string; branchIds: string[] | "ALL" }> {
+  const bs = await userBranchIds(session, companyId);
   return { orgId: session.user.org_id, branchIds: bs };
 }
 
@@ -228,9 +230,9 @@ async function activeLoadoutDateMap(orgId: string, machineIds: string[]): Promis
  * P&L รายสาขา (ตู้คีบ) ในช่วงเวลา (default = วันนี้).
  * เรียงแย่→ดี ตาม flag severity แล้วตามกำไรน้อยสุด (ให้ปัญหาขึ้นก่อน).
  */
-export async function getBranchPnl(filter?: PnlRange): Promise<BranchPnl[]> {
+export async function getBranchPnl(filter?: PnlRange, companyId?: string): Promise<BranchPnl[]> {
   const session = await requireSession();
-  const { orgId, branchIds } = await scope(session);
+  const { orgId, branchIds } = await scope(session, companyId);
   const range = defaultRange(filter);
 
   // 1. สาขาตู้คีบในขอบเขตของ user
@@ -383,12 +385,12 @@ export async function getBranchPnl(filter?: PnlRange): Promise<BranchPnl[]> {
  * P&L รายตู้ในสาขาเดียว + "ตั้งค่าล่าสุดเมื่อไหร่" + "ใครเก็บล่าสุด".
  * เรียงแย่→ดีตาม flag severity.
  */
-export async function getMachinePnl(branchId: string, filter?: PnlRange): Promise<{
+export async function getMachinePnl(branchId: string, filter?: PnlRange, companyId?: string): Promise<{
   branch: { id: string; name: string; code: string; area: string } | null;
   machines: MachinePnl[];
 }> {
   const session = await requireSession();
-  const { orgId, branchIds } = await scope(session);
+  const { orgId, branchIds } = await scope(session, companyId);
   const range = defaultRange(filter);
 
   // org + branch-scope guard
@@ -534,9 +536,9 @@ export type BranchSessionRow = {
 };
 
 /** ประวัติการเก็บเงิน (รอบที่ปิดแล้ว) ของสาขา · ใหม่สุดก่อน */
-export async function getBranchSessionHistory(branchId: string, take = 20): Promise<BranchSessionRow[]> {
+export async function getBranchSessionHistory(branchId: string, take = 20, companyId?: string): Promise<BranchSessionRow[]> {
   const session = await requireSession();
-  const { orgId, branchIds } = await scope(session);
+  const { orgId, branchIds } = await scope(session, companyId);
   if (branchIds !== "ALL" && !branchIds.includes(branchId)) return [];
 
   // ตู้ในสาขา → cost map

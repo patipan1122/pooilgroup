@@ -88,10 +88,11 @@ export type MachineGalleryResult = {
  */
 export async function getMachineGallery(
   branchId?: string,
+  companyId?: string,
 ): Promise<MachineGalleryResult> {
   const session = await requireCfSession();
   const orgId = session.user.org_id;
-  const allowed = await userBranchIds(session);
+  const allowed = await userBranchIds(session, companyId);
 
   // ── สาขาตู้คีบทั้งหมดในสโคป (dropdown) ──
   const branches = await prisma.branch.findMany({

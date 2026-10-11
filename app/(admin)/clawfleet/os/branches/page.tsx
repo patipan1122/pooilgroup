@@ -9,6 +9,7 @@ import { getCfMachinesForBranchAdmin } from "@/lib/clawfleet/stock-queries";
 import { getV2Branches } from "@/lib/clawfleet/queries";
 import { getStockSourceMap } from "@/lib/clawfleet/stock-source";
 import { requireCfSession, cfHasAdminPower } from "@/lib/clawfleet/role-guard";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import { adminClient } from "@/lib/db/server";
 import { listCompanies, listBankAccounts, type CompanyOpt, type BankAccountOpt } from "@/lib/cashhub/amazon-settlement-data";
 import { getClawfleetReconcileOverview, type BranchReconcileOverviewRow } from "@/lib/clawfleet/reconcile/overview";
@@ -37,7 +38,7 @@ function todayISO(): string {
 export default async function BranchesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; to?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; company?: string }>;
 }) {
   const sp = await searchParams;
 
@@ -64,6 +65,16 @@ export default async function BranchesPage({
   let companies: CompanyOpt[] = [];
   let bankAccounts: BankAccountOpt[] = [];
   let reconcileOverview: BranchReconcileOverviewRow[] = [];
+
+  // บริษัทที่เลือกไว้ (ตัวสลับบริษัท global) — เลือกทั้งหน้าตามบริษัทนี้ (CEO company-switcher Phase 4)
+  let companyId: string | undefined;
+  try {
+    const session = await requireCfSession();
+    companyId = await resolveCompanyFilter(session.user.org_id, sp.company);
+  } catch {
+    // graceful: ยังไม่ login → companyId undefined (เท่ากับพฤติกรรมเดิมก่อน phase นี้)
+  }
+
   try {
     const session = await requireCfSession();
     isAdmin = await cfHasAdminPower(session);
@@ -71,12 +82,12 @@ export default async function BranchesPage({
     if (isAdmin) {
       const admin = adminClient();
       const [ms, bs, srcMap, cos, banks, overview] = await Promise.all([
-        getCfMachinesForBranchAdmin(),
-        getV2Branches(),
+        getCfMachinesForBranchAdmin(companyId),
+        getV2Branches(companyId),
         getStockSourceMap(session.user.org_id),
         listCompanies(admin, session.user.org_id),
         listBankAccounts(admin, session.user.org_id),
-        getClawfleetReconcileOverview(session.user.org_id),
+        getClawfleetReconcileOverview(session.user.org_id, companyId),
       ]);
       machineOptions = ms.map((m) => ({
         id: m.id, code: m.code, nickname: m.nickname, branchId: m.branchId, branchName: m.branchName, isActive: m.isActive,
@@ -92,7 +103,7 @@ export default async function BranchesPage({
   }
   try {
     // P&L ขยับตามช่วงที่เลือก · getBranchMachineInfo() = สถานะฝูงตู้ปัจจุบัน (ไม่ผูกวันที่) → คงเดิม
-    [branchPnl, machineInfo] = await Promise.all([getBranchPnl(range), getBranchMachineInfo()]);
+    [branchPnl, machineInfo] = await Promise.all([getBranchPnl(range, companyId), getBranchMachineInfo(companyId)]);
   } catch {
     // graceful: DB ว่าง/ยังไม่ migrate → client จะ fallback เป็นตัวอย่าง
   }

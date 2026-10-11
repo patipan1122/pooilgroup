@@ -57,10 +57,13 @@ export async function loadBranches(): Promise<Branch[]> {
   );
 }
 
-export async function loadAnomalies(filter?: string): Promise<Anomaly[]> {
+export async function loadAnomalies(filter?: string, companyId?: string): Promise<Anomaly[]> {
   // ⚠️ fallback = [] (ไม่ใช่ mock): empty org → ไม่มี anomaly ปลอม
+  // companyId ไม่ thread เข้า L.legacyAnomalies (legacy group-model tier) — tier นี้เป็น fallback
+  // เฉพาะตอน tier 1 (Q.*) ว่างเปล่าเท่านั้น และ org จริงมีข้อมูล v2 ครบแล้ว (513 sessions จริง มี branchId)
+  // จึงไม่มีทางถูกเรียกจริงในปัจจุบัน — เก็บ signature เดิมไว้ ไม่ขยาย scope เพิ่มในส่วนที่ไม่ reachable
   return firstNonEmpty<Anomaly[]>(
-    [() => Q.listV2Anomalies(filter), () => L.legacyAnomalies(filter)],
+    [() => Q.listV2Anomalies(filter, companyId), () => L.legacyAnomalies(filter)],
     (v) => v.length,
     [],
   );

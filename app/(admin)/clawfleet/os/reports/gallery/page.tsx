@@ -7,20 +7,31 @@
  */
 import { getMachineGallery, type MachineGalleryResult } from "@/lib/clawfleet/gallery-queries";
 import { GalleryClient } from "./gallery-client";
+import { requireSession } from "@/lib/auth/session";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 
 export const dynamic = "force-dynamic";
 
 export default async function GalleryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ branch?: string }>;
+  searchParams: Promise<{ branch?: string; company?: string }>;
 }) {
   const sp = await searchParams;
   const branchId = typeof sp.branch === "string" && sp.branch.length > 0 ? sp.branch : undefined;
 
+  // บริษัทที่เลือกไว้ (ตัวสลับบริษัท global) — เลือกทั้งหน้าตามบริษัทนี้ (CEO company-switcher Phase 4)
+  let companyId: string | undefined;
+  try {
+    const s = await requireSession();
+    companyId = await resolveCompanyFilter(s.user.org_id, sp.company);
+  } catch {
+    // graceful: ยังไม่ login → companyId undefined
+  }
+
   let data: MachineGalleryResult = { branchOptions: [], branch: null };
   try {
-    data = await getMachineGallery(branchId);
+    data = await getMachineGallery(branchId, companyId);
   } catch {
     // graceful: DB ว่าง/ยังไม่ migrate → client โชว์ EmptyState
   }

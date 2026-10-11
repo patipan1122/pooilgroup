@@ -38,6 +38,7 @@ import {
   type MovementSeed,
 } from "./stock-client";
 import type { MachineSeed, LoadoutItemSeed } from "./machine-detail";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 
 export const dynamic = "force-dynamic";
 
@@ -56,7 +57,7 @@ export default async function StockPage({
 }: {
   // ?branch=<id> → เลือกสาขาที่จะโหลดเอกสาร (รับของ/นับ/ตัดของเสีย) มาแสดง (item #9)
   // ?asof=YYYY-MM-DD → คิด "มูลค่าสต๊อก ณ วันที่" นั้นจาก ledger (default = วันนี้ · ไม่ใส่ = ปัจจุบัน)
-  searchParams?: Promise<{ branch?: string; asof?: string }>;
+  searchParams?: Promise<{ branch?: string; asof?: string; company?: string }>;
 }) {
   const sp = searchParams ? await searchParams : undefined;
   const requestedBranchId = typeof sp?.branch === "string" ? sp.branch : null;
@@ -95,7 +96,8 @@ export default async function StockPage({
     const orgId = session.user.org_id;
     viewerId = session.user.id;
     canReviewLoss = isCfAdmin(session.user.role) || isCfBranchManager(session.user.role);
-    const branches = await getV2Branches();
+    const companyId = await resolveCompanyFilter(orgId, sp?.company);
+    const branches = await getV2Branches(companyId);
     realBranches = branches.map((b) => ({ id: b.id, name: b.name }));
     try {
       const ps = await getCfProductsForForms(orgId);
@@ -107,7 +109,7 @@ export default async function StockPage({
     // ── รายชื่อตู้ + โหลดเอาต์ปัจจุบันต่อตู้ (แท็บ "ไส้ในตู้") ──
     // query กรองสาขาตามสิทธิ์อยู่แล้ว · โหลดเอาต์ต่อตู้เล็ก → โหลด eager (กด modal เปิดทันที)
     try {
-      const ms = await getCfMachinesForBranchAdmin();
+      const ms = await getCfMachinesForBranchAdmin(companyId);
       machines = ms.map((m) => ({
         id: m.id,
         code: m.code,
@@ -207,7 +209,7 @@ export default async function StockPage({
 
       // ── ยอดคลังกลางจริง + ใบรับทุกสาขา (scope เดียวกัน = สาขาที่ user เห็น) ──
       try {
-        const allowed = await userBranchIds(session);
+        const allowed = await userBranchIds(session, companyId);
         const branchList = branches.map((b) => ({ id: b.id, name: b.name }));
         const [wh, allRc] = await Promise.all([
           loadWarehouseRows(orgId, allowed, branches),

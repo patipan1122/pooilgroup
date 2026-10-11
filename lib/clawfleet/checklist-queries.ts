@@ -96,10 +96,11 @@ export async function getCfChecklistGrid(input: {
   year: number;
   month: number;
   branchIds?: string[];
+  companyId?: string;
 }): Promise<CfChecklistGrid> {
   const session: Session = await requireSession();
   const orgId = session.user.org_id;
-  const scope = await userBranchIds(session);
+  const scope = await userBranchIds(session, input.companyId);
   const canReorder = await cfHasAdminPower(session);
   const { year, month } = input;
   const daysInMonth = new Date(year, month, 0).getDate(); // month 1-based → last day

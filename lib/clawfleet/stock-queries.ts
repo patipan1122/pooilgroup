@@ -988,11 +988,11 @@ export type CfMachineListRow = {
 };
 
 /** รายชื่อตู้ทั้งหมดในสโคปผู้ใช้ พร้อมชื่อสาขา — เรียงตามสาขาแล้ว code */
-export async function getCfMachinesForBranchAdmin(): Promise<CfMachineListRow[]> {
+export async function getCfMachinesForBranchAdmin(companyId?: string): Promise<CfMachineListRow[]> {
   try {
     const session = await requireCfSession();
     const orgId = session.user.org_id;
-    const branchIds = await userBranchIds(session);
+    const branchIds = await userBranchIds(session, companyId);
 
     const rows = await prisma.cfMachine.findMany({
       where: {

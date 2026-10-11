@@ -126,6 +126,7 @@ export function ManageClient({
   productsByBranch,
   orgId,
   isAdmin = true,
+  companyId,
 }: {
   branches: ManageBranchVM[];
   machineOptions: MachineOption[];
@@ -138,6 +139,8 @@ export function ManageClient({
   orgId: string;
   /** หน้านี้อยู่หลัง admin-gate อยู่แล้ว (page redirect ผู้ที่ไม่ใช่แอดมิน) — prop นี้ gate ปุ่ม CRUD ให้ชัด */
   isAdmin?: boolean;
+  /** บริษัทที่เลือกไว้ (header switcher) — สาขาใหม่ต้องเข้าบริษัทนี้ (CEO company-switcher Phase 4) */
+  companyId?: string;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -351,7 +354,7 @@ export function ManageClient({
       `}</style>
 
       {/* ═══════════ modals (reuse — ทั้งหมดย้ายมาไม่แก้ logic) ═══════════ */}
-      {modal.t === "createBranch" && <CreateBranchModal onClose={close} onDone={refresh} />}
+      {modal.t === "createBranch" && <CreateBranchModal companyId={companyId} onClose={close} onDone={refresh} />}
       {modal.t === "renameBranch" && <RenameBranchModal b={modal.b} onClose={close} onDone={refresh} />}
       {modal.t === "deleteBranch" && <DeleteBranchModal b={modal.b} onClose={close} onDone={refresh} />}
       {modal.t === "createMachine" && <CreateMachineModal branches={branches} presetBranchId={modal.branchId} onClose={close} onDone={refresh} />}
@@ -800,7 +803,7 @@ function ModalFooter({ onSubmit, onCancel, pending, submitLabel, danger }: { onS
 }
 
 /* ── สร้างสาขา ── */
-function CreateBranchModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+function CreateBranchModal({ companyId, onClose, onDone }: { companyId?: string; onClose: () => void; onDone: () => void }) {
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [province, setProvince] = useState("");
@@ -811,7 +814,7 @@ function CreateBranchModal({ onClose, onDone }: { onClose: () => void; onDone: (
     if (!name.trim()) return setErr("กรอกชื่อสาขา");
     if (!code.trim()) return setErr("กรอกรหัสสาขา (เช่น RS)");
     start(async () => {
-      const res = await createBranch({ name: name.trim(), code: code.trim(), province: province.trim() || undefined });
+      const res = await createBranch({ name: name.trim(), code: code.trim(), province: province.trim() || undefined, companyId });
       if (!res.ok) return setErr(res.error);
       onClose(); onDone();
     });

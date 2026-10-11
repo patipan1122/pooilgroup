@@ -17,6 +17,8 @@ import { getV2Branches } from "@/lib/clawfleet/queries";
 import { getMachinePnl, bangkokRangeLastDays } from "@/lib/clawfleet/pnl-queries";
 import { getMatrixData } from "@/lib/clawfleet/matrix-queries";
 import { listRepairTickets } from "@/lib/clawfleet/repair-queries";
+import { requireSession } from "@/lib/auth/session";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import { Client711, type Fleet711Machine } from "./client-711";
 
 export const dynamic = "force-dynamic";
@@ -33,18 +35,34 @@ function daysAgoIso(iso: string): number {
   return Math.floor((Date.now() - t) / 86_400_000);
 }
 
-export default async function Fleet711Page() {
+export default async function Fleet711Page({
+  searchParams,
+}: {
+  searchParams: Promise<{ company?: string }>;
+}) {
+  const sp = await searchParams;
   let machines: Fleet711Machine[] = [];
   let isoDays: string[] = [];
   let rangeLabel = "";
   // จุด 9 (CEO 2026-08-02): ตัวเลือกสาขาสำหรับ dropdown "ทุกสาขา" (mirror หน้า collections)
   let branchOptions: { value: string; label: string }[] = [];
 
+  // บริษัทที่เลือกไว้ (ตัวสลับบริษัท global) — เลือกทั้งหน้าตามบริษัทนี้ (CEO company-switcher Phase 4)
+  let companyId: string | undefined;
   try {
-    const branches = await getV2Branches();
+    const s = await requireSession();
+    companyId = await resolveCompanyFilter(s.user.org_id, sp.company);
+  } catch {
+    // graceful: ยังไม่ login → companyId undefined
+  }
+
+  try {
+    const branches = await getV2Branches(companyId);
     branchOptions = branches.map((b) => ({ value: b.id, label: `${b.name} (${b.code})` }));
 
     // ตู้ที่กำลังเสีย (มีใบแจ้งซ่อมค้าง) → set ของ machineId
+    // ⚠️ listRepairTickets ไม่ company-scoped (repairs module — ยังไม่แตะใน phase นี้ ตามคำสั่ง)
+    //    ไม่กระทบความถูกต้อง: ผลลัพธ์ map ผ่าน machineId เข้ากับ perBranch ที่กรองสาขาตาม companyId แล้ว
     const [openTix, wipTix] = await Promise.all([
       listRepairTickets({ status: "OPEN" }),
       listRepairTickets({ status: "IN_PROGRESS" }),
@@ -57,8 +75,8 @@ export default async function Fleet711Page() {
     const perBranch = await Promise.all(
       branches.map(async (b) => {
         const [pnl, matrix] = await Promise.all([
-          getMachinePnl(b.id, last7),
-          getMatrixData({ branchCode: b.code, days: DAILY_WINDOW }),
+          getMachinePnl(b.id, last7, companyId),
+          getMatrixData({ branchCode: b.code, days: DAILY_WINDOW, companyId }),
         ]);
         return { branch: b, pnl, matrix };
       }),

@@ -2362,6 +2362,12 @@ function isUniqueViolation(e: unknown): boolean {
  * หา companyId สำหรับสาขาตู้คีบใหม่ — สืบจากสาขาตู้คีบที่มีอยู่แล้ว (ให้ company
  * เดียวกับของเดิม) → ถ้าไม่มี ใช้ company แรกของ org. Branch.companyId เป็น required
  * ไม่มี default จึงต้อง resolve ก่อน create.
+ *
+ * ⚠️ ใช้เป็น FALLBACK เท่านั้น (CEO company-switcher Phase 4) — ตั้งแต่ตัวสลับบริษัท
+ * บน header มีผลจริงกับหน้า "จัดการ" แล้ว, createBranch() ควรรับ companyId ที่ผู้ใช้
+ * เลือกไว้ตรงๆ จาก caller ก่อนเสมอ (ดู createBranch ด้านล่าง) — ฟังก์ชันนี้สืบจาก sibling
+ * เก่าสุดซึ่งปัจจุบันเป็น Pool Oil เสมอ (ClawFleet ทั้งหมดอยู่ Pool Oil วันนี้) ถ้าไม่มีการ
+ * ส่ง companyId มาจะ "เงียบๆ" สร้างสาขาใหม่เข้า Pool Oil แม้ผู้ใช้กำลังดู JP Sync Group อยู่.
  */
 async function resolveCfCompanyId(orgId: string): Promise<string | null> {
   const sibling = await prisma.branch.findFirst({
@@ -2383,6 +2389,11 @@ const CreateBranchSchema = z.object({
   code: z.string().trim().min(1, "กรอกรหัสสาขา").max(40),
   province: z.string().trim().max(120).optional(),
   region: z.string().trim().max(120).optional(),
+  // optional, additive (CEO company-switcher Phase 4) — บริษัทที่เลือกไว้บน header ตอนกดสร้าง
+  // สาขา. ไม่ส่งมา → fallback resolveCfCompanyId() เดิม (ไม่กระทบ caller เก่าที่ยังไม่อัปเดต).
+  // ⚠️ ใช้ zUUID() ไม่ใช่ z.string().uuid() — company seed id ของ Pooilgroup (เช่น
+  // 00000000-0000-0000-0000-0000000000a1) ไม่ใช่ RFC 4122 UUID จริง (Zod v4 .uuid() จะ reject)
+  companyId: zUUID().optional(),
 });
 
 /** สร้างสาขาตู้คีบใหม่ */
@@ -2393,7 +2404,20 @@ export async function createBranch(input: unknown): Promise<ResultOf<{ id: strin
   const orgId = session.user.org_id;
   const { name, code, province, region } = parsed.data;
 
-  const companyId = await resolveCfCompanyId(orgId);
+  // CEO company-switcher Phase 4: สาขาใหม่ต้องเข้าบริษัทที่ผู้ใช้กำลังดูอยู่ (header switcher) —
+  // ไม่ใช่เดาจากสาขาเก่าสุด (ซึ่งปัจจุบันเป็น Pool Oil เสมอ ไม่ว่าจะดู company ไหนอยู่ก็ตาม).
+  // ตรวจว่า companyId ที่ส่งมาเป็นบริษัทจริงของ org นี้ก่อนเชื่อ (กัน id ปลอม/ข้าม org).
+  let companyId: string | null = null;
+  if (parsed.data.companyId) {
+    const validCompany = await prisma.company.findFirst({
+      where: { id: parsed.data.companyId, orgId },
+      select: { id: true },
+    });
+    companyId = validCompany?.id ?? null;
+  }
+  if (!companyId) {
+    companyId = await resolveCfCompanyId(orgId);
+  }
   if (!companyId) {
     return { ok: false, error: "ไม่พบบริษัทในองค์กรนี้ · ตั้งค่าบริษัทก่อนเพิ่มสาขา" };
   }

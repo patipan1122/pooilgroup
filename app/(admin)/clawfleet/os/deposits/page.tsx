@@ -16,14 +16,21 @@ import {
   type DepositReviewContext,
 } from "@/lib/clawfleet/deposit-queries";
 import { DepositsClient } from "./deposits-client";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 
 export const dynamic = "force-dynamic";
 
-export default async function DepositsPage() {
+export default async function DepositsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ company?: string }>;
+}) {
+  const sp = await searchParams;
   let pending: PendingDepositRow[] = [];
   let history: DepositRow[] = [];
   let orgId = "";
   let currentUserName = "";
+  let companyId: string | undefined;
   // สิทธิ์ตรวจใบฝากต้องมาเป็น prop ของตัวเอง — ห้าม derive จากประวัติ (ใบแรกสุดขององค์กรจะไม่มี
   // ประวัติให้ derive → ปุ่ม "แตะเพื่อ ✓ ตรวจแล้ว" หายไปพอดีในครั้งที่ใช้งานจริงครั้งแรก)
   let reviewCtx: DepositReviewContext = { canReview: false, currentUserId: "" };
@@ -32,19 +39,20 @@ export default async function DepositsPage() {
     const session = await requireCfSession();
     orgId = session.user.org_id;
     currentUserName = session.user.name ?? "";
+    companyId = await resolveCompanyFilter(orgId, sp.company);
   } catch {
     // graceful: ถ้าดึง session ไม่ได้ layout จะ redirect อยู่แล้ว
   }
 
   try {
-    pending = await getPendingDeposits();
+    pending = await getPendingDeposits({ companyId });
   } catch {
     // graceful: table ยังไม่ถูก migrate / DB ว่าง → client โชว์ empty state
     pending = [];
   }
 
   try {
-    history = await getDepositHistory({ limit: 100 });
+    history = await getDepositHistory({ limit: 100, companyId });
   } catch {
     history = [];
   }

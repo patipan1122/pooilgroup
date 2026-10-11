@@ -9,6 +9,7 @@ import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { isCfAdmin } from "@/lib/clawfleet/role-guard";
 import { getTeamData, getSettingsData } from "@/lib/clawfleet/admin-queries";
 import { getClawfleetPolicy, type ClawfleetPolicy } from "@/lib/clawfleet/policy";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import { SettingsClient, type SettingsUserRow } from "./settings-client";
 
 export const dynamic = "force-dynamic";
@@ -34,11 +35,19 @@ function lastLoginLabel(d: Date | null): string {
   return d.toLocaleDateString("th-TH", { day: "numeric", month: "short" });
 }
 
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ company?: string }>;
+}) {
+  const sp = await searchParams;
   // หน้าตั้งค่า & สิทธิ์ = เฉพาะแอดมินตู้คีบ (กัน staff/viewer URL-hop เข้าดูบัญชีผู้ใช้/นโยบาย)
   const session = await requireSession();
   const canSee = isCfAdmin(session.user.role) || (await userIsModuleAdmin(session.user, "clawfleet"));
   if (!canSee) redirect("/clawfleet/os/dashboard");
+  // รายชื่อผู้ใช้ (roster) ใต้หัวข้อนี้ = ตามบริษัทที่เลือก (เหมือนหน้าพนักงาน) — นโยบาย/จำนวนรวม
+  // (getSettingsData) ยังคง org-wide ตามเดิม เพราะเป็นการตั้งค่าระดับองค์กร ไม่ใช่ลิสต์ข้อมูลรายสาขา
+  const companyId = await resolveCompanyFilter(session.user.org_id, sp.company);
 
   let users: SettingsUserRow[] = [];
   let counts = { branches: 0, machines: 0 };
@@ -57,7 +66,7 @@ export default async function SettingsPage() {
   }
 
   try {
-    const [team, settings] = await Promise.all([getTeamData(), getSettingsData()]);
+    const [team, settings] = await Promise.all([getTeamData(companyId), getSettingsData()]);
 
     // รวม user ที่อยู่หลายสาขา → 1 แถว, รวมชื่อสาขาเป็นขอบเขต
     const byUser = new Map<string, SettingsUserRow>();

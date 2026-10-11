@@ -16,8 +16,8 @@ import { userBranchIds } from "./role-guard";
 import { listRepairTickets } from "./repair-queries";
 
 /** scope org + สาขาที่ user เห็นได้ (mirror ของ scope() ใน queries.ts) */
-async function scope(session: Session): Promise<{ orgId: string; branchIds: string[] | "ALL" }> {
-  const branchIds = await userBranchIds(session);
+async function scope(session: Session, companyId?: string): Promise<{ orgId: string; branchIds: string[] | "ALL" }> {
+  const branchIds = await userBranchIds(session, companyId);
   return { orgId: session.user.org_id, branchIds };
 }
 
@@ -86,10 +86,11 @@ function emptyAgg(): Agg {
 export async function getBranchOverview(opts: {
   mode: "date" | "latest";
   isoDay: string;
+  companyId?: string;
 }): Promise<BranchOverview> {
   const { mode, isoDay } = opts;
   const session = await requireSession();
-  const { orgId, branchIds } = await scope(session);
+  const { orgId, branchIds } = await scope(session, opts.companyId);
   const branchFilter = branchIds === "ALL" ? {} : { branchId: { in: branchIds } };
 
   // สาขาคีบทั้งหมดในขอบเขต — เป็น source of truth ของ "แถว" (โชว์ทุกสาขาแม้วันนั้นไม่มีกิจกรรม)

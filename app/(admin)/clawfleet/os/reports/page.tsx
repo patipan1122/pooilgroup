@@ -9,21 +9,37 @@ import { getBranchPnl } from "@/lib/clawfleet/pnl-queries";
 import { getTeamData } from "@/lib/clawfleet/admin-queries";
 import { getStaffPerformance, getLowStockItems } from "@/lib/clawfleet/reports-queries";
 import { ReportsClient, type ProblemBranch, type StaffQualityRow, type LowStockItem } from "./reports-client";
+import { requireSession } from "@/lib/auth/session";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 
 export const dynamic = "force-dynamic";
 
-export default async function ReportsPage() {
+export default async function ReportsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ company?: string }>;
+}) {
+  const sp = await searchParams;
   let branchPnl: Awaited<ReturnType<typeof getBranchPnl>> = [];
   let team: Awaited<ReturnType<typeof getTeamData>> | null = null;
   let staffPerf: Awaited<ReturnType<typeof getStaffPerformance>> = new Map();
   let lowStock: LowStockItem[] = [];
 
+  // บริษัทที่เลือกไว้ (ตัวสลับบริษัท global) — เลือกทั้งหน้าตามบริษัทนี้ (CEO company-switcher Phase 4)
+  let companyId: string | undefined;
+  try {
+    const s = await requireSession();
+    companyId = await resolveCompanyFilter(s.user.org_id, sp.company);
+  } catch {
+    // graceful: ยังไม่ login → companyId undefined
+  }
+
   try {
     const [pnl, t, perf, low] = await Promise.all([
-      getBranchPnl(),
-      getTeamData(),
-      getStaffPerformance({ days: 30 }),
-      getLowStockItems(6),
+      getBranchPnl(undefined, companyId),
+      getTeamData(companyId),
+      getStaffPerformance({ days: 30, companyId }),
+      getLowStockItems(6, companyId),
     ]);
     branchPnl = pnl;
     team = t;

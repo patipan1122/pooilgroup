@@ -19,8 +19,8 @@ import { bangkokStartOfDay } from "./pnl-queries";
 /** เกณฑ์ "ต้องเติมตุ๊กตา" — ตู้ที่ตุ๊กตาในตู้เหลือน้อย (mirror lastDollStock) */
 const MACHINE_REFILL_LEVEL = 8;
 
-async function scope(session: Session): Promise<{ orgId: string; branchIds: string[] | "ALL" }> {
-  const bs = await userBranchIds(session);
+async function scope(session: Session, companyId?: string): Promise<{ orgId: string; branchIds: string[] | "ALL" }> {
+  const bs = await userBranchIds(session, companyId);
   return { orgId: session.user.org_id, branchIds: bs };
 }
 
@@ -59,12 +59,12 @@ export type BranchMachineInfo = {
  * - refillCount : ตู้ที่ lastDollStock <= MACHINE_REFILL_LEVEL (ตุ๊กตาในตู้ใกล้หมด)
  * - dots        : สถานะรายตู้ (good / warn=ต้องเติม / broken=ปิดใช้งาน) สำหรับ render dots
  */
-export async function getBranchMachineInfo(): Promise<{
+export async function getBranchMachineInfo(companyId?: string): Promise<{
   byBranch: Map<string, BranchMachineInfo>;
   fleet: { totalMachines: number; activeMachines: number; needRefill: number; broken: number };
 }> {
   const session = await requireSession();
-  const { orgId, branchIds } = await scope(session);
+  const { orgId, branchIds } = await scope(session, companyId);
 
   // ดึงตู้คีบทุกตัว (รวม inactive เพื่อรู้ว่า "ตู้เสีย"=ปิดใช้งาน) ในขอบเขต user
   const machines = await prisma.cfMachine.findMany({
@@ -134,9 +134,9 @@ export type DailyPnlPoint = {
  * ต้นทุน = ตุ๊กตาออก × ต้นทุน/ตัว (active loadout). หน่วยกราฟ = พันบาท (k).
  * ถ้าไม่มี event เลย → คืน [] (client จะ fallback ตัวอย่าง).
  */
-export async function getDailyPnl(days = 7): Promise<DailyPnlPoint[]> {
+export async function getDailyPnl(days = 7, companyId?: string): Promise<DailyPnlPoint[]> {
   const session = await requireSession();
-  const { orgId, branchIds } = await scope(session);
+  const { orgId, branchIds } = await scope(session, companyId);
 
   // ต้นวันของ (days-1) วันก่อน ตามเวลาไทย (Asia/Bangkok) — ไม่อิงเวลาเครื่อง (Vercel=UTC เพี้ยน 7 ชม.)
   const from = bangkokStartOfDay(days - 1);
@@ -228,9 +228,9 @@ export type DashboardLowStock = {
  * เดิมใช้ gross (warehouse) → ของ 100 ตัวแต่โหลดเข้าตู้ 98 (เหลือ 2 บนชั้น) จะไม่เตือน = พลาด.
  * ดึงรายสินค้าตรงจาก getCfBranchStockProducts (มีทั้ง warehouse+inMachines) แล้วกรองด้วย net.
  */
-export async function getDashboardLowStock(limit = 6): Promise<DashboardLowStock[]> {
+export async function getDashboardLowStock(limit = 6, companyId?: string): Promise<DashboardLowStock[]> {
   const session = await requireSession();
-  const { orgId, branchIds } = await scope(session);
+  const { orgId, branchIds } = await scope(session, companyId);
 
   const branches = await prisma.branch.findMany({
     where: {

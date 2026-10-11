@@ -13,6 +13,7 @@ import { getV2AllRounds, getV2Branches, orgHasAnyRounds, getDaySummaries, type D
 import { CollectionsClient, type CollectionRow, type BranchOption } from "./collections-client";
 import { requireSession } from "@/lib/auth/session";
 import { isCfBranchManager, cfHasAdminPower } from "@/lib/clawfleet/role-guard";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 
 export const dynamic = "force-dynamic";
 
@@ -47,9 +48,18 @@ function todayISO(): string {
 export default async function CollectionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; to?: string; page?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; page?: string; company?: string }>;
 }) {
   const sp = await searchParams;
+
+  // บริษัทที่เลือกไว้ (ตัวสลับบริษัท global) — เลือกทั้งหน้าตามบริษัทนี้ (CEO company-switcher Phase 4)
+  let companyId: string | undefined;
+  try {
+    const s = await requireSession();
+    companyId = await resolveCompanyFilter(s.user.org_id, sp.company);
+  } catch {
+    // graceful: ยังไม่ login → companyId undefined
+  }
 
   // ช่วงวันที่: ถ้าไม่ได้เลือก "หรือ" ค่าใน URL เป็นขยะ (parse ไม่ได้) → default 30 วันล่าสุด
   // สำคัญ: fromISO/toISO ที่ส่งเข้า client (banner + input) ต้อง derive จากวันที่ parse "ผ่านจริง" เท่านั้น
@@ -75,10 +85,10 @@ export default async function CollectionsPage({
   let daySummaries: DaySummary[] | null = null;
   try {
     const [res, br, everHad, days] = await Promise.all([
-      getV2AllRounds({ from, to, page: pageNum }),
-      getV2Branches(),
-      orgHasAnyRounds(),
-      from && to ? getDaySummaries(from, to) : Promise.resolve(null),
+      getV2AllRounds({ from, to, page: pageNum, companyId }),
+      getV2Branches(companyId),
+      orgHasAnyRounds(companyId),
+      from && to ? getDaySummaries(from, to, companyId) : Promise.resolve(null),
     ]);
     rounds = res.rounds;
     total = res.total;

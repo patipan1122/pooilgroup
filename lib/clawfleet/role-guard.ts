@@ -61,15 +61,54 @@ export function isCfStaff(role: Session["user"]["role"]): boolean {
   return role === "staff";
 }
 
-/** Returns array of branch IDs the user is allowed to see */
-export async function userBranchIds(session: Session): Promise<string[] | "ALL"> {
-  if ((await cfHasAdminPower(session))) return "ALL";
-  if (session.user.role === "viewer") return "ALL"; // read-only org-wide
+/**
+ * Returns array of branch IDs the user is allowed to see.
+ *
+ * `companyId` (optional, additive — CEO company-switcher project Phase 4
+ * clawfleet): when passed, narrows the result to branches belonging to that
+ * company. Admin/viewer tiers get "ALL" (no filter at all) when `companyId`
+ * is omitted — EXACTLY the pre-existing behavior for every caller that
+ * doesn't pass it (hard requirement after the Phase 1 recruit incident:
+ * never change a shared function's default behavior). When `companyId` IS
+ * passed, admin/viewer no longer get the "ALL" sentinel — they get the
+ * concrete array of that company's branch ids, so downstream `branchIds
+ * === "ALL" ? {} : { id: { in: branchIds } }` call sites automatically pick
+ * up the company scope without each one needing its own branch/company
+ * join. Regular staff/branch_manager get their own assigned branches
+ * intersected with the company's branches (defense-in-depth — their
+ * UserBranch rows already constrain them to one company in practice today,
+ * but this guards the case where that ever changes).
+ */
+export async function userBranchIds(
+  session: Session,
+  companyId?: string,
+): Promise<string[] | "ALL"> {
+  const hasFullAccess =
+    (await cfHasAdminPower(session)) || session.user.role === "viewer"; // read-only org-wide
+
+  if (!companyId) {
+    if (hasFullAccess) return "ALL";
+    const rows = await prisma.userBranch.findMany({
+      where: { userId: session.user.id },
+      select: { branchId: true },
+    });
+    return rows.map((r) => r.branchId);
+  }
+
+  const companyBranches = await prisma.branch.findMany({
+    where: { orgId: session.user.org_id, companyId },
+    select: { id: true },
+  });
+  const companyBranchIds = companyBranches.map((b) => b.id);
+
+  if (hasFullAccess) return companyBranchIds;
+
   const rows = await prisma.userBranch.findMany({
     where: { userId: session.user.id },
     select: { branchId: true },
   });
-  return rows.map((r) => r.branchId);
+  const allowedSet = new Set(rows.map((r) => r.branchId));
+  return companyBranchIds.filter((id) => allowedSet.has(id));
 }
 
 /**

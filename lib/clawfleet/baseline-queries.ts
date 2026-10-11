@@ -51,10 +51,11 @@ export type AwaitingSetupMachine = {
  */
 export async function getAwaitingSetupMachines(
   branchId?: string,
+  companyId?: string,
 ): Promise<AwaitingSetupMachine[]> {
   const session = await requireCfSession();
   const orgId = session.user.org_id;
-  const scope = await userBranchIds(session);
+  const scope = await userBranchIds(session, companyId);
 
   // สร้าง branch filter จาก scope + branchId ที่ขอมา
   let branchFilter: { branchId?: string | { in: string[] } };

@@ -32,8 +32,9 @@ function daysAgoLabel(d: Date | null): string {
 /** สรุปสถานะทุกสาขาตู้คีบในหน้าเดียว — สาขา นำหน้าเสมอ */
 export async function getClawfleetReconcileOverview(
   orgId: string,
+  companyId?: string,
 ): Promise<BranchReconcileOverviewRow[]> {
-  const team = await getTeamData();
+  const team = await getTeamData(companyId);
   const branches = team.branches;
   const branchIds = branches.map((b) => b.id);
   if (branchIds.length === 0) return [];

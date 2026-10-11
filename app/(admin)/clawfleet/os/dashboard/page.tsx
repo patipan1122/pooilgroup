@@ -10,6 +10,7 @@ import { loadAnomalies } from "@/lib/clawfleet/loaders";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { userBranchIds } from "@/lib/clawfleet/role-guard";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import { DashboardClient } from "./dashboard-client";
 
 export const dynamic = "force-dynamic";
@@ -19,11 +20,11 @@ export const dynamic = "force-dynamic";
  * (เหมือน loaders อื่น). ใช้ตัดสินว่าจะโชว์ "ตัวอย่าง" (sample) หรือ empty-state จริง.
  * query พัง/ยังไม่ migrate → false (แสดงตัวอย่างได้ · ปลอดภัยกว่าโชว์ empty ปลอม).
  */
-async function orgHasAnyRounds(): Promise<boolean> {
+async function orgHasAnyRounds(companyId?: string): Promise<boolean> {
   try {
     const session = await requireSession();
     const orgId = session.user.org_id;
-    const branchIds = await userBranchIds(session);
+    const branchIds = await userBranchIds(session, companyId);
     const branchWhere = branchIds === "ALL" ? {} : { branchId: { in: branchIds } };
     const n = await prisma.cfCollectionSession.count({ where: { orgId, ...branchWhere } });
     return n > 0;
@@ -32,7 +33,20 @@ async function orgHasAnyRounds(): Promise<boolean> {
   }
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ company?: string }>;
+}) {
+  const sp = await searchParams;
+  let companyId: string | undefined;
+  try {
+    const session = await requireSession();
+    companyId = await resolveCompanyFilter(session.user.org_id, sp.company);
+  } catch {
+    // graceful: ยังไม่ login → companyId undefined (เท่ากับพฤติกรรมเดิมก่อน phase นี้)
+  }
+
   let branchPnl: Awaited<ReturnType<typeof getBranchPnl>> = [];
   let anomalies: Awaited<ReturnType<typeof loadAnomalies>> = [];
   let machineInfo: Awaited<ReturnType<typeof getBranchMachineInfo>> | null = null;
@@ -44,12 +58,12 @@ export default async function DashboardPage() {
   const range7d = bangkokRangeLastDays(7);
   try {
     [branchPnl, anomalies, machineInfo, dailyPnl, lowStock, hasRealData] = await Promise.all([
-      getBranchPnl(range7d),
-      loadAnomalies("all"),
-      getBranchMachineInfo(),
-      getDailyPnl(7),
-      getDashboardLowStock(6),
-      orgHasAnyRounds(),
+      getBranchPnl(range7d, companyId),
+      loadAnomalies("all", companyId),
+      getBranchMachineInfo(companyId),
+      getDailyPnl(7, companyId),
+      getDashboardLowStock(6, companyId),
+      orgHasAnyRounds(companyId),
     ]);
   } catch {
     // graceful: DB ว่าง/ยังไม่ migrate → ใช้ sample fallback
@@ -59,7 +73,7 @@ export default async function DashboardPage() {
   // ล้ม แล้วลาก dashboard ทั้งหน้าไปด้วย (ตาราง cf_cash_deposit อาจยังไม่ migrate ในบาง env).
   let pendingDeposit: PendingSummary = { count: 0, totalCents: 0, overdueCount: 0, overdueCents: 0 };
   try {
-    pendingDeposit = await getPendingDepositSummary();
+    pendingDeposit = await getPendingDepositSummary(companyId);
   } catch {
     // graceful: ยังไม่ migrate/DB ว่าง → 0 (การ์ดจะซ่อนเอง ไม่โชว์ตัวเลขปลอม)
   }

@@ -63,10 +63,10 @@ function deriveMemberStatus(u: {
   return "active";
 }
 
-export async function getTeamData(): Promise<TeamData> {
+export async function getTeamData(companyId?: string): Promise<TeamData> {
   const session = await requireSession();
   const orgId = session.user.org_id;
-  const allowed = await userBranchIds(session);
+  const allowed = await userBranchIds(session, companyId);
 
   const branches = await prisma.branch.findMany({
     where: {

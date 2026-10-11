@@ -102,10 +102,11 @@ export async function getBranchRawReadings(opts: {
   machineId?: string;
   /** กรองเฉพาะวันเดียว "YYYY-MM-DD" (เวลาไทย) — คู่กับ machineId สำหรับ popup รายช่อง */
   isoDay?: string;
+  companyId?: string;
 }): Promise<RawReadings> {
   const session = await requireSession();
   const orgId = session.user.org_id;
-  const branchIds = await userBranchIds(session);
+  const branchIds = await userBranchIds(session, opts.companyId);
 
   // filter รายช่อง (ตู้ × วัน) — ดึงครบ ไม่ cap เพราะช่องเดียวมีไม่กี่รายการ
   const cellFilter = !!opts.machineId && !!opts.isoDay;

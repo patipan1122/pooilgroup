@@ -169,12 +169,12 @@ async function loadBranchNames(orgId: string, branchIds: string[]): Promise<Map<
  * branchId ของรอบ resolve จาก branchId ตรง ๆ ก่อน (staff-app flow) ไม่งั้น group.branchId (legacy group).
  * รอบที่ resolve สาขาไม่ได้เลย (ทั้งสองเป็น null) → ข้าม (ฝากไม่ได้อยู่แล้ว · ไม่มีสาขาให้ผูก).
  */
-export async function getPendingDeposits(opts?: { branchId?: string }): Promise<PendingDepositRow[]> {
+export async function getPendingDeposits(opts?: { branchId?: string; companyId?: string }): Promise<PendingDepositRow[]> {
   try {
     const session = await requireCfSession();
     const orgId = session.user.org_id;
     const userId = session.user.id;
-    const branchIds = await userBranchIds(session);
+    const branchIds = await userBranchIds(session, opts?.companyId);
 
     const rows = await prisma.cfCollectionSession.findMany({
       where: {
@@ -274,11 +274,12 @@ export async function getDepositReviewContext(): Promise<DepositReviewContext> {
 export async function getDepositHistory(opts?: {
   branchId?: string;
   limit?: number;
+  companyId?: string;
 }): Promise<DepositRow[]> {
   try {
     const session = await requireCfSession();
     const orgId = session.user.org_id;
-    const branchIds = await userBranchIds(session);
+    const branchIds = await userBranchIds(session, opts?.companyId);
 
     // สร้าง where สำหรับ branchId ตาม scope + filter สาขาเดียว (ถ้าระบุ)
     let branchWhere: { in: string[] } | undefined;
@@ -349,12 +350,12 @@ export async function getDepositHistory(opts?: {
  * ตรง ๆ อย่างเดียว → รอบ legacy หลุด → ยอดรวมการ์ด < ผลรวมแถวใน list ที่ resolve branchId ?? group.branchId
  * · ตอนนี้ OR relation filter ให้ตรงกับ list เป๊ะ). คืน 0 เมื่อ error.
  */
-export async function getPendingDepositSummary(): Promise<PendingSummary> {
+export async function getPendingDepositSummary(companyId?: string): Promise<PendingSummary> {
   const empty: PendingSummary = { count: 0, totalCents: 0, overdueCount: 0, overdueCents: 0 };
   try {
     const session = await requireCfSession();
     const orgId = session.user.org_id;
-    const branchIds = await userBranchIds(session);
+    const branchIds = await userBranchIds(session, companyId);
 
     // where ฐาน = เงื่อนไข depositable เดียวกับ getPendingDeposits + branch scope.
     // non-ALL: match branchId ในสิทธิ์ "หรือ" (legacy) branchId=null + group.branchId ในสิทธิ์ —

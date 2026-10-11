@@ -11,23 +11,30 @@ import { getStaffPerformance } from "@/lib/clawfleet/reports-queries";
 import { requireSession } from "@/lib/auth/session";
 import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { isCfAdmin } from "@/lib/clawfleet/role-guard";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import { StaffClient, type StaffRow, type BranchOpt } from "./staff-client";
 
 export const dynamic = "force-dynamic";
 
-export default async function StaffPage() {
+export default async function StaffPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ company?: string }>;
+}) {
+  const sp = await searchParams;
   const session = await requireSession();
   // ให้ตรงกับ server gate (assertCfAdmin = cfHasAdminPower): admin-tier + area_manager +
   // program_admin ที่ได้สิทธิ์ clawfleet จัดการทีมได้ (การยกบทบาทถูกกัน rank แล้วใน team-actions)
   const isAdmin = isCfAdmin(session.user.role) || (await userIsModuleAdmin(session.user, "clawfleet"));
+  const companyId = await resolveCompanyFilter(session.user.org_id, sp.company);
 
   let team: Awaited<ReturnType<typeof getTeamData>> | null = null;
   // ผลงานต่อคน (รอบเก็บ/ยอดไม่ตรง 30 วัน) — single source เดียวกับหน้ารายงาน
   let staffPerf: Awaited<ReturnType<typeof getStaffPerformance>> = new Map();
   try {
     const [t, perf] = await Promise.all([
-      getTeamData(),
-      getStaffPerformance({ days: 30 }),
+      getTeamData(companyId),
+      getStaffPerformance({ days: 30, companyId }),
     ]);
     team = t;
     staffPerf = perf;

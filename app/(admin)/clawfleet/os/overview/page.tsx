@@ -6,6 +6,8 @@
  */
 import { getBranchOverview, type BranchOverview } from "@/lib/clawfleet/overview-queries";
 import { OverviewClient } from "./overview-client";
+import { requireSession } from "@/lib/auth/session";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +27,7 @@ function parseIsoDay(s?: string): string | undefined {
 export default async function OverviewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string; mode?: string }>;
+  searchParams: Promise<{ date?: string; mode?: string; company?: string }>;
 }) {
   const sp = await searchParams;
   const mode: "date" | "latest" = sp.mode === "latest" ? "latest" : "date";
@@ -34,6 +36,15 @@ export default async function OverviewPage({
   // isoDay อ้างอิง: date = วันที่เลือก · latest = วันนี้ (ตัวเลขต่อสาขาเป็นวันล่าสุดของแต่ละสาขา)
   const isoDay = mode === "date" ? selected : today;
 
+  // บริษัทที่เลือกไว้ (ตัวสลับบริษัท global) — เลือกทั้งหน้าตามบริษัทนี้ (CEO company-switcher Phase 4)
+  let companyId: string | undefined;
+  try {
+    const s = await requireSession();
+    companyId = await resolveCompanyFilter(s.user.org_id, sp.company);
+  } catch {
+    // graceful: ยังไม่ login → companyId undefined
+  }
+
   let overview: BranchOverview = {
     mode,
     isoDay,
@@ -41,7 +52,7 @@ export default async function OverviewPage({
     totals: { branches: 0, machines: 0, collected: 0, missing: 0, cashBaht: 0, problems: 0 },
   };
   try {
-    overview = await getBranchOverview({ mode, isoDay });
+    overview = await getBranchOverview({ mode, isoDay, companyId });
   } catch {
     // graceful: DB ว่าง/ยังไม่ migrate/ไม่มีสิทธิ์ → client โชว์ EmptyState
   }

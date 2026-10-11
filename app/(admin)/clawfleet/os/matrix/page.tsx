@@ -17,6 +17,7 @@ import {
 } from "@/lib/clawfleet/assignment-queries";
 import { requireCfSession, userBranchIds, cfHasAdminPower, isCfBranchManager } from "@/lib/clawfleet/role-guard";
 import { getBranchRawReadings, type RawReadingRow } from "@/lib/clawfleet/raw-readings-queries";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import { MatrixClient, type MatrixBranch, type MatrixSerialMachine } from "./matrix-client";
 import type { ChecklistBranch } from "./checklist-client";
 
@@ -45,10 +46,19 @@ function shiftYm(year: number, month: number, delta: number): string {
 export default async function MatrixPage({
   searchParams,
 }: {
-  searchParams: Promise<{ branch?: string; days?: string; ckym?: string }>;
+  searchParams: Promise<{ branch?: string; days?: string; ckym?: string; company?: string }>;
 }) {
   const sp = await searchParams;
   const days = sp.days === "30" ? 30 : 20;
+
+  // บริษัทที่เลือกไว้ (ตัวสลับบริษัท global) — เลือกทั้งหน้าตามบริษัทนี้ (CEO company-switcher Phase 4)
+  let companyId: string | undefined;
+  try {
+    const s = await requireCfSession();
+    companyId = await resolveCompanyFilter(s.user.org_id, sp.company);
+  } catch {
+    // graceful: ยังไม่ login → companyId undefined
+  }
 
   let branches: MatrixBranch[] = [];
   let machines: MatrixSerialMachine[] = [];
@@ -83,7 +93,7 @@ export default async function MatrixPage({
   let canEditRaw = false;
 
   try {
-    const checklist = await getCfChecklistGrid({ year: ckYear, month: ckMonth });
+    const checklist = await getCfChecklistGrid({ year: ckYear, month: ckMonth, companyId });
     checklistYear = checklist.year;
     checklistMonth = checklist.month;
     checklistDaysInMonth = checklist.daysInMonth;
@@ -98,8 +108,8 @@ export default async function MatrixPage({
 
   try {
     const [rows, pendingByBranch] = await Promise.all([
-      getV2Branches(),
-      getPendingRoundCountsByBranch().catch(() => ({} as Record<string, number>)),
+      getV2Branches(companyId),
+      getPendingRoundCountsByBranch(companyId).catch(() => ({} as Record<string, number>)),
     ]);
     branches = rows.map((b) => ({
       id: b.id,
@@ -117,7 +127,7 @@ export default async function MatrixPage({
     activeBranchCode = picked;
 
     if (picked && pickedBranch) {
-      const data = await getMatrixData({ branchCode: picked, days });
+      const data = await getMatrixData({ branchCode: picked, days, companyId });
       isoDays = data.isoDays;
       // serialize Map → record (Server→Client ต้องเป็น plain object)
       machines = data.machines.map((m) => ({
@@ -141,7 +151,7 @@ export default async function MatrixPage({
       if (adminPower) {
         canManage = true;
       } else if (isCfBranchManager(session.user.role)) {
-        const scope = await userBranchIds(session);
+        const scope = await userBranchIds(session, companyId);
         canManage = scope !== "ALL" && scope.includes(branchId);
       } else {
         canManage = false;
@@ -151,7 +161,7 @@ export default async function MatrixPage({
 
       // ข้อมูลดิบมิเตอร์ของสาขานี้ (โชว์ทั้งยอดตั้งต้น + รอบเก็บ) + สิทธิ์แก้เลข
       canEditRaw = adminPower || isCfBranchManager(session.user.role);
-      const raw = await getBranchRawReadings({ branchCode: picked });
+      const raw = await getBranchRawReadings({ branchCode: picked, companyId });
       rawRows = raw.rows;
       rawTotal = raw.total;
       rawTruncated = raw.truncated;

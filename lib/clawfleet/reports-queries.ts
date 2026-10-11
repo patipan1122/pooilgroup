@@ -37,13 +37,24 @@ export type StaffPerf = {
  * นับจากรอบที่ปิดแล้วในช่วง + event anomaly ในรอบเหล่านั้น.
  */
 export async function getStaffPerformance(
-  opts: { days?: number } = {},
+  opts: { days?: number; companyId?: string } = {},
 ): Promise<Map<string, StaffPerf>> {
   const session = await requireSession();
   const orgId = session.user.org_id;
   const days = Math.max(1, Math.min(180, Math.floor(opts.days ?? 30)));
   // ต้นวันตามเวลาไทย (ไม่ใช่ setHours ที่อิงเวลาเครื่อง=UTC) — ให้ตรงกับ dashboard/pnl
   const since = bangkokStartOfDay(days - 1);
+
+  // companyId (optional, additive — company-switcher Phase 4): เดิมฟังก์ชันนี้ไม่กรองสาขาเลย
+  // (org-wide เสมอ) — เมื่อส่ง companyId มา จำกัดเฉพาะรอบของสาขาในบริษัทนั้น ไม่กระทบ caller เดิมที่ไม่ส่ง.
+  let companyBranchWhere: { in: string[] } | undefined;
+  if (opts.companyId) {
+    const companyBranches = await prisma.branch.findMany({
+      where: { orgId, companyId: opts.companyId },
+      select: { id: true },
+    });
+    companyBranchWhere = { in: companyBranches.map((b) => b.id) };
+  }
 
   // รอบที่ปิดแล้วในช่วง + ใครปิด/เปิด. mismatch นับจาก "สถานะรอบที่ตัดสินแล้ว"
   // (ANOMALY_REVIEW = ยอดไม่ตรงจริง) ไม่ใช่ธง anomaly ดิบตอนเก็บ → ไม่ต้องดึง event
@@ -52,6 +63,7 @@ export async function getStaffPerformance(
       orgId,
       status: { in: CLOSED_STATUSES },
       closedAt: { gte: since },
+      ...(companyBranchWhere ? { branchId: companyBranchWhere } : {}),
     },
     select: {
       status: true,
@@ -96,10 +108,10 @@ export type LowStockResult = {
  * สินค้าที่คงคลัง ≤ จุดสั่งเติม รวมจากทุกสาขาในขอบเขตของ user (top N · ต่ำสุดก่อน).
  * scope ด้วย orgId + branch-scope. ใช้ getCfStockOverview เดิม (single source · ไม่ duplicate logic).
  */
-export async function getLowStockItems(limit = 6): Promise<LowStockResult[]> {
+export async function getLowStockItems(limit = 6, companyId?: string): Promise<LowStockResult[]> {
   const session = await requireSession();
   const orgId = session.user.org_id;
-  const branchIds = await userBranchIds(session);
+  const branchIds = await userBranchIds(session, companyId);
 
   const branches = await prisma.branch.findMany({
     where: {

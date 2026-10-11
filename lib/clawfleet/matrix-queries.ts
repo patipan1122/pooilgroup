@@ -82,8 +82,8 @@ type RawRow = {
   events: bigint | number | null;
 };
 
-async function scope(session: Session): Promise<{ orgId: string; branchIds: string[] | "ALL" }> {
-  const bs = await userBranchIds(session);
+async function scope(session: Session, companyId?: string): Promise<{ orgId: string; branchIds: string[] | "ALL" }> {
+  const bs = await userBranchIds(session, companyId);
   return { orgId: session.user.org_id, branchIds: bs };
 }
 
@@ -115,10 +115,10 @@ function buildIsoDays(n: number): string[] {
  * ทุก query scope ด้วย orgId + branch-scope ของ user.
  */
 export async function getMatrixData(
-  opts: { branchCode?: string | null; days: number },
+  opts: { branchCode?: string | null; days: number; companyId?: string },
 ): Promise<MatrixData> {
   const session = await requireSession();
-  const { orgId, branchIds } = await scope(session);
+  const { orgId, branchIds } = await scope(session, opts.companyId);
   const days = Math.max(1, Math.min(60, Math.floor(opts.days)));
   const isoDays = buildIsoDays(days);
 

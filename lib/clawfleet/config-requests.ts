@@ -49,12 +49,23 @@ function toClientStatus(s: string): CfConfigStatus {
  * รายการคำขอตั้งค่าตู้ของ org ปัจจุบัน (ใหม่สุดก่อน).
  * คืน [] เมื่อ table ยังไม่ถูก migrate (page เรียกใน try/catch อยู่แล้ว แต่กันไว้สองชั้น).
  */
-export async function getCfConfigRequests(): Promise<CfConfigRequestView[]> {
+export async function getCfConfigRequests(companyId?: string): Promise<CfConfigRequestView[]> {
   const session = await requireSession();
   const orgId = session.user.org_id;
 
+  // companyId (optional, additive — company-switcher Phase 4): เดิมฟังก์ชันนี้ไม่กรองสาขาเลย
+  // (org-wide เสมอ) — เมื่อส่ง companyId มา จำกัดเฉพาะคำขอของสาขาในบริษัทนั้น ไม่กระทบ caller เดิมที่ไม่ส่ง.
+  let branchWhere: { in: string[] } | undefined;
+  if (companyId) {
+    const companyBranches = await prisma.branch.findMany({
+      where: { orgId, companyId },
+      select: { id: true },
+    });
+    branchWhere = { in: companyBranches.map((b) => b.id) };
+  }
+
   const rows = await prisma.cfConfigRequest.findMany({
-    where: { orgId },
+    where: { orgId, ...(branchWhere ? { branchId: branchWhere } : {}) },
     orderBy: { submittedAt: "desc" },
     take: 100,
   });

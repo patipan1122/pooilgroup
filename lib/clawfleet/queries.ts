@@ -70,8 +70,8 @@ function severityOf(gapPct: number, prizeGap: number): "P0" | "P1" | "P2" {
   return "P2";
 }
 
-async function scope(session: Session): Promise<{ orgId: string; branchIds: string[] | "ALL" }> {
-  const bs = await userBranchIds(session);
+async function scope(session: Session, companyId?: string): Promise<{ orgId: string; branchIds: string[] | "ALL" }> {
+  const bs = await userBranchIds(session, companyId);
   return { orgId: session.user.org_id, branchIds: bs };
 }
 /** narrow a branchId list by an optional explicit filter from the UI */
@@ -89,9 +89,9 @@ function effectiveBranchWhere(
 // =============================================================
 // Branches (claw_machine business type)
 // =============================================================
-export const getV2Branches = cache(async (): Promise<Branch[]> => {
+export const getV2Branches = cache(async (companyId?: string): Promise<Branch[]> => {
   const session = await requireSession();
-  const { orgId, branchIds } = await scope(session);
+  const { orgId, branchIds } = await scope(session, companyId);
   const rows = await prisma.branch.findMany({
     where: {
       orgId,
@@ -123,9 +123,9 @@ export const getV2Branches = cache(async (): Promise<Branch[]> => {
  * คืน map branchId → จำนวนรอบค้าง (เฉพาะรอบระดับสาขา · scope ตามสิทธิ์ user). อ่านอย่างเดียว ไม่แตะเงิน.
  */
 export const getPendingRoundCountsByBranch = cache(
-  async (): Promise<Record<string, number>> => {
+  async (companyId?: string): Promise<Record<string, number>> => {
     const session = await requireSession();
-    const { orgId, branchIds } = await scope(session);
+    const { orgId, branchIds } = await scope(session, companyId);
     const grouped = await prisma.cfCollectionSession.groupBy({
       by: ["branchId"],
       where: {
@@ -166,9 +166,9 @@ export type ManageBranch = {
 };
 
 /** สาขาตู้คีบ + รายการตู้ในแต่ละสาขา (active เท่านั้น) สำหรับหน้า "จัดการ". */
-export async function getV2ManageBranches(): Promise<ManageBranch[]> {
+export async function getV2ManageBranches(companyId?: string): Promise<ManageBranch[]> {
   const session = await requireSession();
-  const { orgId, branchIds } = await scope(session);
+  const { orgId, branchIds } = await scope(session, companyId);
   const rows = await prisma.branch.findMany({
     where: {
       orgId,
@@ -208,9 +208,9 @@ export async function getV2ManageBranches(): Promise<ManageBranch[]> {
 // =============================================================
 // Anomalies (sessions in ANOMALY_REVIEW) — with machines
 // =============================================================
-export async function listV2Anomalies(filter?: string): Promise<Anomaly[]> {
+export async function listV2Anomalies(filter?: string, companyId?: string): Promise<Anomaly[]> {
   const session = await requireSession();
-  const { orgId, branchIds } = await scope(session);
+  const { orgId, branchIds } = await scope(session, companyId);
   const branchWhere = effectiveBranchWhere(branchIds, filter);
 
   const rows = await prisma.cfCollectionSession.findMany({
@@ -358,9 +358,10 @@ export async function getV2AllRounds(opts?: {
   from?: Date;
   to?: Date;
   page?: number;
+  companyId?: string;
 }): Promise<V2AllRoundsResult> {
   const session = await requireSession();
-  const { orgId, branchIds } = await scope(session);
+  const { orgId, branchIds } = await scope(session, opts?.companyId);
   const branchWhere = effectiveBranchWhere(branchIds, opts?.branchId);
 
   const pageSize = 50;
@@ -534,12 +535,12 @@ export type DaySummary = {
  * ช่วงหลายวัน → คืน null (การ์ดรายวันไม่ขึ้น · กันตัวเลข "รายวัน" ปนกับช่วง 30 วัน).
  * scope: org + สาขาของ user เท่านั้น (RLS-safe เหมือน query อื่น).
  */
-export async function getDaySummaries(from: Date, to: Date): Promise<DaySummary[] | null> {
+export async function getDaySummaries(from: Date, to: Date, companyId?: string): Promise<DaySummary[] | null> {
   // ช่วงเกิน ~1.5 วัน = มองเป็นหลายวัน → ไม่สรุปรายวัน
   if (to.getTime() - from.getTime() > 36 * 3600 * 1000) return null;
 
   const session = await requireSession();
-  const { orgId, branchIds } = await scope(session);
+  const { orgId, branchIds } = await scope(session, companyId);
   const branchFilter = branchIds === "ALL" ? {} : { branchId: { in: branchIds } };
 
   const [machines, events] = await Promise.all([
@@ -608,9 +609,9 @@ export async function getDaySummaries(from: Date, to: Date): Promise<DaySummary[
  * ต่างจาก total ใน getV2AllRounds ที่นับเฉพาะรอบปิดใน 30 วัน — org ที่มีรอบจริง
  * แต่เกิน 30 วัน/ยัง OPEN ต้องไม่ถูกหลอกให้เห็นตัวอย่างปลอม.
  */
-export async function orgHasAnyRounds(): Promise<boolean> {
+export async function orgHasAnyRounds(companyId?: string): Promise<boolean> {
   const session = await requireSession();
-  const { orgId, branchIds } = await scope(session);
+  const { orgId, branchIds } = await scope(session, companyId);
   const count = await prisma.cfCollectionSession.count({
     where: {
       orgId,
