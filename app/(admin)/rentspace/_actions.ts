@@ -230,6 +230,9 @@ export async function actGetUnitDrawer(unitId: string) {
 // ───────── project ─────────
 export async function actSaveProject(input: {
   id?: string;
+  // ผูกตอน "สร้างโครงการแรก" เท่านั้น (ไม่มี id) — มาจากบริษัทที่สวิตช์หัวเว็บเลือกอยู่
+  // (company-switcher Phase 2, 2026-10-11). Update โครงการเดิมไม่แตะ companyId เลย.
+  companyId?: string;
   name: string;
   slug: string;
   address?: string;
@@ -325,7 +328,12 @@ export async function actSaveProject(input: {
     await prisma.rentalProject.update({ where: { id }, data });
   } else {
     const created = await prisma.rentalProject.create({
-      data: { id: randomUUID(), orgId: session.user.org_id, ...data },
+      data: {
+        id: randomUUID(),
+        orgId: session.user.org_id,
+        companyId: input.companyId || null,
+        ...data,
+      },
     });
     id = created.id;
   }

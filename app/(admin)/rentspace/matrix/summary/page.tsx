@@ -2,8 +2,9 @@
 // ทุกเจ้า: ค่าเช่ารวม / ชำระแล้ว / ค้างชำระ ต่อช่วงเดือนที่เลือก. ดีไซน์แบบใบวางบิล
 // A4 (โลโก้ + หัวเอกสารทางการ) ตาม CEO 2026-09-09 — พิมพ์/เซฟ PDF ผ่านเบราว์เซอร์
 // เหมือนใบวางบิลเดี่ยวเดิม ไม่ใช้ PDF lib ใหม่.
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import { getPrimaryProject, getProject } from "@/lib/rentspace/data";
 import { tenantRentSummary } from "@/lib/rentspace/tenant-summary";
 import { formatBaht, periodLabel, thaiDateLong } from "@/lib/rentspace/format";
@@ -22,14 +23,39 @@ function currentYearRange(): { from: string; to: string } {
 export default async function MatrixSummaryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ projectId?: string; from?: string; to?: string }>;
+  searchParams: Promise<{ projectId?: string; from?: string; to?: string; company?: string }>;
 }) {
   const session = await requireSession();
   const orgId = session.user.org_id;
   const sp = await searchParams;
+  const companyId = await resolveCompanyFilter(orgId, sp.company);
 
-  const project = sp.projectId ? await getProject(orgId, sp.projectId) : await getPrimaryProject(orgId);
-  if (!project) notFound();
+  // company-switcher fix Phase 2 (2026-10-11): getProject/getPrimaryProject are
+  // now company-scoped, which also closes the cross-company-by-id hole here —
+  // a hand-edited ?projectId= belonging to the OTHER company's project now
+  // resolves to null instead of silently rendering that company's report.
+  //
+  // Two different "not found" causes get two different responses: an explicit
+  // (likely stale or tampered) projectId that doesn't resolve → notFound() is
+  // correct, this is a specific report link. But the *default* no-param case
+  // (just "/rentspace/matrix/summary" on a company with zero projects) must
+  // NOT show a 404 error page — redirect to /rentspace/matrix instead, which
+  // already renders the proper "ยังไม่มีโครงการ" empty state.
+  if (sp.projectId) {
+    const project = await getProject(orgId, companyId, sp.projectId);
+    if (!project) notFound();
+    return renderSummary(project, orgId, sp);
+  }
+  const project = await getPrimaryProject(orgId, companyId);
+  if (!project) redirect("/rentspace/matrix");
+  return renderSummary(project, orgId, sp);
+}
+
+async function renderSummary(
+  project: NonNullable<Awaited<ReturnType<typeof getPrimaryProject>>>,
+  orgId: string,
+  sp: { from?: string; to?: string },
+) {
 
   const fallback = currentYearRange();
   let from = sp.from && PERIOD_RE.test(sp.from) ? sp.from : fallback.from;

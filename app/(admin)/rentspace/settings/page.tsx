@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { userIsModuleAdmin } from "@/lib/auth/module-access";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import { getPrimaryProject } from "@/lib/rentspace/data";
 import { toNum } from "@/lib/rentspace/format";
 import { prisma } from "@/lib/prisma";
@@ -16,18 +17,25 @@ import { getPermissionMatrix } from "@/lib/rentspace/permissions";
 
 export const dynamic = "force-dynamic";
 
-export default async function RentSpaceSettingsPage() {
+export default async function RentSpaceSettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ company?: string }>;
+}) {
   const session = await requireSession();
   // เปิดให้แอดมินโมดูลเช่า (program admin) เข้าตั้งค่าได้ · ไม่ใช่แค่ super admin
   if (!(await userIsModuleAdmin(session.user, "rentspace"))) redirect("/403");
   // แต่สวิตช์ปลดล็อก (แก้/ลบ/ออกบิล·สัญญา) ตั้งได้เฉพาะ super admin (กัน self-escalation)
   const canEditPerms = isSuperAdmin(session.user.role);
 
+  const sp = await searchParams;
+  const companyId = await resolveCompanyFilter(session.user.org_id, sp.company);
+
   // upspeed 2026-09-22: getPermissionMatrix ต้องการแค่ orgId (ไม่ต้องรอ project) →
   // ยิงพร้อม getPrimaryProject เลย แทนที่จะเป็นขั้นสุดท้ายแบบต่อเนื่อง (เดิม await
   // อยู่ท้าย JSX แยกจากทุกอย่างข้างบน — เพิ่ม stage รอเปล่าๆ อีก 1 ชั้น)
   const [project, permissionMatrix] = await Promise.all([
-    getPrimaryProject(session.user.org_id),
+    getPrimaryProject(session.user.org_id, companyId),
     canEditPerms ? getPermissionMatrix(session.user.org_id) : Promise.resolve(null),
   ]);
 
@@ -109,7 +117,12 @@ export default async function RentSpaceSettingsPage() {
             : "ตั้งค่าโครงการเช่าครั้งแรก เพื่อเริ่มใช้งานระบบ"
         }
       />
-      <SettingsForm initial={initial} recurringCharges={recurringCharges} canEditPerms={canEditPerms} />
+      <SettingsForm
+        initial={initial}
+        recurringCharges={recurringCharges}
+        canEditPerms={canEditPerms}
+        companyId={companyId}
+      />
       {project && reconcileSummary && (
         <ReconcileAccountSection
           projectId={project.id}

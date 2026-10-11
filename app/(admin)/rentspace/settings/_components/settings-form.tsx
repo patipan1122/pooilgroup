@@ -96,11 +96,22 @@ export default function SettingsForm({
   initial,
   recurringCharges = [],
   canEditPerms = true,
+  companyId,
 }: {
   initial: Initial | null;
   recurringCharges?: RecurringCharge[];
   /** เฉพาะ super admin เห็น/ตั้งสวิตช์ปลดล็อก (แก้/ลบ/ออกบิล·สัญญา). module admin = false. */
   canEditPerms?: boolean;
+  /**
+   * บริษัทที่เลือกอยู่ที่สวิตช์หัวเว็บตอนนี้ (resolveCompanyFilter ฝั่ง server) —
+   * ใช้ตอน "สร้างโครงการแรก" เท่านั้น (isFirstTime) เพื่อผูกโครงการใหม่กับบริษัท
+   * ที่กำลังดูอยู่ ไม่ปล่อยให้ companyId เป็น null (audit 2026-10-10 Phase 2:
+   * เดิมสร้างโครงการใหม่ไม่ตั้ง companyId เลย — ถ้าสร้างตอนดู Pool Oil จะได้
+   * โครงการที่ไม่มีบริษัท แล้วจะไม่โชว์ที่ไหนอีกเพราะทุกหน้ากรองด้วย companyId
+   * แล้ว). โครงการที่มีอยู่แล้วไม่ถูกแก้ companyId ผ่านฟอร์มนี้เด็ดขาด (แก้แยกที่
+   * ReconcileAccountSection ถ้าต้องการจริงๆ).
+   */
+  companyId: string;
 }) {
   const router = useRouter();
   const isFirstTime = !initial;
@@ -198,6 +209,9 @@ export default function SettingsForm({
       try {
         await actSaveProject({
           id: initial?.id,
+          // เฉพาะตอนสร้างโครงการแรก (isFirstTime) — แก้โครงการเดิมไม่ส่ง companyId
+          // ไปทับ (actSaveProject เองก็ไม่ใช้ค่านี้ตอน update อยู่แล้ว แต่ชัดเจนไว้ที่นี่ด้วย)
+          companyId: isFirstTime ? companyId : undefined,
           name: name.trim(),
           slug: slug.trim() || slugify(name) || "default",
           address: address.trim() || undefined,

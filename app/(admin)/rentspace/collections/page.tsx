@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Search } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import { getPrimaryProject } from "@/lib/rentspace/data";
 import { overdueUnits, collectionsSummary } from "@/lib/rentspace/collections";
 import { formatBaht } from "@/lib/rentspace/format";
@@ -12,13 +13,14 @@ export const dynamic = "force-dynamic";
 export default async function CollectionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; company?: string }>;
 }) {
-  const { q } = await searchParams;
-  const search = (q ?? "").trim();
+  const sp = await searchParams;
+  const search = (sp.q ?? "").trim();
   const session = await requireSession();
   const orgId = session.user.org_id;
-  const project = await getPrimaryProject(orgId);
+  const companyId = await resolveCompanyFilter(orgId, sp.company);
+  const project = await getPrimaryProject(orgId, companyId);
 
   if (!project) {
     return (

@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { isAdminTier } from "@/lib/auth/role-guards";
 import { userIsModuleAdmin } from "@/lib/auth/module-access";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import { getPrimaryProject } from "@/lib/rentspace/data";
 import { rentMatrix } from "@/lib/rentspace/matrix-data";
 import { getProjectReconcileSummary } from "@/lib/rentspace/ledger-push";
@@ -11,12 +12,14 @@ import MatrixGrid from "./_components/matrix-grid";
 
 export const dynamic = "force-dynamic";
 
-type SearchParams = Promise<{ year?: string; view?: string; month?: string }>;
+type SearchParams = Promise<{ year?: string; view?: string; month?: string; company?: string }>;
 
 export default async function MatrixPage({ searchParams }: { searchParams: SearchParams }) {
   const session = await requireSession();
   const orgId = session.user.org_id;
-  const project = await getPrimaryProject(orgId);
+  const sp = await searchParams;
+  const companyId = await resolveCompanyFilter(orgId, sp.company);
+  const project = await getPrimaryProject(orgId, companyId);
 
   if (!project) {
     return (
@@ -36,7 +39,6 @@ export default async function MatrixPage({ searchParams }: { searchParams: Searc
     );
   }
 
-  const sp = await searchParams;
   const nowYear = new Date().getFullYear(); // CE year
   const year = Number(sp.year) || nowYear;
   const view = sp.view === "month" ? "month" : "year";

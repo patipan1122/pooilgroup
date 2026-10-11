@@ -1,4 +1,5 @@
 import { requireSession } from "@/lib/auth/session";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import { getPrimaryProject } from "@/lib/rentspace/data";
 import { RsPage, RsHeader, RsCard } from "@/components/rentspace/ui";
 import { FileSpreadsheet } from "lucide-react";
@@ -6,9 +7,15 @@ import TenantImportShell from "./_components/tenant-import-shell";
 
 export const dynamic = "force-dynamic";
 
-export default async function RentSpaceImportPage() {
+export default async function RentSpaceImportPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ company?: string }>;
+}) {
   const session = await requireSession();
-  const project = await getPrimaryProject(session.user.org_id);
+  const sp = await searchParams;
+  const companyId = await resolveCompanyFilter(session.user.org_id, sp.company);
+  const project = await getPrimaryProject(session.user.org_id, companyId);
 
   return (
     <RsPage>

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import { getPrimaryProject } from "@/lib/rentspace/data";
 import { revenueAnalytics } from "@/lib/rentspace/analytics";
 import { formatBaht, periodLabel } from "@/lib/rentspace/format";
@@ -8,10 +9,16 @@ import RollingChart from "./_components/rolling-chart";
 
 export const dynamic = "force-dynamic";
 
-export default async function AnalyticsPage() {
+export default async function AnalyticsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ company?: string }>;
+}) {
   const session = await requireSession();
   const orgId = session.user.org_id;
-  const project = await getPrimaryProject(orgId);
+  const sp = await searchParams;
+  const companyId = await resolveCompanyFilter(orgId, sp.company);
+  const project = await getPrimaryProject(orgId, companyId);
 
   if (!project) {
     return (

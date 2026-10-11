@@ -2,7 +2,8 @@ import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
 import { isAdminTier, isSuperAdmin } from "@/lib/auth/role-guards";
 import { userIsModuleAdmin } from "@/lib/auth/module-access";
-import { RsPage, RsEmpty, RsBackLink } from "@/components/rentspace/ui";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
+import { RsPage, RsHeader, RsEmpty, RsBackLink } from "@/components/rentspace/ui";
 import {
   formatBaht,
   toNum,
@@ -35,22 +36,49 @@ function isOverdue(b: { status: string; dueDate: Date | null }): boolean {
 export default async function BillsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; period?: string }>;
+  searchParams: Promise<{ status?: string; period?: string; company?: string }>;
 }) {
   const sp = await searchParams;
   const session = await requireSession();
   const orgId = session.user.org_id;
+  const companyId = await resolveCompanyFilter(orgId, sp.company);
 
   const statusFilter = sp.status && BILL_STATUS[sp.status] ? sp.status : undefined;
   const periodFilter = sp.period && /^\d{4}-\d{2}$/.test(sp.period) ? sp.period : undefined;
 
-  const project = await getPrimaryProject(orgId);
+  const project = await getPrimaryProject(orgId, companyId);
+
+  // company-switcher fix Phase 2 (2026-10-11): this page used to pass
+  // project?.id straight into listBills({ projectId }) — with no project,
+  // projectId became undefined and listBills fell back to "every bill in the
+  // org," leaking the OTHER company's billing data onto an empty-state
+  // company. Early-return before touching anything project-scoped, same
+  // "ยังไม่มีโครงการ" pattern as the sibling pages.
+  if (!project) {
+    return (
+      <RsPage>
+        <RsBackLink href="/rentspace" label="กลับหน้าหลัก" />
+        <RsHeader title="ใบแจ้งหนี้ / บิล" subtitle="ออกบิล · ติดตามการชำระ" />
+        <RsEmpty
+          icon="🏗️"
+          title="ยังไม่มีโครงการ"
+          hint="ตั้งค่าโครงการเช่าก่อนในหน้า ตั้งค่า เพื่อเริ่มออกบิล"
+          action={
+            <Link href="/rentspace/settings" className="rs-btn">
+              ไปที่ตั้งค่า
+            </Link>
+          }
+        />
+      </RsPage>
+    );
+  }
+
   // super_admin ทำได้เสมอ · คนอื่นเมื่อ super เปิดสวิตช์ในหน้าตั้งค่า
   const isSuper = isSuperAdmin(session.user.role);
   const moduleAdmin =
     isAdminTier(session.user.role) || (await userIsModuleAdmin(session.user, "rentspace"));
-  const canIssue = isSuper || (!!project?.billIssueUnlocked && moduleAdmin); // ออกบิล (เปิด default)
-  const canDelete = isSuper || (!!project?.billDeleteUnlocked && moduleAdmin); // ลบบิล (ปิด default)
+  const canIssue = isSuper || (project.billIssueUnlocked && moduleAdmin); // ออกบิล (เปิด default)
+  const canDelete = isSuper || (project.billDeleteUnlocked && moduleAdmin); // ลบบิล (ปิด default)
   // "เกินกำหนด" (overdue) is a *derived* status — a bill stays stored as
   // issued/partial with a past due date; the DB column is almost never literally
   // "overdue". So we must NOT push it to the query (that returns ~0 rows and the
@@ -58,11 +86,11 @@ export default async function BillsPage({
   const wantOverdue = statusFilter === "overdue";
   const [fetchedBills, contracts] = await Promise.all([
     listBills(orgId, {
-      projectId: project?.id,
+      projectId: project.id,
       status: wantOverdue ? undefined : statusFilter,
       period: periodFilter,
     }),
-    project ? listContracts(orgId, project.id) : Promise.resolve([]),
+    listContracts(orgId, project.id),
   ]);
   const bills = wantOverdue ? fetchedBills.filter((b) => isOverdue(b)) : fetchedBills;
 
@@ -70,7 +98,7 @@ export default async function BillsPage({
   // compute over the returned set (filter chips are additive, so KPI reflects view).
   // To keep KPIs stable regardless of filter, fetch the full project list once.
   const allBills =
-    statusFilter || periodFilter ? await listBills(orgId, { projectId: project?.id }) : fetchedBills;
+    statusFilter || periodFilter ? await listBills(orgId, { projectId: project.id }) : fetchedBills;
 
   const thisPeriod = currentPeriod();
   const outstandingBills = allBills.filter((b) => OUTSTANDING_STATUSES.includes(b.status));

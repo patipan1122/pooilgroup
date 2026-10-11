@@ -1,6 +1,7 @@
 import { requireSession } from "@/lib/auth/session";
 import { isSuperAdmin, isAdminTier } from "@/lib/auth/role-guards";
 import { userIsModuleAdmin } from "@/lib/auth/module-access";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import { prisma } from "@/lib/prisma";
 import { getPrimaryProject, meterBoard } from "@/lib/rentspace/data";
 import {
@@ -66,18 +67,19 @@ function buildSide(meters: MeterRow[], kind: "electric" | "water"): BoardSide {
 export default async function MetersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ period?: string }>;
+  searchParams: Promise<{ period?: string; company?: string }>;
 }) {
   const session = await requireSession();
   const orgId = session.user.org_id;
   const sp = await searchParams;
   const period = /^\d{4}-\d{2}$/.test(sp.period ?? "") ? sp.period! : currentPeriod();
+  const companyId = await resolveCompanyFilter(orgId, sp.company);
 
   // แอดมิน/แอดมินโปรแกรม RentSpace จัดลำดับห้องหน้านี้เองได้ — สิทธิ์ชุดเดียวกับ
   // ปุ่ม "จัดลำดับห้อง" ของหน้า Excel matrix (gateAdmin ฝั่ง server action เช็คเงื่อนไขเดียวกัน)
   const canReorder = isAdminTier(session.user.role) || (await userIsModuleAdmin(session.user, "rentspace"));
 
-  const project = await getPrimaryProject(orgId);
+  const project = await getPrimaryProject(orgId, companyId);
 
   if (!project) {
     return (

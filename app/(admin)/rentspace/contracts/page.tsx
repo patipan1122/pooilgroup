@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import { RsPage, RsHeader, RsKpi, RsEmpty, RsBackLink } from "@/components/rentspace/ui";
 import { formatBaht, thaiDateLong, toNum, tenantDisplayName } from "@/lib/rentspace/format";
 import { listContracts, getPrimaryProject, listUnitsWithState, listTenants, listTemplates } from "@/lib/rentspace/data";
@@ -15,14 +16,47 @@ function isExpiringSoon(endDate: Date | null): boolean {
   return days >= 0 && days <= 45;
 }
 
-export default async function ContractsPage() {
+export default async function ContractsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ company?: string }>;
+}) {
   const session = await requireSession();
   const orgId = session.user.org_id;
+  const sp = await searchParams;
+  const companyId = await resolveCompanyFilter(orgId, sp.company);
 
-  const project = await getPrimaryProject(orgId);
+  const project = await getPrimaryProject(orgId, companyId);
+
+  // company-switcher fix Phase 2 (2026-10-11): this page used to call
+  // listContracts(orgId, project?.id) with NO project guard — when project
+  // was null, projectId became undefined and listContracts fell back to
+  // "every contract in the org," i.e. the OTHER company's contracts leaking
+  // through on an empty-state company. Early-return the same "ยังไม่มีโครงการ"
+  // pattern the sibling pages (units/meters/collections/analytics/matrix) use
+  // instead, before fetching anything project-scoped.
+  if (!project) {
+    return (
+      <RsPage>
+        <RsBackLink href="/rentspace" label="กลับหน้าหลัก" />
+        <RsHeader title="สัญญาเช่า" subtitle="จัดการสัญญาเช่าทุกฉบับ" />
+        <RsEmpty
+          icon="🏗️"
+          title="ยังไม่มีโครงการ"
+          hint="ตั้งค่าโครงการเช่าก่อนในหน้า ตั้งค่า เพื่อเริ่มทำสัญญา"
+          action={
+            <Link href="/rentspace/settings" className="rs-btn">
+              ไปที่ตั้งค่า
+            </Link>
+          }
+        />
+      </RsPage>
+    );
+  }
+
   const [contracts, units, tenants, templates] = await Promise.all([
-    listContracts(orgId, project?.id),
-    project ? listUnitsWithState(orgId, project.id) : Promise.resolve([]),
+    listContracts(orgId, project.id),
+    listUnitsWithState(orgId, project.id),
     listTenants(orgId),
     listTemplates(orgId),
   ]);

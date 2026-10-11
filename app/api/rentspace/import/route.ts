@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { requireSession } from "@/lib/auth/session";
 import { isAdminTier } from "@/lib/auth/role-guards";
 import { userIsModuleAdmin } from "@/lib/auth/module-access";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit/log";
 import { toNum } from "@/lib/rentspace/format";
@@ -137,16 +138,28 @@ export async function POST(req: Request) {
   }
 
   // ── resolve / ensure the primary project ──
-  let project = await prisma.rentalProject.findFirst({
-    where: { orgId, isActive: true },
-    orderBy: { createdAt: "asc" },
-  });
+  // Company-switcher fix Phase 2 (2026-10-11): this route used to look up
+  // "the first active project in the org" with NO company filter at all —
+  // it bypassed lib/rentspace/data.ts's getPrimaryProject() entirely and
+  // inlined the same unscoped query. A Pool Oil admin importing a CSV would
+  // silently write their tenants/units/contracts into JP Sync Group's
+  // project (cross-company data corruption, not just a wrong read). No
+  // ?company= URL param reaches an API route, so resolve from the cookie the
+  // switcher writes (same source every other mutation implicitly relies on).
+  const companyId = await resolveCompanyFilter(orgId, undefined);
+  let project = companyId
+    ? await prisma.rentalProject.findFirst({
+        where: { orgId, companyId, isActive: true },
+        orderBy: { createdAt: "asc" },
+      })
+    : null;
   if (!project) {
-    if (commit) {
+    if (commit && companyId) {
       project = await prisma.rentalProject.create({
         data: {
           id: randomUUID(),
           orgId,
+          companyId,
           name: DEFAULT_PROJECT.name,
           slug: DEFAULT_PROJECT.slug,
           electricRate: DEFAULT_PROJECT.electricRate,
@@ -154,7 +167,7 @@ export async function POST(req: Request) {
         },
       });
     }
-    // dry-run with no project → everything is "new"
+    // dry-run (or a brand-new org with zero companies configured) → everything is "new"
   }
   const projectId = project?.id ?? null;
 

@@ -2,23 +2,43 @@
 import { prisma } from "@/lib/prisma";
 import { currentPeriod, toNum } from "@/lib/rentspace/format";
 
-/** The pilot project for an org — first active project, auto-created none. */
-export async function getPrimaryProject(orgId: string) {
+/**
+ * Company-switcher fix (Phase 2, 2026-10-11): these 3 project lookups used to
+ * ignore RentalProject.companyId entirely — "the pilot project" meant "the
+ * first active project org-wide," so the company switcher had zero effect on
+ * /rentspace (the original bug report). Now always scoped to the selected
+ * company — callers must resolve companyId first (via resolveCompanyFilter(),
+ * same as every other module) and pass it in. No org-wide variant is kept:
+ * nothing in rentspace legitimately needs a cross-company project view (only
+ * 1 project exists today, under JP Sync Group; Pool Oil has 0) — adding
+ * unused flexibility for a hypothetical future isn't worth the extra surface.
+ *
+ * companyId === "" (the org has zero active companies configured — not a
+ * real case for Pooilgroup, but resolveCompanyFilter() documents it as
+ * possible) short-circuits to "no project" instead of sending "" into a uuid
+ * column filter, which would error rather than just return 0 rows.
+ */
+
+/** The pilot project for a company — first active project, auto-created none. */
+export async function getPrimaryProject(orgId: string, companyId: string) {
+  if (!companyId) return null;
   return prisma.rentalProject.findFirst({
-    where: { orgId, isActive: true },
+    where: { orgId, companyId, isActive: true },
     orderBy: { createdAt: "asc" },
   });
 }
 
-export async function listProjects(orgId: string) {
+export async function listProjects(orgId: string, companyId: string) {
+  if (!companyId) return [];
   return prisma.rentalProject.findMany({
-    where: { orgId, isActive: true },
+    where: { orgId, companyId, isActive: true },
     orderBy: { createdAt: "asc" },
   });
 }
 
-export async function getProject(orgId: string, projectId: string) {
-  return prisma.rentalProject.findFirst({ where: { id: projectId, orgId } });
+export async function getProject(orgId: string, companyId: string, projectId: string) {
+  if (!companyId) return null;
+  return prisma.rentalProject.findFirst({ where: { id: projectId, orgId, companyId } });
 }
 
 /** Units of a project with their active contract + tenant + outstanding bill state. */

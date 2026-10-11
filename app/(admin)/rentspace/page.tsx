@@ -3,6 +3,7 @@ import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
 import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { userIsModuleAdmin } from "@/lib/auth/module-access";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import {
   getPrimaryProject,
   listUnitsWithState,
@@ -60,10 +61,16 @@ function Step({
   );
 }
 
-export default async function RentSpaceOverview() {
+export default async function RentSpaceOverview({
+  searchParams,
+}: {
+  searchParams: Promise<{ company?: string }>;
+}) {
   const session = await requireSession();
   const orgId = session.user.org_id;
-  const project = await getPrimaryProject(orgId);
+  const sp = await searchParams;
+  const companyId = await resolveCompanyFilter(orgId, sp.company);
+  const project = await getPrimaryProject(orgId, companyId);
   // 2026-09-19: เดิม isSuperAdmin เท่านั้น — sibling matrix/page.tsx ("จัดลำดับห้อง")
   // เป็นฟีเจอร์ระดับเดียวกัน (แก้ผังโครงการ) แต่คอมโพสสิทธิ์ program_admin ไว้แล้ว
   // จุดนี้ตกหล่นไม่ได้อัปเดตตาม — แก้ให้ตรงกัน (แอดมินโปรแกรม RentSpace แก้ผังได้ด้วย)

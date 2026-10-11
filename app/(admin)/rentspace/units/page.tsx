@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
 import { isAdminTier } from "@/lib/auth/role-guards";
 import { userIsModuleAdmin } from "@/lib/auth/module-access";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import { getPrimaryProject, listUnitsWithState, listBuildingsWithUnits } from "@/lib/rentspace/data";
 import { formatBaht, tenantDisplayName, toNum, currentPeriod } from "@/lib/rentspace/format";
 import { promoStatus } from "@/lib/rentspace/billing";
@@ -11,13 +12,19 @@ import BuildingManager from "./_components/building-manager";
 
 export const dynamic = "force-dynamic";
 
-export default async function UnitsPage() {
+export default async function UnitsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ company?: string }>;
+}) {
   const session = await requireSession();
   const orgId = session.user.org_id;
+  const sp = await searchParams;
+  const companyId = await resolveCompanyFilter(orgId, sp.company);
   // แอดมินโปรแกรม RentSpace เห็นปุ่ม "จัดการอาคาร" ได้ด้วย (หลังบ้านอนุญาตอยู่แล้ว — ให้ UI ตรงกัน)
   const isAdmin =
     isAdminTier(session.user.role) || (await userIsModuleAdmin(session.user, "rentspace"));
-  const project = await getPrimaryProject(orgId);
+  const project = await getPrimaryProject(orgId, companyId);
 
   if (!project) {
     return (
