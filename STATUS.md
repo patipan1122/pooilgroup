@@ -16,6 +16,8 @@ Workshop item #5 — ปุ่ม "ย้ายไปที่..." ย้าย�
 
 **ยังไม่ทำ:** Phase 3 (โครงสร้างบริษัท/สาขาของ DocuFlow เอง + โฟลเดอร์ซ้อนชั้น) — งานใหญ่สุดจาก workshop เดิม รอคิวเป็นงานแยก
 
+เอกสารวิเคราะห์ 2 บั๊กมือถือเต็ม: [`postmortems/docuflow-detail-page-mobile-overflow-2026-10-11.md`](postmortems/docuflow-detail-page-mobile-overflow-2026-10-11.md)
+
 ## 🏬✅🚀 แยกข้อมูลบริษัท Phase 2 — RentSpace + แก้บั๊กปุ่มกดไม่ติดบนมือถือทั้งแอป (2026-10-11) — **DEPLOYED LIVE, build+typecheck ผ่าน 0 error**
 
 ต่อจาก Phase 1 (branches) — รอบนี้แก้จุดต้นตอจริงที่ CEO เห็นในสกรีนช็อตแรกสุด (RentSpace)
