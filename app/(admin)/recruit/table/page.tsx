@@ -28,6 +28,7 @@ import { thaiDateLong } from "@/lib/utils/format";
 import { ViewToggle } from "@/components/recruit/view-toggle";
 import { PostingSelect } from "@/components/recruit/posting-select";
 import { resolveCompanyFilter } from "@/lib/auth/company-context";
+import { postingCompanyScope, relatedPostingCompanyScope } from "@/lib/recruit/company-scope";
 import {
   ApplicationsTable,
   type TableRow,
@@ -152,8 +153,8 @@ export default async function RecruitTablePage({
     orgId,
     draft: false,
     ...(postingFilter ? { postingId: postingFilter } : {}),
-    // กรองตามบริษัทที่เลือกด้านบน (เป๊ะ) — ผู้สมัครของประกาศที่อยู่บริษัทนั้นเท่านั้น.
-    ...(companyFilter ? { posting: { companyId: companyFilter } } : {}),
+    // กรองตามบริษัทที่เลือกด้านบน — รวมประกาศที่ไม่ได้ผูกบริษัทไว้ (companyId NULL) ด้วยเสมอ.
+    ...relatedPostingCompanyScope(companyFilter),
     ...(genderFilter ? { applicant: { gender: genderFilter } } : {}),
     ...(highlightOnly ? { screeningVerdict: "INTERESTING" } : {}),
     ...ageIdFilter,
@@ -244,7 +245,7 @@ export default async function RecruitTablePage({
         where: {
           orgId,
           status: { in: ["OPEN", "CLOSED"] },
-          ...(companyFilter ? { companyId: companyFilter } : {}),
+          ...postingCompanyScope(companyFilter),
         },
         select: { id: true, title: true },
         orderBy: { createdAt: "desc" },

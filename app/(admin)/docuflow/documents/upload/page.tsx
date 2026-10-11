@@ -7,6 +7,7 @@
 import { Sparkles, FileText } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import { BUSINESS_TYPE_LIST } from "@/constants/business-types";
 import { listDocumentTypesForUpload } from "@/lib/docuflow/document-types";
 import { listDocumentGroups } from "@/lib/docuflow/document-groups";
@@ -25,14 +26,21 @@ import { requireModuleAdmin } from "@/lib/auth/module-access";
 export const dynamic = "force-dynamic";
 
 interface PageProps {
-  searchParams: Promise<{ businessType?: string }>;
+  searchParams: Promise<{ businessType?: string; company?: string }>;
 }
 
 export default async function DocumentUploadPage({ searchParams }: PageProps) {
   const session = await requireSession();
   await requireModuleAdmin(session.user, "docuflow");
   const orgId = session.user.org_id;
-  const { businessType } = await searchParams;
+  const { businessType, company } = await searchParams;
+
+  // Company-switcher scoping Phase 3 (2026-10-11) — resolve the currently
+  // selected company so (a) the "ประเภทเอกสาร" picker only shows types
+  // relevant to it (see listDocumentTypesForUpload companyId param) and
+  // (b) UploadForm can default the "เก็บไว้ที่ไหน" scope picker to it,
+  // same spirit as Phase 2's rentspace default-company-on-create fix.
+  const companyId = await resolveCompanyFilter(orgId, company);
 
   const [companies, branches, users, documentTypes, documentGroups, availableTags] =
     await Promise.all([
@@ -57,7 +65,7 @@ export default async function DocumentUploadPage({ searchParams }: PageProps) {
         select: { id: true, name: true, role: true },
         orderBy: { name: "asc" },
       }),
-      listDocumentTypesForUpload(orgId),
+      listDocumentTypesForUpload(orgId, companyId || undefined),
       listDocumentGroups(orgId),
       loadDocumentTags(orgId),
     ]);
@@ -216,6 +224,7 @@ export default async function DocumentUploadPage({ searchParams }: PageProps) {
               availableTags={availableTags}
               orgId={orgId}
               defaultBusinessType={businessType}
+              defaultCompanyId={companyId || undefined}
             />
           </DfCard>
         </div>

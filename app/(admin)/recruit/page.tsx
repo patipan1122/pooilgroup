@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { Section } from "@/components/ui/section";
 import { ApplicationsInbox } from "@/components/recruit/applications-inbox";
 import { resolveCompanyFilter } from "@/lib/auth/company-context";
+import { postingCompanyScope, relatedPostingCompanyScope } from "@/lib/recruit/company-scope";
 import {
   APPLICATION_STATUSES,
   type ApplicationStatus,
@@ -57,7 +58,7 @@ export default async function RecruitInboxPage({
       where: {
         orgId: session.user.org_id,
         draft: false,
-        ...(companyFilter ? { posting: { companyId: companyFilter } } : {}),
+        ...relatedPostingCompanyScope(companyFilter),
       },
       _count: { _all: true },
     }),
@@ -65,7 +66,7 @@ export default async function RecruitInboxPage({
       where: {
         orgId: session.user.org_id,
         status: { in: ["OPEN", "CLOSED"] },
-        ...(companyFilter ? { companyId: companyFilter } : {}),
+        ...postingCompanyScope(companyFilter),
       },
       select: { id: true, title: true },
       orderBy: { createdAt: "desc" },
@@ -74,7 +75,7 @@ export default async function RecruitInboxPage({
     prisma.recruitJobPosting.count({
       where: {
         orgId: session.user.org_id,
-        ...(companyFilter ? { companyId: companyFilter } : {}),
+        ...postingCompanyScope(companyFilter),
       },
     }),
     // ยอดทั้ง org (ไม่กรองบริษัท) — ใช้ตัดสินหน้า "ยินดีต้อนรับ" (โผล่เฉพาะตอน org ว่างจริง)

@@ -103,6 +103,15 @@ interface Props {
   orgId: string;
   /** Prefill from ?businessType=X (e.g. linked from the checklist page). */
   defaultBusinessType?: string;
+  /** Company-switcher scoping Phase 3 (2026-10-11) — the currently-selected
+   *  company (lib/auth/company-context.ts resolveCompanyFilter). Used as a
+   *  LAST-RESORT default for the "เก็บไว้ที่ไหน" scope picker below — only
+   *  applied when neither `defaultBusinessType` nor a remembered
+   *  localStorage choice already filled it in, so an explicit nav intent or
+   *  the uploader's own habit still wins. Reduces the chance of a document
+   *  landing company-ambiguous by accident (same spirit as Phase 2's
+   *  rentspace default-company-on-create fix). */
+  defaultCompanyId?: string;
 }
 
 type ScopeKind = "group" | "company" | "business_type" | "branch" | "person";
@@ -244,6 +253,7 @@ export function UploadForm({
   availableTags,
   orgId,
   defaultBusinessType,
+  defaultCompanyId,
 }: Props) {
   const router = useRouter();
   const [files, setFiles] = useState<File[]>([]);
@@ -572,10 +582,35 @@ export function UploadForm({
 
   // Mount-only: prefill from (1) ?businessType=X passed down from the
   // checklist page link, then (2) this browser's last-used choices for this
-  // org — both are DEFAULTS only, the user can still change everything
-  // before submitting. businessType (an explicit nav intent) wins over the
-  // remembered scope so it isn't silently overridden.
+  // org (filtered against the currently-selected company — see
+  // isScopeStillValidForCompany below), then (3) the currently-selected
+  // company (header switcher) as a last-resort fallback — all DEFAULTS
+  // only, the user can still change everything before submitting.
+  //
+  // Company-switcher scoping Phase 3 (2026-10-11), found via live testing:
+  // an EARLIER version of this effect let (2) unconditionally win over (3)
+  // — remembered scopes are plain localStorage, so they persist across a
+  // company switch. Repro: upload under Pool Oil, switch the header to JP
+  // Sync Group, upload again → the picker silently re-defaulted to "บริษัท
+  // Pool Oil" (the stale remembered scope) instead of JP Sync Group,
+  // exactly the wrong-company-by-accident bug this default exists to
+  // PREVENT. Fix: a remembered scope naming a specific company/branch that
+  // belongs to a DIFFERENT company than the one currently selected is
+  // treated as stale and dropped (falls through to (3) instead); group/
+  // business_type/person entries aren't company-exclusive so they're kept.
   useEffect(() => {
+    function isScopeStillValidForCompany(scope: Scope): boolean {
+      if (!defaultCompanyId) return true; // nothing to compare against
+      if (scope.kind === "company") return scope.refId === defaultCompanyId;
+      if (scope.kind === "branch") {
+        const branch = branches.find((b) => b.id === scope.refId);
+        return branch ? branch.companyId === defaultCompanyId : true;
+      }
+      return true; // group / business_type / person aren't company-exclusive
+    }
+
+    let scopeAlreadyDefaulted = false;
+
     if (defaultBusinessType) {
       const match = businessTypes.find((b) => b.value === defaultBusinessType);
       if (match) {
@@ -587,6 +622,7 @@ export function UploadForm({
             emoji: match.emoji ?? "📁",
           },
         ]);
+        scopeAlreadyDefaulted = true;
       }
     }
 
@@ -598,11 +634,33 @@ export function UploadForm({
           setValue("documentTypeId", saved.lastDocumentTypeId);
         }
         if (!defaultBusinessType && saved.lastScopes && saved.lastScopes.length > 0) {
-          setScopes(saved.lastScopes);
+          const stillValid = saved.lastScopes.filter(isScopeStillValidForCompany);
+          if (stillValid.length > 0) {
+            setScopes(stillValid);
+            scopeAlreadyDefaulted = true;
+          }
         }
       }
     } catch {
       // localStorage unavailable or corrupt JSON — ignore, just skip prefill
+    }
+
+    // Nothing stronger claimed the scope picker yet, so default it to
+    // whichever company the header switcher currently shows. Still just a
+    // default: removable via the "×" on the chip, replaceable with
+    // group/branch/business_type/person before submit.
+    if (!scopeAlreadyDefaulted && defaultCompanyId) {
+      const companyMatch = companies.find((c) => c.id === defaultCompanyId);
+      if (companyMatch) {
+        setScopes([
+          {
+            kind: "company",
+            refId: companyMatch.id,
+            label: `บริษัท ${companyMatch.name}`,
+            emoji: "🏢",
+          },
+        ]);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1315,6 +1373,7 @@ export function UploadForm({
         onClose={() => setQuickCreateOpen(false)}
         businessTypes={businessTypes}
         companies={companies}
+        defaultCompanyId={defaultCompanyId}
         onCreate={handleQuickCreateDocType}
       />
 
@@ -1675,12 +1734,17 @@ function QuickCreateDocTypeDialog({
   onClose,
   businessTypes,
   companies,
+  defaultCompanyId,
   onCreate,
 }: {
   open: boolean;
   onClose: () => void;
   businessTypes: BizType[];
   companies: Company[];
+  /** Company-switcher scoping Phase 3 (2026-10-11) — pre-selects "บริษัท"
+   *  to whichever company is currently selected, same default-not-mandate
+   *  spirit as the outer form's "เก็บไว้ที่ไหน" scope picker. */
+  defaultCompanyId?: string;
   onCreate: (input: {
     name: string;
     businessType: string;
@@ -1689,14 +1753,14 @@ function QuickCreateDocTypeDialog({
 }) {
   const [name, setName] = useState("");
   const [businessType, setBusinessType] = useState("");
-  const [companyId, setCompanyId] = useState("");
+  const [companyId, setCompanyId] = useState(defaultCompanyId ?? "");
   const [busy, setBusy] = useState(false);
 
   function handleClose() {
     if (busy) return;
     setName("");
     setBusinessType("");
-    setCompanyId("");
+    setCompanyId(defaultCompanyId ?? "");
     onClose();
   }
 
@@ -1710,7 +1774,7 @@ function QuickCreateDocTypeDialog({
       await onCreate({ name: name.trim(), businessType, companyId });
       setName("");
       setBusinessType("");
-      setCompanyId("");
+      setCompanyId(defaultCompanyId ?? "");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "สร้างประเภทเอกสารไม่สำเร็จ");
     } finally {

@@ -84,12 +84,19 @@ interface Props {
   initialDocumentTypes: DocumentTypeRow[];
   businessTypeOptions: BizTypeOption[];
   companyOptions: CompanyOption[];
+  /** Company-switcher scoping Phase 3 (2026-10-11) — the currently
+   *  selected company. `initialDocumentTypes` is already scoped to it
+   *  server-side (null-company + this company only); this is additionally
+   *  used to (a) default the create dialog's "บริษัท" field and (b) keep
+   *  `refetchAll()`'s client-side re-fetch in the same scope. */
+  defaultCompanyId?: string;
 }
 
 export function DocumentTypeManager({
   initialDocumentTypes,
   businessTypeOptions,
   companyOptions,
+  defaultCompanyId,
 }: Props) {
   const router = useRouter();
   const [rows, setRows] = useState<DocumentTypeRow[]>(initialDocumentTypes);
@@ -158,6 +165,10 @@ export function DocumentTypeManager({
 
   async function refetchAll() {
     try {
+      // Company-switcher scoping Phase 3 (2026-10-11) — the GET route reads
+      // the same company cookie this page's server render used, so this
+      // refetch stays in the same scope instead of silently widening back
+      // to "every company" after an import.
       const res = await fetch("/api/docuflow/document-types");
       if (!res.ok) return;
       const data = (await res.json()) as { documentTypes: DocumentTypeRow[] };
@@ -260,6 +271,7 @@ export function DocumentTypeManager({
         editing={editing}
         businessTypeOptions={businessTypeOptions}
         companyOptions={companyOptions}
+        defaultCompanyId={defaultCompanyId}
         onSaved={(row) => {
           upsertRow(row);
           setFormOpen(false);
@@ -402,6 +414,7 @@ function DocumentTypeFormDialog({
   editing,
   businessTypeOptions,
   companyOptions,
+  defaultCompanyId,
   onSaved,
 }: {
   open: boolean;
@@ -409,6 +422,11 @@ function DocumentTypeFormDialog({
   editing: DocumentTypeRow | null;
   businessTypeOptions: BizTypeOption[];
   companyOptions: CompanyOption[];
+  /** Company-switcher scoping Phase 3 (2026-10-11) — only used for a brand
+   *  new row (`editing === null`); editing an existing row always shows
+   *  ITS real companyId, never overridden by the currently-selected
+   *  company. */
+  defaultCompanyId?: string;
   onSaved: (row: DocumentTypeRow) => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -423,13 +441,13 @@ function DocumentTypeFormDialog({
       name: editing?.name ?? "",
       category: editing?.category ?? "",
       businessType: editing?.businessType ?? "",
-      companyId: editing?.companyId ?? "",
+      companyId: editing?.companyId ?? (editing === null ? defaultCompanyId ?? "" : ""),
       dangerLevel: editing?.dangerLevel ?? "",
       frequency: editing?.frequency ?? "",
       regulator: editing?.regulator ?? "",
       description: editing?.description ?? "",
     }),
-    [editing],
+    [editing, defaultCompanyId],
   );
 
   const {

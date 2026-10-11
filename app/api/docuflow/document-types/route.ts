@@ -16,6 +16,7 @@ import { audit } from "@/lib/audit/log";
 import { prisma } from "@/lib/prisma";
 import { zUUID } from "@/lib/zod-helpers";
 import { userCanAdminModule, userCanViewModule } from "@/lib/auth/module-access";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import {
   listAllDocumentTypesForAdmin,
   createDocumentType,
@@ -40,8 +41,17 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  // Company-switcher scoping Phase 3 (2026-10-11) — this route has no
+  // ?company= URL param to read (it's a client-side background refetch,
+  // not a page navigation), so it resolves from the cookie only. That's
+  // the same cookie the settings/document-types page itself just rendered
+  // with, so a refetch (e.g. right after an import) stays in the same
+  // company scope instead of silently widening back to "every company."
+  const companyId = await resolveCompanyFilter(session.user.org_id, undefined);
+
   const documentTypes = await listAllDocumentTypesForAdmin(
     session.user.org_id,
+    companyId || undefined,
   );
   return NextResponse.json({ documentTypes });
 }

@@ -94,6 +94,47 @@ export interface CanonicalRenewal {
 }
 
 /* ============================================================
+   buildCompanyVisibilityFilter — Company-switcher scoping Phase 3
+   (docuflow, 2026-10-11). See the `visibleToCompanyId` doc comment on
+   LoadDocumentsOpts above for the exact visibility rule. Exported so
+   lib/docuflow/tree.ts and any other consumer that needs the same
+   "is this doc visible under company C" logic doesn't have to re-derive
+   which business types/branches belong to C.
+   ============================================================ */
+
+export interface CompanyOwnershipOrClause {
+  level: string;
+  companyId?: string;
+  branchId?: { in: string[] };
+  businessType?: { in: string[] };
+}
+
+export async function buildCompanyVisibilityFilter(
+  orgId: string,
+  companyId: string,
+): Promise<{ OR: CompanyOwnershipOrClause[] }> {
+  const branchesInCompany = await prisma.branch.findMany({
+    where: { orgId, companyId, isActive: true },
+    select: { id: true, businessType: true },
+  });
+  const branchIds = branchesInCompany.map((b) => b.id);
+  const businessTypes = Array.from(
+    new Set(branchesInCompany.map((b) => String(b.businessType))),
+  );
+
+  const OR: CompanyOwnershipOrClause[] = [
+    { level: "group" },
+    { level: "person" },
+    { level: "company", companyId },
+  ];
+  if (branchIds.length > 0) OR.push({ level: "branch", branchId: { in: branchIds } });
+  if (businessTypes.length > 0) {
+    OR.push({ level: "business_type", businessType: { in: businessTypes } });
+  }
+  return { OR };
+}
+
+/* ============================================================
    loadDocuments — paginated document list with relations
    ============================================================ */
 
@@ -120,6 +161,32 @@ export interface LoadDocumentsOpts {
   cursor?: string;
   /** Page size (default 50, max 200) */
   limit?: number;
+  /**
+   * Company-switcher scoping Phase 3 (docuflow, 2026-10-11) — the DEFAULT
+   * visibility scope for "which company am I looking at", driven by
+   * lib/auth/company-context.ts's resolveCompanyFilter(). This is NOT the
+   * same thing as the `companyId` opt-in filter above (which is an exact
+   * match on `ownership.companyId`, used by a handful of existing deep
+   * links like branch-documents-section.tsx's "เอกสารจากบริษัท" card —
+   * left untouched for backward-compat).
+   *
+   * A document is visible under company C when ANY of its ownership rows
+   * satisfies:
+   *   - level = 'group'          → org-wide shared, always visible
+   *   - level = 'person'         → always visible. A person's company can't
+   *     be resolved reliably (User↔Branch is many-to-many via UserBranch —
+   *     e.g. a group-level auditor), so rather than risk hiding a real
+   *     document we treat person-level docs the same as group-level
+   *     (judgment call, see Phase 3 report — zero real documents use this
+   *     level today so there's no live behavior to regress).
+   *   - level = 'company' AND companyId = C
+   *   - level = 'branch' AND that branch's companyId = C
+   *   - level = 'business_type' AND C has at least one active branch of
+   *     that type — mirrors the existing per-company bucketing tree.ts
+   *     already does for the ตามบริษัท tree view (a doc tagged to e.g.
+   *     "fuel_station" shows under every company that runs fuel stations).
+   */
+  visibleToCompanyId?: string;
 }
 
 export async function loadDocuments(
@@ -138,6 +205,7 @@ export async function loadDocuments(
     search,
     cursor,
     limit = 50,
+    visibleToCompanyId,
   } = opts;
 
   const safeLimit = Math.min(Math.max(limit, 1), 200);
@@ -160,11 +228,29 @@ export async function loadDocuments(
         }
       : undefined;
 
+  const visibilityFilter = visibleToCompanyId
+    ? await buildCompanyVisibilityFilter(orgId, visibleToCompanyId)
+    : undefined;
+
+  // ownershipFilter (opt-in exact-match narrowing) and visibilityFilter
+  // (mandatory company-switcher scope) are two INDEPENDENT "does this doc
+  // have an ownership row matching X" conditions — they may be satisfied by
+  // different rows on the same multi-ownership document, so each needs its
+  // own `ownership: { some: ... } }` EXISTS check, combined with AND (a
+  // single object literal can't hold the `ownership` key twice).
+  const ownershipConditions: Array<Record<string, unknown>> = [];
+  if (ownershipFilter) {
+    ownershipConditions.push({ ownership: { some: ownershipFilter } });
+  }
+  if (visibilityFilter) {
+    ownershipConditions.push({ ownership: { some: visibilityFilter } });
+  }
+
   const docs = await prisma.document.findMany({
     where: {
       orgId,
       ...(isActive !== undefined ? { isActive } : {}),
-      ...(ownershipFilter ? { ownership: { some: ownershipFilter } } : {}),
+      ...(ownershipConditions.length > 0 ? { AND: ownershipConditions } : {}),
       ...(tag ? { tags: { some: { tag } } } : {}),
       ...(documentTypeId ? { documentTypeId } : {}),
       ...(search

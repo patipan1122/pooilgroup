@@ -21,6 +21,7 @@ import { CopyLinkButton } from "@/components/recruit/copy-link-button";
 import { ShareKitButton } from "@/components/recruit/share-kit-button";
 import { ApplicantShareButton } from "@/components/recruit/applicant-share-button";
 import { resolveCompanyFilter } from "@/lib/auth/company-context";
+import { postingCompanyScope } from "@/lib/recruit/company-scope";
 
 export const dynamic = "force-dynamic";
 
@@ -53,9 +54,12 @@ async function loadPostings(
     where: {
       orgId,
       ...(filter ? { status: filter } : {}),
-      // กรองตามบริษัทที่เลือกบน "ตัวสลับด้านบน" แบบเป๊ะ ๆ (companyId ตรงเท่านั้น).
-      // CEO 2026-10-10: ไม่มี "ทุกบริษัท" อีกแล้ว — resolveCompanyFilter คืนบริษัทจริงเสมอ.
-      ...(companyId ? { companyId } : {}),
+      // กรองตามบริษัทที่เลือกบน "ตัวสลับด้านบน" — CEO 2026-10-10: ไม่มี "ทุกบริษัท"
+      // อีกแล้ว, resolveCompanyFilter คืนบริษัทจริงเสมอ. แก้ 2026-10-11: ประกาศงาน
+      // ที่ไม่ได้ผูกบริษัทไว้ (companyId เป็น NULL โดยตั้งใจตั้งแต่ออกแบบ — มีจริง
+      // 32/52 รายการ) ต้องโชว์เสมอไม่ว่าจะเลือกบริษัทไหน ไม่ใช่กรองแบบตรงเป๊ะอย่างเดียว
+      // (ของเดิมกรองแบบตรงเป๊ะทำให้ 62% ของประกาศงานหายไปจากทุกมุมมอง).
+      ...postingCompanyScope(companyId ?? ""),
       ...(tag ? { tags: { has: tag } } : {}),
     },
     orderBy: { createdAt: "desc" },
