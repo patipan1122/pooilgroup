@@ -11,38 +11,16 @@ import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { requireRecruitAccess, canRecruitWrite } from "@/lib/recruit/role-guard";
 import { Section } from "@/components/ui/section";
-import { Badge } from "@/components/ui/badge";
 import {
   POSTING_STATUS_LABELS,
   type PostingStatus,
 } from "@/lib/recruit/types";
-import { Plus, FileQuestion, Link as LinkIcon, Copy, Flame, Tag } from "lucide-react";
-import { CopyLinkButton } from "@/components/recruit/copy-link-button";
-import { ShareKitButton } from "@/components/recruit/share-kit-button";
-import { ApplicantShareButton } from "@/components/recruit/applicant-share-button";
+import { Plus, FileQuestion, Tag } from "lucide-react";
+import { PostingsGrid } from "@/components/recruit/postings-grid";
 import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import { postingCompanyScope } from "@/lib/recruit/company-scope";
 
 export const dynamic = "force-dynamic";
-
-const STATUS_TONE: Record<PostingStatus, "neutral" | "brand" | "success" | "warning"> = {
-  DRAFT: "neutral",
-  OPEN: "success",
-  CLOSED: "warning",
-  ARCHIVED: "neutral",
-};
-
-const SOURCE_LABELS: Record<string, { label: string; color: string; bgClass: string; textClass: string }> = {
-  facebook: { label: "Facebook", color: "#1877f2", bgClass: "bg-blue-50", textClass: "text-blue-700" },
-  line: { label: "LINE", color: "#06c755", bgClass: "bg-green-50", textClass: "text-green-700" },
-  tiktok: { label: "TikTok", color: "#000000", bgClass: "bg-zinc-100", textClass: "text-zinc-900" },
-  qr: { label: "QR หน้าร้าน", color: "#f59e0b", bgClass: "bg-amber-50", textClass: "text-amber-700" },
-  instagram: { label: "Instagram", color: "#e4405f", bgClass: "bg-pink-50", textClass: "text-pink-700" },
-  jobsdb: { label: "JobsDB", color: "#dc2626", bgClass: "bg-red-50", textClass: "text-red-700" },
-  direct: { label: "เปิดตรง", color: "#71717a", bgClass: "bg-zinc-100", textClass: "text-zinc-700" },
-};
-
-type PostingWithStats = Awaited<ReturnType<typeof loadPostings>>[number];
 
 async function loadPostings(
   orgId: string,
@@ -87,13 +65,18 @@ async function loadPostings(
     };
     const sourceCounts = new Map<string, number>();
     let recentCount = 0;
+    let lastAppliedAt: Date | null = null;
     const day = 24 * 60 * 60 * 1000;
 
     for (const a of apps) {
       counts[a.status as keyof typeof counts]++;
       const src = (a.source ?? "direct").toLowerCase();
       sourceCounts.set(src, (sourceCounts.get(src) ?? 0) + 1);
-      if (a.submittedAt && now - new Date(a.submittedAt).getTime() < day) recentCount++;
+      if (a.submittedAt) {
+        const submitted = new Date(a.submittedAt);
+        if (now - submitted.getTime() < day) recentCount++;
+        if (!lastAppliedAt || submitted > lastAppliedAt) lastAppliedAt = submitted;
+      }
     }
 
     const opensAt = p.opensAt ?? p.createdAt;
@@ -110,6 +93,7 @@ async function loadPostings(
       counts,
       sources,
       recentCount,
+      lastAppliedAt,
       daysOpen,
       urgent,
     };
@@ -188,10 +172,11 @@ export default async function PostingsListPage({
           </Link>
         </div>
 
-        {/* Tag filter chips */}
+        {/* Group filter chips (field เดิมคือ tags — ใช้เป็น "กลุ่ม" ของ CEO) */}
         {allTags.length > 0 && (
           <div className="flex items-center gap-1.5 mb-5 flex-wrap">
             <Tag className="size-3.5 text-zinc-400" />
+            <span className="text-xs font-semibold text-zinc-500">กลุ่ม:</span>
             {allTags.map((t) => (
               <FilterChip
                 key={t}
@@ -206,209 +191,9 @@ export default async function PostingsListPage({
         {postings.length === 0 ? (
           <EmptyState filter={filter} canWrite={canWrite} />
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {postings.map((p) => (
-              <PostingCard key={p.id} posting={p} />
-            ))}
-          </div>
+          <PostingsGrid postings={postings} canWrite={canWrite} orgTags={allTags} />
         )}
       </Section>
-    </div>
-  );
-}
-
-function PostingCard({ posting }: { posting: PostingWithStats }) {
-  const { counts, sources, recentCount, daysOpen, urgent } = posting;
-  const apply = posting._count.applications;
-  const hasApps = apply > 0;
-  const settings =
-    posting.settings &&
-    typeof posting.settings === "object" &&
-    !Array.isArray(posting.settings)
-      ? (posting.settings as { coverImageUrl?: string; caption?: string })
-      : {};
-
-  return (
-    <div
-      className={`relative rounded-3xl border-2 bg-white p-5 transition-all group flex flex-col gap-3 hover:shadow-[0_4px_12px_rgba(15,23,42,0.06)] ${
-        urgent
-          ? "border-[#f5b800] bg-gradient-to-b from-[#fffbeb] to-white"
-          : "border-zinc-200 hover:border-[var(--color-brand-300)]"
-      }`}
-    >
-      {/* Header row */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2 flex-wrap">
-          <Badge tone={STATUS_TONE[posting.status as PostingStatus]}>
-            <span className="size-1.5 rounded-full bg-current opacity-70" />
-            {POSTING_STATUS_LABELS[posting.status as PostingStatus]}
-          </Badge>
-          {urgent && (
-            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">
-              <Flame className="size-3" />
-              เร่งด่วน
-            </span>
-          )}
-        </div>
-        {daysOpen > 0 && posting.status === "OPEN" && (
-          <span className="text-[11px] text-zinc-500">
-            เปิดมา <b className="text-zinc-700">{daysOpen}</b> วัน
-          </span>
-        )}
-      </div>
-
-      {/* Title + company */}
-      <Link href={`/recruit/postings/${posting.id}`} className="block group/title">
-        <h3 className="text-lg font-extrabold text-zinc-900 tracking-tight font-display group-hover/title:text-[var(--color-brand-700)]">
-          {posting.title}
-        </h3>
-        {posting.company && (
-          <p className="text-xs text-zinc-500 mt-1">
-            {posting.company.name}
-          </p>
-        )}
-      </Link>
-
-      {posting.tags.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {posting.tags.map((t) => (
-            <span
-              key={t}
-              className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded-md bg-zinc-100 text-zinc-600"
-            >
-              {t}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* Funnel mini bar */}
-      {hasApps ? (
-        <MiniFunnel
-          apply={apply}
-          screen={counts.SCREENING}
-          interview={counts.INTERVIEW}
-          offer={counts.OFFERED}
-          hired={counts.HIRED}
-        />
-      ) : (
-        <div className="py-3 text-center text-xs text-zinc-400 border-y border-dashed border-zinc-200">
-          ยังไม่มีใบสมัคร — กด &ldquo;แชร์&rdquo; ด้านล่างเพื่อรับใบสมัคร
-        </div>
-      )}
-
-      {/* Sources + new */}
-      {(sources.length > 0 || recentCount > 0) && (
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {sources.map((s) => {
-              const meta = SOURCE_LABELS[s.key] ?? SOURCE_LABELS.direct;
-              return (
-                <span
-                  key={s.key}
-                  className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md ${meta.bgClass} ${meta.textClass}`}
-                  title={`${meta.label} · ${s.count} ใบ`}
-                >
-                  <span
-                    className="size-1.5 rounded-full"
-                    style={{ background: meta.color }}
-                  />
-                  {meta.label}
-                  <b className="ml-0.5 tabular-num">{s.count}</b>
-                </span>
-              );
-            })}
-          </div>
-          {recentCount > 0 && (
-            <span className="text-[11px] font-bold text-red-700 bg-red-100 px-2 py-0.5 rounded-full">
-              ● {recentCount} ใหม่ 24h
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Share link + actions */}
-      <div className="mt-1 space-y-2">
-        <div className="flex items-center gap-2">
-          <div className="flex-1 min-w-0 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-zinc-300 bg-zinc-50 px-2.5 py-1.5 font-mono text-[11px] text-zinc-600">
-            <LinkIcon className="size-3 text-zinc-400 shrink-0" />
-            <span className="truncate">/apply/{posting.slug}</span>
-          </div>
-          <CopyLinkButton slug={posting.slug} />
-        </div>
-        <div className="flex items-center gap-2">
-          <ShareKitButton
-            postingId={posting.id}
-            slug={posting.slug}
-            title={posting.title}
-            companyName={posting.company?.name}
-            description={posting.description}
-            caption={settings.caption}
-            coverImageUrl={settings.coverImageUrl}
-          />
-          <ApplicantShareButton postingId={posting.id} />
-          <Link
-            href={`/recruit?posting=${posting.id}`}
-            className="flex-1 text-center text-xs h-9 px-3 inline-flex items-center justify-center rounded-lg bg-[var(--color-brand-50)] text-[var(--color-brand-700)] font-bold hover:bg-[var(--color-brand-100)] whitespace-nowrap"
-          >
-            ดู {apply} ใบ →
-          </Link>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MiniFunnel({
-  apply,
-  screen,
-  interview,
-  offer,
-  hired,
-}: {
-  apply: number;
-  screen: number;
-  interview: number;
-  offer: number;
-  hired: number;
-}) {
-  const total = Math.max(apply, 1);
-  // "new" bucket = apply minus those who moved on (rough viz)
-  const newBucket = Math.max(apply - screen - interview - offer - hired, 0);
-  return (
-    <div>
-      <div className="flex h-1.5 rounded-full overflow-hidden bg-zinc-100">
-        <div className="bg-green-500" style={{ width: `${(hired / total) * 100}%` }} />
-        <div className="bg-purple-500" style={{ width: `${(offer / total) * 100}%` }} />
-        <div className="bg-orange-500" style={{ width: `${(interview / total) * 100}%` }} />
-        <div className="bg-amber-400" style={{ width: `${(screen / total) * 100}%` }} />
-        <div
-          className="bg-[var(--color-brand-500)]"
-          style={{ width: `${(newBucket / total) * 100}%` }}
-        />
-      </div>
-      <div className="flex justify-between mt-2 text-[11px] text-zinc-600">
-        <span className="inline-flex items-center gap-1">
-          <span className="size-1.5 rounded-full bg-[var(--color-brand-500)]" />
-          <b className="text-zinc-900 tabular-num">{apply}</b> สมัคร
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <span className="size-1.5 rounded-full bg-amber-400" />
-          คัด <b className="tabular-num">{screen}</b>
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <span className="size-1.5 rounded-full bg-orange-500" />
-          สัมภาษณ์ <b className="tabular-num">{interview}</b>
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <span className="size-1.5 rounded-full bg-purple-500" />
-          เสนอ <b className="tabular-num">{offer}</b>
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <span className="size-1.5 rounded-full bg-green-500" />
-          รับ <b className="tabular-num text-green-700">{hired}</b>
-        </span>
-      </div>
     </div>
   );
 }
