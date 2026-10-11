@@ -57,6 +57,15 @@ next-env.d.ts
 # shared checkout (2026-08-23) — each is its own nested repo (own node_modules,
 # own .git), never meant to be tracked/committed from the main checkout.
 .claude/worktrees/
+# Same as above but the MODULE_GUIDE.md § 5 convention (worktree created INSIDE
+# the main checkout instead of the sibling ../worktrees/ layout) — found
+# untracked-but-not-ignored 2026-10-11, tripped the same pre-push clean-tree
+# gate the note above already warns about.
+/worktrees/
+
+# Claude Code harness-local state (skill cache etc.), never meant to be
+# tracked — found untracked-but-not-ignored alongside /worktrees/ above.
+/.agents/
 
 # One-off debug/investigation scripts + their output images/data (2026-10-03).
 # Never meant to be committed — was previously untracked-but-not-ignored, which
