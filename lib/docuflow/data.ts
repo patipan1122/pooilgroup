@@ -54,6 +54,17 @@ export interface CanonicalDocument {
   costAmount: number | null;
   costLabel: string | null;
   costFrequency: string | null;
+  /** Second, independent taxonomy — which DocumentGroup (folder) this document
+   *  currently sits in. Nullable — most documents are still ungrouped. Added
+   *  2026-10-11 (Workshop Must #5 "ย้ายไปที่...") so the move feature and any
+   *  list/detail view can show + change the current placement. */
+  documentGroupId: string | null;
+  documentGroup: CanonicalDocumentGroupRef | null;
+}
+
+export interface CanonicalDocumentGroupRef {
+  id: string;
+  name: string;
 }
 
 export interface CanonicalOwnership {
@@ -172,6 +183,7 @@ export async function loadDocuments(
         orderBy: { expiryDate: "asc" },
         take: 1,
       },
+      documentGroupRef: { select: { id: true, name: true } },
     },
     orderBy: { uploadedAt: "desc" },
     take: safeLimit,
@@ -204,6 +216,7 @@ export async function loadDocumentById(
         orderBy: { expiryDate: "asc" },
         take: 1,
       },
+      documentGroupRef: { select: { id: true, name: true } },
     },
   });
   if (!doc) return null;
@@ -236,6 +249,7 @@ export async function loadDocumentsSharedToBranch(
         orderBy: { expiryDate: "asc" },
         take: 1,
       },
+      documentGroupRef: { select: { id: true, name: true } },
     },
     orderBy: { uploadedAt: "desc" },
     take: safeLimit,
@@ -415,6 +429,8 @@ type DocumentWithRelations = {
   costAmount: DecimalLike;
   costLabel: string | null;
   costFrequency: string | null;
+  documentGroupId: string | null;
+  documentGroupRef: { id: string; name: string } | null;
 };
 
 function toCanonicalDocument(row: DocumentWithRelations): CanonicalDocument {
@@ -439,6 +455,10 @@ function toCanonicalDocument(row: DocumentWithRelations): CanonicalDocument {
     costFrequency: row.costFrequency,
     driveFileUrl: row.driveFileUrl,
     driveExportedAt: row.driveExportedAt,
+    documentGroupId: row.documentGroupId,
+    documentGroup: row.documentGroupRef
+      ? { id: row.documentGroupRef.id, name: row.documentGroupRef.name }
+      : null,
     ownership: row.ownership.map((o) => ({
       id: o.id,
       level: o.level,

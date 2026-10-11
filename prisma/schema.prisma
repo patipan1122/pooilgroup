@@ -56,6 +56,7 @@ model Organization {
   documentTypes                DocumentType[]
   documentGroups                DocumentGroup[]
   documentOwnerships            DocumentOwnership[]
+  documentGroupMoveLogs         DocumentGroupMoveLog[]
   documentTags                 DocumentTag[]
   documentRenewals             DocumentRenewal[]
   documentSharedBranches       DocumentSharedBranch[]
@@ -235,6 +236,7 @@ model User {
   responsibleRenewals       DocumentRenewal[]             @relation("RenewalResponsible")
   personDocuments           PersonDocument[]
   signaturePlacements       DocumentSignaturePlacement[]  @relation("SignaturePlacementSigner")
+  documentGroupMovesLogged  DocumentGroupMoveLog[]        @relation("DocumentGroupMoveLogMovedBy")
   // FuelOS Sprint 6
   // Recruit module
   recruitPostingsCreated    RecruitJobPosting[]           @relation("RecruitPostingCreator")
@@ -1070,6 +1072,7 @@ model Document {
   documentTypeRef     DocumentType?                @relation(fields: [documentTypeId], references: [id], onDelete: SetNull)
   documentGroupRef    DocumentGroup?               @relation(fields: [documentGroupId], references: [id], onDelete: SetNull)
   driveExportedBy     User?                        @relation("DocumentDriveExporter", fields: [driveExportedById], references: [id], onDelete: SetNull)
+  groupMoveLogs       DocumentGroupMoveLog[]
 
   @@index([orgId, isActive])
   @@index([orgId, uploadedAt])
@@ -1130,10 +1133,56 @@ model DocumentGroup {
 
   org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   documents Document[]
+  moveLogsFrom DocumentGroupMoveLog[] @relation("DocumentGroupMoveLogFrom")
+  moveLogsTo   DocumentGroupMoveLog[] @relation("DocumentGroupMoveLogTo")
 
   @@unique([orgId, name])
   @@index([orgId, isActive])
   @@map("document_groups")
+  @@schema("public")
+}
+
+// =============================================================
+// 22d. document_group_move_log — append-only audit trail for "ย้ายไปที่..."
+// (move a document between existing DocumentGroups). Workshop consensus,
+// Must #5, WORKSHOP_docuflow-org-structure 2026-10-10 Section 4. One row
+// per move, written in the same prisma.$transaction as the
+// Document.documentGroupId update below — never updated or deleted
+// afterwards (the history itself is the safety net staff rely on to
+// confirm nothing silently disappeared).
+//
+// NAMING NOTE: the workshop's own spec text says "UPDATE the DocumentOwnership
+// row where level='group'" — that description does not match the real schema.
+// DocumentOwnership.level is an ORG-HIERARCHY ownership scope (group = whole
+// Pooilgroup / company / business_type / branch / person — see LEVEL_LABEL in
+// documents/[id]/page.tsx and the "ระดับ" filter on documents/page.tsx), and is
+// completely unrelated to "DocumentGroup" the folder/taxonomy table. Verified
+// against every real read/write call site (lib/docuflow/data.ts,
+// upload-form.tsx, document-groups.ts, upload/route.ts) — a document's actual
+// group/folder placement lives in the plain nullable Document.documentGroupId
+// column, NOT in any DocumentOwnership row. This log tracks moves of THAT
+// field. Because it's a plain column (not a child table), there is also no
+// "row might not exist yet" case to defend with an upsert — null simply means
+// "not grouped yet," and setting it is an ordinary single-row update.
+// =============================================================
+model DocumentGroupMoveLog {
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  documentId    String   @map("document_id") @db.Uuid
+  fromGroupId   String?  @map("from_group_id") @db.Uuid
+  toGroupId     String   @map("to_group_id") @db.Uuid
+  movedByUserId String?  @map("moved_by_user_id") @db.Uuid
+  movedAt       DateTime @default(now()) @map("moved_at") @db.Timestamptz(6)
+
+  org         Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  document    Document       @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  fromGroup   DocumentGroup? @relation("DocumentGroupMoveLogFrom", fields: [fromGroupId], references: [id], onDelete: SetNull)
+  toGroup     DocumentGroup  @relation("DocumentGroupMoveLogTo", fields: [toGroupId], references: [id], onDelete: Restrict)
+  movedByUser User?          @relation("DocumentGroupMoveLogMovedBy", fields: [movedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, documentId])
+  @@index([toGroupId])
+  @@map("document_group_move_log")
   @@schema("public")
 }
 

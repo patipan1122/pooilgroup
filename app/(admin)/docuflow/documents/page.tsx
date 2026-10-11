@@ -34,6 +34,7 @@ import {
   type CanonicalDocument,
 } from "@/lib/docuflow/data";
 import { listDocumentTypes } from "@/lib/docuflow/document-types";
+import { listDocumentGroups } from "@/lib/docuflow/document-groups";
 import type { ExpiryStatus } from "@/lib/docuflow/expiry";
 import { buildDocumentTree } from "@/lib/docuflow/tree";
 import { DocumentCard } from "@/components/docuflow/document-card";
@@ -137,7 +138,7 @@ export default async function DocumentsListPage({
   const filterDocumentTypeId = sp.documentTypeId || "";
   const sharedOnly = sp.shared === "1";
 
-  const [docs, allTags, docTypes, tree, companies] = await Promise.all([
+  const [docs, allTags, docTypes, tree, companies, documentGroups] = await Promise.all([
     sharedOnly && filterBranchId
       ? loadDocumentsSharedToBranch(orgId, filterBranchId, { limit: 200 })
       : loadDocuments(orgId, {
@@ -159,6 +160,7 @@ export default async function DocumentsListPage({
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
+    listDocumentGroups(orgId),
   ]);
 
   const preserve: Record<string, string> = {};
@@ -522,7 +524,12 @@ export default async function DocumentsListPage({
                 }}
               >
                 {docs.map((d: CanonicalDocument) => (
-                  <DocumentCard key={d.id} doc={d} />
+                  <DocumentCard
+                    key={d.id}
+                    doc={d}
+                    groups={documentGroups}
+                    canMove={adminTier}
+                  />
                 ))}
               </div>
             )}

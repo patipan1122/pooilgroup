@@ -67,6 +67,13 @@ export type AuditAction =
   | "DOCUFLOW_DOCGROUP_CREATE"
   | "DOCUFLOW_DOCGROUP_UPDATE"
   | "DOCUFLOW_DOCGROUP_DELETE"
+  // "ย้ายไปที่..." — move a document to a different DocumentGroup (Workshop
+  // Must #5, 2026-10-10). Primary record of the move is the dedicated
+  // document_group_move_log table (append-only, written in the same
+  // transaction as the Document.documentGroupId update); this generic audit
+  // entry is added alongside it only for consistency with every other
+  // DocuFlow admin mutation, which all call audit() too.
+  | "DOCUFLOW_DOCUMENT_GROUP_MOVED"
   // Google Drive export (DocuFlow redesign Track B Item 11) — opt-in,
   // admin-triggered one-way snapshot to the org's existing ChairOps Drive
   // connection. Re-export (overwriting the tracked file-id) reuses the

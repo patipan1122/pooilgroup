@@ -17,15 +17,18 @@ import {
   Eye,
   Clock,
   Tag,
+  Folder,
 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { userIsModuleAdmin, requireModuleView } from "@/lib/auth/module-access";
 import { loadDocumentById } from "@/lib/docuflow/data";
 import { getSignedDownloadUrl } from "@/lib/docuflow/r2";
+import { listDocumentGroups } from "@/lib/docuflow/document-groups";
 import { prisma } from "@/lib/prisma";
 import { BUSINESS_TYPES } from "@/constants/business-types";
 import { BackButton } from "@/components/ui/back-button";
 import { DeleteDocumentButton } from "@/components/docuflow/delete-document-button";
+import { MoveDocumentButton } from "@/components/docuflow/move-document-button";
 import { DriveExportButton } from "@/components/docuflow/drive-export-button";
 import { DocumentCostEditor } from "@/components/docuflow/document-cost-editor";
 import { RiskAnalysisPanel } from "@/components/docuflow/risk-analysis-panel";
@@ -119,7 +122,7 @@ export default async function DocumentDetailPage({
   const isPdf = doc.mimeType === "application/pdf";
   const isImage = doc.mimeType?.startsWith("image/") ?? false;
 
-  const [placementTotal, placementSigned, signerRows, auditRows] =
+  const [placementTotal, placementSigned, signerRows, auditRows, documentGroups] =
     await Promise.all([
       prisma.documentSignaturePlacement.count({
         where: { orgId, documentId: id },
@@ -142,6 +145,7 @@ export default async function DocumentDetailPage({
         take: 20,
         include: { user: { select: { name: true } } },
       }),
+      listDocumentGroups(orgId),
     ]);
   const allSigned = placementTotal > 0 && placementSigned === placementTotal;
 
@@ -480,6 +484,46 @@ export default async function DocumentDetailPage({
             </DfCard>
           )}
 
+          {/* "ย้ายไปที่..." — Workshop Must #5, 2026-10-10. Group/folder
+              placement is Document.documentGroupId, NOT part of the
+              ownership/"รายละเอียด" block below (that's the unrelated
+              org-hierarchy ownership scope) — a dedicated card like Tags/
+              Drive/Cost get their own below. */}
+          <DfCard padding={18}>
+            <DfEyebrow>
+              <Folder size={11} style={{ display: "inline-block", marginRight: 4 }} />
+              กลุ่มเอกสาร
+            </DfEyebrow>
+            <div
+              style={{
+                marginTop: 12,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+                flexWrap: "wrap",
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: doc.documentGroup ? "var(--df-ink)" : "var(--df-muted)",
+                }}
+              >
+                {doc.documentGroup?.name ?? "ยังไม่ได้จัดกลุ่ม"}
+              </span>
+              {adminTier && (
+                <MoveDocumentButton
+                  documentId={doc.id}
+                  currentGroupId={doc.documentGroupId}
+                  currentGroupName={doc.documentGroup?.name ?? null}
+                  groups={documentGroups}
+                />
+              )}
+            </div>
+          </DfCard>
+
           <DfCard padding={18}>
             <DfEyebrow>รายละเอียด</DfEyebrow>
             <div
@@ -586,7 +630,17 @@ export default async function DocumentDetailPage({
 
       <style>{`
         @media (max-width: 1100px) {
-          .df-grid-2col { grid-template-columns: 1fr !important; }
+          /* Pre-existing bug found while testing the new "ย้ายไปที่..."
+             group card on a real 390px mobile viewport (2026-10-11): bare
+             "1fr" has an implicit min-width of auto/max-content, so a wide
+             child (ViewerTabs' .df-seg tab row) stretches this WHOLE column
+             past the viewport — pushing every card's right edge (including
+             buttons) off-screen, not just this new one. The desktop
+             grid-template-columns two lines up already uses
+             "minmax(0, 1fr)" for the exact same reason; this override just
+             dropped it. minmax(0, 1fr) lets the track shrink to the
+             viewport instead of growing to fit its widest child. */
+          .df-grid-2col { grid-template-columns: minmax(0, 1fr) !important; }
         }
       `}</style>
     </div>
