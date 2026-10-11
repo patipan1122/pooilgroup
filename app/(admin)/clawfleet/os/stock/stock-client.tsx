@@ -46,10 +46,8 @@ export type BranchOption = { id: string; name: string };
 export type ProductOption = { id: string; name: string; unitCostCents: number };
 
 /* ── เอกสารจริงสำหรับ 3 แท็บใหม่ + การกระจาย + ยอดคลังกลางจริง (จาก page.tsx) ── */
-export type DocReceiptSeed = {
-  id: string; code: string; supplier: string | null;
-  itemsCount: number; totalCostCents: number; createdAt: string;
-};
+// (DocReceiptSeed ถูกถอดออก item 4 2026-10-11 — แท็บ "รับของ" เปลี่ยนไปใช้ CfReceiptDoc จาก
+//  getAllReceiptDocs scope สาขาเดียวแทน getCfReceipts เดิม เพื่อให้เห็นใบ "รอรับ" ด้วย ดู ReceiptsTab)
 export type DocCountSeed = {
   id: string; code: string; countedBy: string | null;
   itemsCounted: number; totalDiff: number; countedAt: string;
@@ -204,7 +202,8 @@ export function StockClient({
   branches: BranchStockSeed[];
   realBranches: BranchOption[];
   products: ProductOption[];
-  receiptDocs: DocReceiptSeed[];
+  // item 4 (2026-10-11): scope สาขาเดียว (getAllReceiptDocs([branchId])) — received + รอรับ ของสาขานี้
+  receiptDocs: CfReceiptDoc[];
   countDocs: DocCountSeed[];
   lossDocs: DocLossSeed[];
   warehouseRows: WarehouseRowSeed[];
@@ -224,6 +223,12 @@ export function StockClient({
 }) {
   const router = useRouter();
   const empty = branches.length === 0;
+  // item 2 (2026-10-11): สลับสาขา = router.push เต็มรูปแบบ ไหลผ่าน server fetch 7 ชั้นใน page.tsx
+  // ไม่มีการตอบสนองใด ๆ ระหว่างรอ (ก่อนหน้านี้) → รู้สึกเหมือนกดไม่ติด · ห่อด้วย transition โชว์สปินเนอร์ชัด ๆ ข้าง select
+  const [branchSwitching, startBranchSwitch] = useTransition();
+  function switchBranch(nextBranchId: string) {
+    startBranchSwitch(() => { router.push(`/clawfleet/os/stock?branch=${encodeURIComponent(nextBranchId)}`); });
+  }
 
   // map seed → BranchRow (ข้อมูลจริงล้วน · ไม่มี sample proxy แล้ว)
   // ⚠️ outDay/salesDay/daysLeft = "ค่าประมาณ" (heuristic จาก dolls × อัตราเฉลี่ย) ยังไม่ใช่ velocity จริง
@@ -275,11 +280,17 @@ export function StockClient({
           aria-label="เลือกสาขาที่จะดู"
           title="สลับสาขา — สต๊อก/รับของ/นับ/ใบรับ จะเปลี่ยนตามสาขานี้ทั้งหมด"
           value={docBranchId}
-          onChange={(e) => router.push(`/clawfleet/os/stock?branch=${encodeURIComponent(e.target.value)}`)}
-          style={{ ...FIELD_INPUT, width: "auto", minWidth: 200, padding: "8px 12px", fontWeight: 700, cursor: "pointer" }}
+          onChange={(e) => switchBranch(e.target.value)}
+          disabled={branchSwitching}
+          style={{ ...FIELD_INPUT, width: "auto", minWidth: 200, padding: "8px 12px", fontWeight: 700, cursor: branchSwitching ? "wait" : "pointer", opacity: branchSwitching ? 0.65 : 1 }}
         >
           {realBranches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
         </select>
+        {branchSwitching && (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600, color: "#4F46E5" }}>
+            <Loader2 size={14} className="animate-spin" /> กำลังโหลด…
+          </span>
+        )}
         <span style={{ flex: 1 }} />
         {realBranches.length > 1 && (
           <button
@@ -416,6 +427,10 @@ function OverviewTab({
   const [stockQuery, setStockQuery] = useState("");
   const [stockCat, setStockCat] = useState<string>("all");
   const [stockLowOnly, setStockLowOnly] = useState(false);
+  // item 3 (2026-10-11): เฉพาะบนชั้น/เฉพาะในตู้ — ซ้อนทับ (ไม่แทนที่) กฎซ่อนยอดรวม=0 เดิมที่ `warehouse` ทำไว้แล้ว
+  const [stockLoc, setStockLoc] = useState<"all" | "shelf" | "machine">("all");
+  // "รับเข้าล่าสุด" — ฟิลด์วันที่ต่อเนื่อง จึงใช้วิธีเรียง (sort) แทนกรองช่วงวันที่ตายตัว
+  const [sortRecent, setSortRecent] = useState(false);
 
   // ── ใบรับต่อสาขา (received + รอรับ) จาก receiptAllDocs · match ด้วย branchId ──
   //   ใช้ทั้งชิป "ค้างรับ" หน้าแถว + รายละเอียดในแผงกาง (CEO pinpoint #2/#4/#6)
@@ -500,17 +515,29 @@ function OverviewTab({
     return Array.from(set).sort((a, b) => a.localeCompare(b, "th"));
   }, [warehouse]);
 
-  // ค้นหาชื่อสินค้า (partial, case-insensitive) + กรองหมวด + toggle "ใกล้หมด"
+  // ค้นหาชื่อสินค้า (partial, case-insensitive) + กรองหมวด + toggle "ใกล้หมด" + บนชั้น/ในตู้ + เรียงรับเข้าล่าสุด
   //   เกณฑ์ "ใกล้หมด" ใช้ตัวเดียวกับ badge ของแถว (net <= 20 และไม่ติดลบ) — ไม่คิดเกณฑ์ใหม่
+  //   stockLoc ซ้อนทับกฎ "here.qty <= 0 ซ่อน" ของ `warehouse` ด้านบน (ยังทำงานอยู่เสมอ) — ตัวนี้กรองเพิ่มเฉพาะ
+  //   "บนชั้น=0" (เลือกเฉพาะในตู้) หรือ "ในตู้=0" (เลือกเฉพาะบนชั้น) เท่านั้น ไม่ได้แทนที่กฎเดิม
   const warehouseFiltered = useMemo(() => {
     const q = stockQuery.trim().toLowerCase();
-    return warehouse.filter((w) => {
+    const rows = warehouse.filter((w) => {
       if (q && !w.name.toLowerCase().includes(q)) return false;
       if (stockCat !== "all" && w.cat !== stockCat) return false;
       if (stockLowOnly && !(w.net <= 20 && w.net >= 0)) return false;
+      if (stockLoc === "machine" && w.inMachines <= 0) return false;
+      if (stockLoc === "shelf" && w.net <= 0) return false;
       return true;
     });
-  }, [warehouse, stockQuery, stockCat, stockLowOnly]);
+    if (!sortRecent) return rows;
+    // ล่าสุดก่อน (desc) · ไม่มีวันที่รับ (recvISO ว่าง) → ไปท้ายสุดเสมอ ไม่ปนกับของที่มีวันที่จริง
+    return [...rows].sort((a, b) => {
+      if (!a.recvISO && !b.recvISO) return 0;
+      if (!a.recvISO) return 1;
+      if (!b.recvISO) return -1;
+      return new Date(b.recvISO).getTime() - new Date(a.recvISO).getTime();
+    });
+  }, [warehouse, stockQuery, stockCat, stockLowOnly, stockLoc, sortRecent]);
 
   // Pinpoint #6: per-SKU breakdown ของสาขาที่ "กางแถวดูอยู่ตอนนี้" (open) — ไม่ใช่สาขาที่ scoped
   //   reuse วิธีกรองเดียวกับ `warehouse` ด้านบน (w.dist มีของทุกสาขาอยู่แล้วจาก server · ไม่ต้องยิง query ใหม่)
@@ -874,6 +901,30 @@ function OverviewTab({
                 ))}
               </select>
             )}
+            {/* item 3 (2026-10-11): เฉพาะบนชั้น/เฉพาะในตู้ — 3-way chip (mirror ลายเส้น filter chips ของแท็บ "การกระจาย") */}
+            <div style={{ display: "inline-flex", gap: 4, background: "#F1F2F7", borderRadius: 10, padding: 3, flex: "0 0 auto" }}>
+              {([
+                { k: "all" as const, label: "ทั้งหมด" },
+                { k: "shelf" as const, label: "เฉพาะบนชั้น" },
+                { k: "machine" as const, label: "เฉพาะในตู้" },
+              ]).map((o) => {
+                const active = stockLoc === o.k;
+                return (
+                  <button
+                    key={o.k}
+                    type="button"
+                    onClick={() => setStockLoc(o.k)}
+                    aria-pressed={active}
+                    style={{
+                      border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 600, padding: "6px 11px", borderRadius: 8,
+                      background: active ? "#4F46E5" : "transparent", color: active ? "#fff" : "#5A6270", transition: "all .15s",
+                    }}
+                  >
+                    {o.label}
+                  </button>
+                );
+              })}
+            </div>
             <button
               type="button"
               onClick={() => setStockLowOnly((v) => !v)}
@@ -888,85 +939,62 @@ function OverviewTab({
             >
               {stockLowOnly ? "✓ " : ""}ใกล้หมดเท่านั้น
             </button>
-            {(stockQuery.trim() !== "" || stockCat !== "all" || stockLowOnly) && (
+            {/* item 3 (2026-10-11): "รับเข้าล่าสุด" เป็นฟิลด์วันที่ต่อเนื่อง → ใช้ปุ่มเรียง ไม่ใช่ตัวกรองช่วงวันที่ */}
+            <button
+              type="button"
+              onClick={() => setSortRecent((v) => !v)}
+              aria-pressed={sortRecent}
+              title="เรียงสินค้าตามวันที่รับเข้าคลังล่าสุด (ใหม่สุดขึ้นก่อน)"
+              style={{
+                flex: "0 0 auto", fontSize: 12, fontWeight: 600, padding: "9px 14px", borderRadius: 10,
+                border: sortRecent ? "1px solid #C7CBFB" : "1px solid #E3E6EA",
+                background: sortRecent ? "#EEF0FE" : "#fff",
+                color: sortRecent ? "#4F46E5" : "#5A6270",
+                cursor: "pointer",
+              }}
+            >
+              {sortRecent ? "✓ " : ""}เรียงตามรับเข้าล่าสุด
+            </button>
+            {(stockQuery.trim() !== "" || stockCat !== "all" || stockLowOnly || stockLoc !== "all") && (
               <span style={{ fontSize: 11.5, color: "#9AA1AB" }}>
                 พบ {num(warehouseFiltered.length)} จาก {num(warehouse.length)} รายการ
               </span>
             )}
           </div>
         )}
-        <div style={{ overflowX: "auto" }}>
-          <div style={{ minWidth: 560 }}>
-            {/* หมายเหตุ: "บนชั้น/ในตู้" ย้ายไปอยู่ใต้ชื่อสินค้าใน col "สินค้า" แทนที่จะเป็น col แยก —
-                เพื่อให้เห็นค่าทั้งสองได้เสมอ "โดยไม่ต้องเลื่อนจอแนวนอน" บนมือถือ 390px (คอลัมน์ที่เหลือ
-                ยังเลื่อนดูได้ปกติ แต่ตัวเลขสต็อกที่ CEO อยากเห็นชัดสุด ต้องไม่หายไปอยู่นอกจอ) */}
-            <div style={{ display: "grid", gridTemplateColumns: "2fr 0.85fr 0.95fr 0.75fr 0.9fr", padding: "10px 20px", ...TH_ITEM, borderBottom: "1px solid #F4F5F7" }}>
-              <span>สินค้า</span><span>หมวด</span><span style={{ textAlign: "right" }}>รับเข้าล่าสุด</span><span style={{ textAlign: "right" }}>รับมาแล้ว (วัน)</span><span style={{ textAlign: "right" }}>สถานะอายุ</span>
+        <div style={{ padding: "16px 20px" }}>
+          {warehouse.length === 0 ? (
+            <EmptyState
+              icon={<Warehouse size={26} />}
+              title={scoped ? `ยังไม่มีสินค้าในคลังสาขา${viewBranchName}` : "ยังไม่มีสินค้าในคลัง"}
+              sub={scoped ? "ลองเลือก “ทุกคลัง” หรือรับสินค้าเข้าสาขานี้ก่อน" : "รับสินค้าเข้าคลังที่แท็บ “รับของ” แล้วรายการสินค้าจะขึ้นที่นี่"}
+            />
+          ) : warehouseFiltered.length === 0 ? (
+            <>
+              <EmptyState
+                icon={<Warehouse size={26} />}
+                title="ไม่พบสินค้าที่ตรงกับคำค้นหา/ตัวกรอง"
+                sub="ลองแก้คำค้นหา หรือกด “ล้างตัวกรอง” เพื่อดูสินค้าทั้งหมดอีกครั้ง"
+              />
+              <div style={{ textAlign: "center", marginTop: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => { setStockQuery(""); setStockCat("all"); setStockLowOnly(false); setStockLoc("all"); }}
+                  style={{ fontSize: 12.5, fontWeight: 600, color: "#4F46E5", background: "none", border: "none", cursor: "pointer", padding: "6px 10px" }}
+                >
+                  ล้างตัวกรอง
+                </button>
+              </div>
+            </>
+          ) : (
+            /* item 3 (2026-10-11): ตารางเดิม "ยาวเฟื้อย อ่านยากบนจอใหญ่" (CEO) → การ์ดสินค้าต่อชิ้นแทน
+               (mirror การ์ด SKU แบบย่อในแถวกางของภาพรวมด้านบน แต่ให้พื้นที่หายใจมากกว่า ตาม RULE L) */
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(270px, 1fr))", gap: 14 }}>
+              {warehouseFiltered.map((w) => (
+                <WarehouseCard key={w.id} w={w} onOpen={() => setWhItem(w)} onZoom={(url) => setLightbox({ url, name: w.name })} />
+              ))}
             </div>
-            {warehouse.length === 0 ? (
-              <div style={{ padding: "10px 4px" }}>
-                <EmptyState
-                  icon={<Warehouse size={26} />}
-                  title={scoped ? `ยังไม่มีสินค้าในคลังสาขา${viewBranchName}` : "ยังไม่มีสินค้าในคลัง"}
-                  sub={scoped ? "ลองเลือก “ทุกคลัง” หรือรับสินค้าเข้าสาขานี้ก่อน" : "รับสินค้าเข้าคลังที่แท็บ “รับของ” แล้วรายการสินค้าจะขึ้นที่นี่"}
-                />
-              </div>
-            ) : warehouseFiltered.length === 0 ? (
-              <div style={{ padding: "10px 4px" }}>
-                <EmptyState
-                  icon={<Warehouse size={26} />}
-                  title="ไม่พบสินค้าที่ตรงกับคำค้นหา/ตัวกรอง"
-                  sub="ลองแก้คำค้นหา หรือกด “ล้างตัวกรอง” เพื่อดูสินค้าทั้งหมดอีกครั้ง"
-                />
-                <div style={{ textAlign: "center", marginTop: 10 }}>
-                  <button
-                    type="button"
-                    onClick={() => { setStockQuery(""); setStockCat("all"); setStockLowOnly(false); }}
-                    style={{ fontSize: 12.5, fontWeight: 600, color: "#4F46E5", background: "none", border: "none", cursor: "pointer", padding: "6px 10px" }}
-                  >
-                    ล้างตัวกรอง
-                  </button>
-                </div>
-              </div>
-            ) : warehouseFiltered.map((w) => {
-              const t = AGE_TONE[w.tag];
-              // "ใกล้หมด" คิดจาก net (บนชั้น) — ของที่หยิบมาโหลดตู้ได้จริง ไม่ใช่ gross ที่รวมของในตู้ไปแล้ว
-              const low = w.net <= 20;
-              const neg = w.net < 0; // ข้อมูล drift → net ติดลบ (โชว์ตามจริง เตือนด้วยสี ไม่ clamp)
-              return (
-                <div key={w.id} className="co-rowlink" onClick={() => setWhItem(w)} style={{ display: "grid", gridTemplateColumns: "2fr 0.85fr 0.95fr 0.75fr 0.9fr", padding: "13px 20px", alignItems: "center", borderBottom: "1px solid #F4F5F7", fontSize: 13, cursor: "pointer" }}>
-                  <span style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
-                    <span style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
-                      {/* รูปสินค้าย่อ · กดขยายดูได้ (ไม่เปิด modal SKU) · CEO pinpoint #5 */}
-                      <ProductThumbZoom url={w.imageUrl} name={w.name} onZoom={(url) => setLightbox({ url, name: w.name })} />
-                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{w.name}</span>
-                      {low && !neg && <span style={{ flex: "0 0 auto", fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "#FCEDEC", color: "#B42318" }}>ใกล้หมด</span>}
-                    </span>
-                    {/* บนชั้น (พร้อมโหลด) และในตู้ = สองค่าแยกกันเท่ากันเสมอ ไม่ว่าค่าไหนจะเป็น 0 — CEO 2026-10-11:
-                        "แยกสต็อคที่อยู่ในสต็อคกับสต็อคที่อยู่ในตู้แยกกัน อย่าปน" · วางใต้ชื่อสินค้า (คอลัมน์แรก)
-                        แทนที่จะเป็นคอลัมน์แยกทางขวา เพื่อให้ไม่หลุดจอตอนเลื่อนแนวนอนบนมือถือ 390px
-                        (reuse pattern ตัวเลขหนา+label จาง จาก openBranchSkuRows ด้านบน) */}
-                    <span style={{ display: "flex", gap: 14, paddingLeft: 41 }}>
-                      <span style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                        <span className="num" style={{ fontSize: 13, fontWeight: 700, color: neg ? "#B42318" : low ? "#B45309" : "#1A1D21" }}>{num(w.net)}</span>
-                        <span style={{ fontSize: 10.5, color: "#9AA1AB", fontWeight: 600 }}>บนชั้น</span>
-                      </span>
-                      <span style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                        <span className="num" style={{ fontSize: 13, fontWeight: 700, color: "#1A1D21" }}>{num(w.inMachines)}</span>
-                        <span style={{ fontSize: 10.5, color: "#9AA1AB", fontWeight: 600 }}>ในตู้</span>
-                      </span>
-                    </span>
-                  </span>
-                  <span style={{ color: "#6B7280", fontSize: 12 }}>{w.cat}</span>
-                  <span className="num" style={{ textAlign: "right", fontSize: 12, color: "#6B7280" }}>{w.recvISO ? fmtDate(w.recvISO) : "—"}</span>
-                  <span className="num" style={{ textAlign: "right", fontSize: 12, color: "#6B7280" }}>{w.recvISO ? `${w.ageDays} วัน` : "—"}</span>
-                  <span style={{ textAlign: "right" }}>
-                    <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 20, background: t.bg, color: t.color }}>{w.tag}</span>
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+          )}
         </div>
       </Card>
 
@@ -1014,8 +1042,8 @@ function OverviewTab({
 
 /* ───────────────────────── รูปสินค้าย่อ + กดขยาย (lightbox) · CEO pinpoint #5 ─────────────────────────
    ย่อ 34px ในตาราง (แน่น · RULE L) · null = placeholder · กด = เปิดรูปเต็มจอ (stopPropagation กัน modal SKU) */
-function ProductThumbZoom({ url, name, onZoom }: { url: string | null; name: string; onZoom: (u: string) => void }) {
-  const box: React.CSSProperties = { width: 34, height: 34, borderRadius: 8, flex: "0 0 34px", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", background: "#EEF0F3" };
+function ProductThumbZoom({ url, name, onZoom, size = 34 }: { url: string | null; name: string; onZoom: (u: string) => void; size?: number }) {
+  const box: React.CSSProperties = { width: size, height: size, borderRadius: 8, flex: `0 0 ${size}px`, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", background: "#EEF0F3" };
   if (!url) return <span style={{ ...box, color: "#C2C7CF" }}><ImageOff size={15} /></span>;
   return (
     <button
@@ -1028,6 +1056,56 @@ function ProductThumbZoom({ url, name, onZoom }: { url: string | null; name: str
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={url} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
     </button>
+  );
+}
+
+/* item 3 (2026-10-11): การ์ดสินค้าคงคลัง 1 ชิ้น — แทนแถวตารางเดิมที่ CEO บอกว่า "ยาวเฟื้อย อ่านยากบนจอใหญ่"
+   โครง: รูป+ชื่อ+หมวด → บนชั้น/ในตู้ (แยกกันชัด ไม่ปน — กฎเดิม) → รับเข้า/สถานะอายุ
+   ใช้ className co-lift + co-tap (ลายเส้นการ์ดกดได้ที่มีอยู่แล้วในโมดูลนี้ — ไม่คิดอินเทอร์แอกชันใหม่) */
+function WarehouseCard({ w, onOpen, onZoom }: { w: WarehouseItem; onOpen: () => void; onZoom: (url: string) => void }) {
+  const t = AGE_TONE[w.tag];
+  // "ใกล้หมด" คิดจาก net (บนชั้น) — ของที่หยิบมาโหลดตู้ได้จริง ไม่ใช่ gross ที่รวมของในตู้ไปแล้ว (เกณฑ์เดิม ไม่เปลี่ยน)
+  const low = w.net <= 20;
+  const neg = w.net < 0; // ข้อมูล drift → net ติดลบ (โชว์ตามจริง เตือนด้วยสี ไม่ clamp)
+  return (
+    <div
+      className="co-lift co-tap"
+      onClick={onOpen}
+      title="กดดูรายละเอียดสินค้า — กระจายอยู่สาขาไหนบ้าง"
+      style={{ display: "flex", flexDirection: "column", gap: 11, background: "#fff", border: "1px solid #E8EAED", borderRadius: 13, padding: 14, cursor: "pointer" }}
+    >
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+        <ProductThumbZoom url={w.imageUrl} name={w.name} onZoom={onZoom} size={46} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 700, lineHeight: 1.35, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+            {w.name}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 11, color: "#6B7280" }}>{w.cat}</span>
+            {low && !neg && <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 20, background: "#FCEDEC", color: "#B42318" }}>ใกล้หมด</span>}
+          </div>
+        </div>
+      </div>
+      {/* บนชั้น (พร้อมโหลด) และในตู้ = สองค่าแยกกันเท่ากันเสมอ ไม่ว่าค่าไหนจะเป็น 0 — CEO 2026-10-11:
+          "แยกสต็อคที่อยู่ในสต็อคกับสต็อคที่อยู่ในตู้แยกกัน อย่าปน" (เกณฑ์เดิม ย้ายมาเป็นการ์ดเฉยๆ) */}
+      <div style={{ display: "flex", background: "#F8F9FB", borderRadius: 10, padding: "9px 6px" }}>
+        <div style={{ flex: 1, textAlign: "center" }}>
+          <div className="num" style={{ fontSize: 16, fontWeight: 800, color: neg ? "#B42318" : low ? "#B45309" : "#1A1D21" }}>{num(w.net)}</div>
+          <div style={{ fontSize: 10, color: "#9AA1AB", fontWeight: 600, marginTop: 1 }}>บนชั้น</div>
+        </div>
+        <div style={{ width: 1, background: "#E8EAED" }} />
+        <div style={{ flex: 1, textAlign: "center" }}>
+          <div className="num" style={{ fontSize: 16, fontWeight: 800, color: "#1A1D21" }}>{num(w.inMachines)}</div>
+          <div style={{ fontSize: 10, color: "#9AA1AB", fontWeight: 600, marginTop: 1 }}>ในตู้</div>
+        </div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <span className="num" style={{ fontSize: 11, color: "#9AA1AB" }}>
+          {w.recvISO ? `รับเข้า ${fmtDate(w.recvISO)} · ${w.ageDays} วัน` : "ยังไม่มีวันที่รับ"}
+        </span>
+        <span style={{ flex: "0 0 auto", fontSize: 10.5, fontWeight: 600, padding: "3px 9px", borderRadius: 20, background: t.bg, color: t.color }}>{w.tag}</span>
+      </div>
+    </div>
   );
 }
 
@@ -1112,6 +1190,10 @@ function ReceiptDetailModal({ doc, onClose, onProduct }: {
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.productName}</span>
                 <span className="num" style={{ fontSize: 12.5, fontWeight: 700, flex: "0 0 auto" }}>×{num(l.qty)}</span>
+                {/* item 4 (2026-10-11): ทุน/ชิ้น ณ ตอนรับ — มีเฉพาะใบรับจริง (pending ยังไม่บันทึกทุน) */}
+                {l.unitCostCents != null && (
+                  <span className="num" style={{ fontSize: 11, color: "#6B7280", flex: "0 0 auto" }}>@ {bahtN(l.unitCostCents / 100)}</span>
+                )}
                 {l.isCfProduct ? (
                   <span style={{ flex: "0 0 auto", fontSize: 10.5, color: "#4F46E5", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 3 }}>
                     <Clock size={12} /> ประวัติ
@@ -1926,11 +2008,17 @@ function NeedDataBanner({ msg }: { msg: string }) {
 
 /* ───────────────────────── RECEIPTS (รับของ) ───────────────────────── */
 function ReceiptsTab({ docs, realBranches, products, defaultBranchId }: {
-  docs: DocReceiptSeed[]; realBranches: BranchOption[]; products: ProductOption[]; defaultBranchId: string;
+  // item 4 (2026-10-11): เดิม docs มาจาก getCfReceipts (รับแล้วเท่านั้น เฉพาะสาขานี้) · ตอนนี้มาจาก
+  // getAllReceiptDocs scope [branchId] เดียว (ของสาขานี้เหมือนกัน) → ได้ "รอรับ" (pending) มารวมด้วย +
+  // ใบรับแล้วเดิมยังโชว์ครบเหมือนเดิม (เลขใบ/รายการ/มูลค่า/วันที่ มาจาก field คนละชื่อแต่ความหมายเดียวกัน)
+  docs: CfReceiptDoc[]; realBranches: BranchOption[]; products: ProductOption[]; defaultBranchId: string;
 }) {
   const router = useRouter();
   const [adding, setAdding] = useState(false);
   const [pending, startTransition] = useTransition();
+  // item 4 (2026-10-11): กดแถว → เปิด modal เดียวกับที่แท็บ "ภาพรวม" ใช้ (mirror wiring ตรงนั้นเป๊ะ ไม่สร้างใหม่)
+  const [receiptDoc, setReceiptDoc] = useState<CfReceiptDoc | null>(null);
+  const [histProduct, setHistProduct] = useState<{ id: string; name: string } | null>(null);
   const [branchId, setBranchId] = useState(defaultBranchId);
   const [supplier, setSupplier] = useState("");
   const [note, setNote] = useState("");
@@ -1991,12 +2079,16 @@ function ReceiptsTab({ docs, realBranches, products, defaultBranchId }: {
       {!canCreate && <NeedDataBanner msg="ยังรับของจริงไม่ได้ — ต้องมีสาขาและสินค้าในคลังอย่างน้อยอย่างละ 1 ก่อน" />}
       <DocListCard
         title="ใบรับสินค้าเข้าคลัง"
-        sub="บันทึกของที่รับเข้าคลังสาขา · ต้นทุนเฉลี่ยถ่วงน้ำหนักอัปเดตอัตโนมัติ"
+        sub="บันทึกของที่รับเข้าคลังสาขา · ต้นทุนเฉลี่ยถ่วงน้ำหนักอัปเดตอัตโนมัติ · กดแถวเพื่อดูรายการ+ราคาต่อชิ้น"
         extra={docs.length > 0 ? (
           <CsvButton onClick={() => downloadCsv(
             `ใบรับสินค้า_${csvDate(new Date().toISOString())}.csv`,
-            ["เลขที่", "ผู้ขาย", "รายการ", "มูลค่า(บาท)", "วันที่"],
-            docs.map((d) => [d.code, d.supplier || "", d.itemsCount, Math.round(d.totalCostCents / 100), csvDate(d.createdAt)]),
+            ["เลขที่", "ส่งมาจาก", "รายการ", "มูลค่า(บาท)", "สถานะ", "วันที่"],
+            docs.map((d) => [
+              d.docCode, d.fromName || "", d.itemsCount,
+              d.totalCostCents != null ? Math.round(d.totalCostCents / 100) : "",
+              d.status === "received" ? "รับแล้ว" : "รอรับ", csvDate(d.dateISO),
+            ]),
           )} />
         ) : undefined}
         onAdd={canCreate ? () => { reset(); setAdding(true); } : undefined}
@@ -2004,19 +2096,41 @@ function ReceiptsTab({ docs, realBranches, products, defaultBranchId }: {
         empty={docs.length === 0}
         emptyTitle="ยังไม่มีใบรับสินค้า"
         emptySub="กด รับของเข้า เพื่อบันทึกของที่รับเข้าคลังสาขา"
-        cols="1fr 1.2fr 0.7fr 0.9fr 0.9fr"
-        head={<><span>เลขที่</span><span>ผู้ขาย</span><span style={{ textAlign: "right" }}>รายการ</span><span style={{ textAlign: "right" }}>มูลค่า</span><span style={{ textAlign: "right" }}>วันที่</span></>}
+        cols="0.8fr 1.1fr 0.6fr 0.8fr 0.75fr 0.8fr"
+        head={<><span>เลขที่</span><span>ส่งมาจาก</span><span style={{ textAlign: "right" }}>รายการ</span><span style={{ textAlign: "right" }}>มูลค่า</span><span>สถานะ</span><span style={{ textAlign: "right" }}>วันที่</span></>}
       >
-        {docs.map((d) => (
-          <div key={d.id} style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr 0.7fr 0.9fr 0.9fr", padding: "13px 20px", alignItems: "center", borderBottom: "1px solid #F4F5F7", fontSize: 13 }}>
-            <span className="num" style={{ fontWeight: 700, color: "#4F46E5" }}>{d.code}</span>
-            <span style={{ color: "#454B54" }}>{d.supplier || "—"}</span>
-            <span className="num" style={{ textAlign: "right" }}>{num(d.itemsCount)} รายการ</span>
-            <span className="num" style={{ textAlign: "right", fontWeight: 600 }}>{bahtN(Math.round(d.totalCostCents / 100))}</span>
-            <span className="num" style={{ textAlign: "right", fontSize: 12, color: "#6B7280" }}>{fmtDate(d.createdAt)}</span>
-          </div>
-        ))}
+        {docs.map((d) => {
+          const tone = RCPT_TONE[d.status];
+          return (
+            <div
+              key={`${d.status}-${d.kind}-${d.id}`}
+              className="co-rowlink"
+              onClick={() => setReceiptDoc(d)}
+              title="กดดูรายละเอียดใบรับ — รายการในใบ + ราคาต่อชิ้น"
+              style={{ display: "grid", gridTemplateColumns: "0.8fr 1.1fr 0.6fr 0.8fr 0.75fr 0.8fr", padding: "13px 20px", alignItems: "center", borderBottom: "1px solid #F4F5F7", fontSize: 13, cursor: "pointer" }}
+            >
+              <span className="num" style={{ fontWeight: 700, color: "#4F46E5" }}>{d.docCode}</span>
+              <span style={{ color: "#454B54", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.fromName || "—"}</span>
+              <span className="num" style={{ textAlign: "right" }}>{num(d.itemsCount)} รายการ</span>
+              <span className="num" style={{ textAlign: "right", fontWeight: 600 }}>{d.totalCostCents != null ? bahtN(Math.round(d.totalCostCents / 100)) : "—"}</span>
+              <span>
+                <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 20, background: tone.bg, color: tone.color, whiteSpace: "nowrap" }}>{tone.label}</span>
+              </span>
+              <span className="num" style={{ textAlign: "right", fontSize: 12, color: "#6B7280" }}>{fmtDate(d.dateISO)}</span>
+            </div>
+          );
+        })}
       </DocListCard>
+
+      {/* item 4 (2026-10-11): modal เดียวกับแท็บภาพรวม — รายการในใบ + ราคาต่อชิ้น + กดสินค้าเพื่อดูประวัติ */}
+      {receiptDoc && (
+        <ReceiptDetailModal
+          doc={receiptDoc}
+          onClose={() => setReceiptDoc(null)}
+          onProduct={(p) => { setReceiptDoc(null); setHistProduct(p); }}
+        />
+      )}
+      {histProduct && <ProductHistoryModal key={histProduct.id} product={histProduct} onClose={() => setHistProduct(null)} />}
 
       <Modal
         open={adding}
@@ -2224,6 +2338,10 @@ function CountsTab({ docs, realBranches, products, defaultBranchId, onHandMap, v
   const router = useRouter();
   const [adding, setAdding] = useState(false);
   const [pending, startTransition] = useTransition();
+  // item 1 (2026-10-11): seedLines() ด้านล่างแมปสินค้าทั้งแคตาล็อก (บางองค์กรมี 500+ รายการ) → ตู้ select
+  // ซ้อน select ของแต่ละแถวนับร้อยช่อง เรนเดอร์หนักพอจะรู้สึกว่าปุ่ม "ไม่ตอบสนอง" ถ้าไม่มี transition แยกต่างหาก
+  // (แยกจาก `pending` ของฟอร์มบันทึกด้านบน กันสปินเนอร์ชนกันคนละความหมาย)
+  const [opening, startOpening] = useTransition();
   const [branchId, setBranchId] = useState(defaultBranchId);
   const [note, setNote] = useState("");
   // Pinpoint #3: เปิดฟอร์มนับมาต้องเห็น "รายการสินค้าทุกตัว" พร้อมให้กรอกยอดทันที (เหมือนเช็คลิสต์ที่มีอยู่แล้ว)
@@ -2311,8 +2429,9 @@ function CountsTab({ docs, realBranches, products, defaultBranchId, onHandMap, v
             ]),
           )} />
         ) : undefined}
-        onAdd={canCreate ? () => { reset(); setAdding(true); } : undefined}
+        onAdd={canCreate ? () => { startOpening(() => { reset(); setAdding(true); }); } : undefined}
         addLabel="นับสต็อก"
+        addPending={opening}
         empty={docs.length === 0}
         emptyTitle="ยังไม่มีใบนับสต็อก"
         emptySub="กด นับสต็อก เพื่อบันทึกการนับของจริงในคลัง"
@@ -2599,9 +2718,11 @@ function LossesTab({ docs, realBranches, products, defaultBranchId, viewerId, ca
 
 /* ───────────────────────── shared doc-list card ───────────────────────── */
 function DocListCard({
-  title, sub, onAdd, addLabel, empty, emptyTitle, emptySub, cols, head, children, extra,
+  title, sub, onAdd, addLabel, addPending, empty, emptyTitle, emptySub, cols, head, children, extra,
 }: {
   title: string; sub: string; onAdd?: () => void; addLabel: string;
+  // เมื่อ true = กำลังเตรียมข้อมูลก่อนเปิดฟอร์ม (เช่น ใบนับสต็อกเซ็ตรายการสินค้าทั้งแคตาล็อก) → โชว์สปินเนอร์กันรู้สึกว่าปุ่มไม่ทำงาน
+  addPending?: boolean;
   empty: boolean; emptyTitle: string; emptySub: string;
   cols: string; head: React.ReactNode; children: React.ReactNode;
   extra?: React.ReactNode; // ปุ่มเสริม (เช่น ดาวน์โหลด CSV) วางซ้ายปุ่มเพิ่ม
@@ -2615,8 +2736,14 @@ function DocListCard({
         <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
           {extra}
           {onAdd && (
-            <button type="button" onClick={onAdd} style={{ fontSize: 12, fontWeight: 600, color: "#fff", background: "#4F46E5", border: "none", padding: "7px 12px", borderRadius: 8, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}>
-              <Plus size={13} /> {addLabel}
+            <button
+              type="button"
+              onClick={onAdd}
+              disabled={addPending}
+              className="co-tap"
+              style={{ fontSize: 12, fontWeight: 600, color: "#fff", background: "#4F46E5", border: "none", padding: "7px 12px", borderRadius: 8, cursor: addPending ? "default" : "pointer", display: "inline-flex", alignItems: "center", gap: 4, opacity: addPending ? 0.85 : 1 }}
+            >
+              {addPending ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />} {addLabel}
             </button>
           )}
         </div>

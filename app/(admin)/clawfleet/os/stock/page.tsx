@@ -31,7 +31,6 @@ import {
   type ReceiptSeed,
   type BranchOption,
   type ProductOption,
-  type DocReceiptSeed,
   type DocCountSeed,
   type DocLossSeed,
   type WarehouseRowSeed,
@@ -71,7 +70,8 @@ export default async function StockPage({
   let realBranches: BranchOption[] = [];
   let products: ProductOption[] = [];
   // เอกสารจริง (สาขาแรก) สำหรับ 3 แท็บใหม่ + การกระจาย + ยอดคลังกลางจริง
-  let receiptDocs: DocReceiptSeed[] = [];
+  // item 4 (2026-10-11): receiptDocs ตอนนี้มาจาก getAllReceiptDocs scope สาขาเดียว (received + รอรับ)
+  let receiptDocs: CfReceiptDoc[] = [];
   let countDocs: DocCountSeed[] = [];
   let lossDocs: DocLossSeed[] = [];
   let warehouseRows: WarehouseRowSeed[] = [];
@@ -147,13 +147,17 @@ export default async function StockPage({
       let counts: Awaited<ReturnType<typeof getCfCounts>> = [];
       let losses: Awaited<ReturnType<typeof getCfLosses>> = [];
       try {
-        [overview, branchStock, receipts, counts, losses, onHandMap] = await Promise.all([
+        [overview, branchStock, receipts, counts, losses, onHandMap, receiptDocs] = await Promise.all([
           getCfStockOverview(orgId, first.id, asOfDate ?? undefined),
           getV2BranchStock(first.id),
           getCfReceipts(orgId, first.id),
           getCfCounts(orgId, first.id),
           getCfLosses(orgId, first.id),
           getCfBranchOnHandMap(orgId, first.id),
+          // item 4 (2026-10-11): แท็บ "รับของ" ของสาขานี้ — query เดียวกับ "ใบรับทุกสาขา" แต่ scope แค่
+          // สาขานี้ ([first.id]) → ได้ pending (รอรับ) มารวมด้วย + unitCostCents ต่อรายการ ที่ getCfReceipts
+          // เดิมไม่มี · .catch แยก กันพังพลอยทำ 5 query ด้านบนเสียไปด้วยถ้าคิวรีนี้ล่ม (graceful ของตัวเอง)
+          getAllReceiptDocs(orgId, [first.id], branches.map((b) => ({ id: b.id, name: b.name }))).catch(() => [] as CfReceiptDoc[]),
         ]);
       } catch {
         // graceful: ตารางสต็อกยังว่าง → ปล่อยให้ client เติม sample
@@ -175,14 +179,7 @@ export default async function StockPage({
         // graceful
       }
 
-      receiptDocs = receipts.map((r) => ({
-        id: r.id,
-        code: r.receiptCode,
-        supplier: r.supplierName,
-        itemsCount: r.itemsCount,
-        totalCostCents: r.totalCostCents,
-        createdAt: r.createdAt.toISOString(),
-      }));
+      // receiptDocs เซ็ตไปแล้วจาก Promise.all ด้านบน (getAllReceiptDocs scope สาขานี้ — item 4, 2026-10-11)
       countDocs = counts.map((c) => ({
         id: c.id,
         code: c.countCode,

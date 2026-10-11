@@ -1047,6 +1047,8 @@ export type CfReceiptDocLine = {
   //   → ยังไม่มี movement ในคลัง → คลิกดูประวัติจะขึ้น "ยังไม่รับเข้าคลัง")
   isCfProduct: boolean;
   note: string | null; // โน้ตเฉพาะ SKU นี้ (CEO 2026-10-10)
+  // ทุนต่อชิ้น ณ ตอนรับ (สตางค์) — มีเฉพาะใบรับจริง (CfGoodsReceiptLine) · ของที่ยังไม่รับ (pending) ไม่มีทุนบันทึกไว้ที่ขั้นนี้ (item 4, 2026-10-11)
+  unitCostCents: number | null;
 };
 export type CfReceiptDoc = {
   id: string;
@@ -1090,7 +1092,7 @@ export async function getAllReceiptDocs(
         id: true, branchId: true, receiptCode: true, supplierName: true, note: true,
         totalCostCents: true, photoUrls: true, createdAt: true, refTable: true, refId: true,
         createdBy: { select: { name: true } },
-        lines: { select: { productId: true, productName: true, quantity: true, note: true } },
+        lines: { select: { productId: true, productName: true, quantity: true, note: true, unitCostCents: true } },
       },
     }),
     // pending — DC ส่งตรงเข้าสาขาตู้คีบ ยังไม่รับ (destType MODULE · IN_TRANSIT)
@@ -1162,6 +1164,7 @@ export async function getAllReceiptDocs(
           : r.supplierName ?? null;
     const lines: CfReceiptDocLine[] = r.lines.map((l) => ({
       productId: l.productId, productName: l.productName, qty: l.quantity, isCfProduct: true, note: l.note,
+      unitCostCents: l.unitCostCents,
     }));
     lines.sort((a, b) => a.productName.localeCompare(b.productName, "th"));
     return {
@@ -1186,6 +1189,7 @@ export async function getAllReceiptDocs(
   const dcDocs: CfReceiptDoc[] = dcPending.map((t) => {
     const lines: CfReceiptDocLine[] = t.lines.map((l) => ({
       productId: l.product.id, productName: l.product.name, qty: l.qty, isCfProduct: false, note: l.note,
+      unitCostCents: null, // ยังไม่รับ (DC transfer in-transit) — ยังไม่มีทุนบันทึกไว้ที่ขั้นนี้
     }));
     lines.sort((a, b) => a.productName.localeCompare(b.productName, "th"));
     return {
@@ -1210,6 +1214,7 @@ export async function getAllReceiptDocs(
   const cfDocs: CfReceiptDoc[] = cfPending.map((d) => {
     const lines: CfReceiptDocLine[] = d.lines.map((l) => ({
       productId: l.productId, productName: l.productName, qty: l.qty, isCfProduct: true, note: l.note,
+      unitCostCents: null, // ยังไม่รับ (ใบกระจายภายใน in-transit) — ยังไม่มีทุนบันทึกไว้ที่ขั้นนี้
     }));
     lines.sort((a, b) => a.productName.localeCompare(b.productName, "th"));
     return {
