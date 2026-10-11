@@ -262,7 +262,14 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
     }
   }, [busy]);
 
-  // Restore on mount + listen for the AI-button trigger.
+  // Restore from localStorage — must run exactly once on mount (a page
+  // reload), never again. It used to live in the same effect as the listener
+  // below, keyed on `[loadPins, startSession]`; but `startSession` is a
+  // useCallback keyed on `[busy]`, so its identity changes every time
+  // startSession() itself flips `busy` true→false — which re-ran this restore
+  // block mid-session and stomped the `setPlacing(true)` startSession had just
+  // set, silently kicking the user out of pin-placing mode right after they
+  // started (audit: "เริ่มติชมแล้วเด้งไปโหมดเลื่อนดูเอง").
   useEffect(() => {
     const saved = readLS();
     if (saved?.sessionId) {
@@ -272,6 +279,13 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
       setPlacing(false);
       void loadPins(saved.sessionId);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Listen for the AI-button trigger. Safe to re-attach if loadPins/
+  // startSession identity changes — unlike the restore above, this has no
+  // one-time-only semantics.
+  useEffect(() => {
     function onStart() {
       const cur = readLS();
       if (cur?.sessionId && cur.paused) {
@@ -544,6 +558,30 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
     setPlacing(true);
   }, [sessionId]);
 
+  // ปิด/ยกเลิกโหมดติชมทั้งหมด (ต่างจาก "พัก" ที่แค่ซ่อนไว้รอกลับมาทำต่อ) — ใช้ตอนไม่
+  // อยากติชมต่อแล้วแต่ "เสร็จ" กดไม่ได้เพราะยังไม่มีหมุดสักจุด. มีหมุดอยู่แล้ว → ถามยืนยัน
+  // ก่อนลบถาวร (ลบทั้ง session, หมุด, รูปที่ถ่ายไว้ — กู้คืนไม่ได้).
+  const cancel = useCallback(() => {
+    if (!sessionId || busy) return;
+    if (pins.length > 0) {
+      const ok = window.confirm(
+        `ปิดโหมดติชม — จะลบ ${pins.length} จุดที่ปักไว้ถาวร กู้คืนไม่ได้ ยืนยันไหม?`,
+      );
+      if (!ok) return;
+    }
+    const sid = sessionId;
+    writeLS(null);
+    setActive(false);
+    setPaused(false);
+    setPlacing(false);
+    setDraft(null);
+    setSessionId(null);
+    setPins([]);
+    void fetch(`/api/pinpoint/sessions/${sid}`, { method: "DELETE" }).catch(() => {
+      /* ignore — local state already cleared; best-effort server cleanup */
+    });
+  }, [sessionId, busy, pins.length]);
+
   // ── screen recording (desktop only) ───────────────────────────────────────
   // On stop: upload the clip to R2 and attach it to the session; if the upload
   // is blocked (R2 CORS on the custom domain) fall back to a local download so
@@ -685,16 +723,29 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
   // ── render ──────────────────────────────────────────────────────────────
   if (!sessionId) return null;
 
-  // Paused → small resume chip only.
+  // Paused → small resume chip + a close button to end the session outright
+  // (ก่อนหน้านี้ติดอยู่ตรงนี้ถาวร — มีแต่ "ทำต่อ" ไม่มีทางปิด).
   if (!active && paused) {
     return (
-      <div data-pinpoint-ui>
+      <div
+        data-pinpoint-ui
+        className="fixed bottom-36 right-4 z-[9995] flex items-center gap-1.5"
+      >
         <button
           type="button"
           onClick={resume}
-          className="fixed bottom-36 right-4 z-[9995] flex items-center gap-1.5 rounded-full bg-[var(--color-brand-600)] px-3.5 py-2 text-xs font-bold text-white shadow-lg"
+          className="flex items-center gap-1.5 rounded-full bg-[var(--color-brand-600)] px-3.5 py-2 text-xs font-bold text-white shadow-lg"
         >
           <Play className="size-3.5" /> ทำต่อ ติชม ({pins.length})
+        </button>
+        <button
+          type="button"
+          onClick={cancel}
+          aria-label="ปิดโหมดติชม"
+          title="ปิดโหมดติชม (ยกเลิก)"
+          className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white text-zinc-500 shadow-lg hover:bg-red-50 hover:text-red-600"
+        >
+          <X className="size-4" />
         </button>
       </div>
     );
@@ -806,6 +857,7 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
         onViewAll={() => router.push(`/pinpoint/${sessionId}`)}
         onFinish={finish}
         onPause={pause}
+        onCancel={cancel}
       />
     </div>
   );
@@ -1119,6 +1171,7 @@ function SessionBar({
   onViewAll,
   onFinish,
   onPause,
+  onCancel,
 }: {
   count: number;
   placing: boolean;
@@ -1133,12 +1186,29 @@ function SessionBar({
   onViewAll: () => void;
   onFinish: () => void;
   onPause: () => void;
+  onCancel: () => void;
 }) {
   return (
     <div
-      className="fixed bottom-4 left-3 right-16 z-[9993] mx-auto flex max-w-[560px] items-center gap-1.5 rounded-2xl border-2 border-[var(--color-brand-600)] bg-white/95 px-2.5 py-2 shadow-pop backdrop-blur md:right-3"
+      // บนจอแคบ (~390px) ปุ่มทั้งหมดรวมกันกว้างเกินกรอบ — เดิม "เสร็จ"/"พัก" ทะลุขอบจอ
+      // ไปแล้วเกือบทั้งปุ่ม (ยืนยันจาก getBoundingClientRect ตอนทดสอบ), ปุ่ม "ปิด" ใหม่
+      // ยิ่งเบียดให้แย่ลงอีก → เลื่อนซ้าย-ขวาได้แทนที่จะถูกตัดขาดมองไม่เห็น/กดไม่ได้
+      className="fixed bottom-4 left-3 right-16 z-[9993] mx-auto flex max-w-[560px] items-center gap-1.5 overflow-x-auto rounded-2xl border-2 border-[var(--color-brand-600)] bg-white/95 px-2.5 py-2 shadow-pop backdrop-blur md:right-3"
       style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
     >
+      {/* ปิดโหมดติชมทั้งหมด (ยกเลิก) — แยกห่างจากปุ่ม "เสร็จ" ฝั่งขวาเพื่อกันกดพลาด
+          เพราะเป็นการลบถาวร ไม่ใช่แค่พักไว้ */}
+      <button
+        type="button"
+        onClick={onCancel}
+        disabled={busy}
+        aria-label="ปิดโหมดติชม"
+        title="ปิดโหมดติชม (ยกเลิกทั้งรอบ)"
+        className="flex size-7 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+      >
+        <X className="size-4" />
+      </button>
+
       <span className="flex shrink-0 items-center gap-1 px-1 text-xs font-extrabold text-[var(--color-brand-700)]">
         📌
         <span className="rounded-full bg-[var(--color-brand-600)] px-1.5 text-white">{count}</span>
