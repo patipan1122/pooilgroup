@@ -231,7 +231,12 @@ export default async function DocumentDetailPage({
         }}
         className="df-fade-up"
       >
-        <div style={{ display: "flex", gap: 16, minWidth: 0, flex: 1 }}>
+        {/* 2026-10-11: minWidth:0 here let this block get crushed to near-0
+            next to the action buttons on mobile before flexWrap kicked in,
+            instead of wrapping to its own row — the "อัปโหลด" date text was
+            observed breaking character-by-character inside the crushed
+            space. A sane floor forces the buttons to wrap down instead. */}
+        <div style={{ display: "flex", gap: 16, minWidth: 240, flex: 1 }}>
           <DfDocIcon size="lg" tone={{ bg: "#F5B80018", fg: "#B45309" }}>
             <FileText size={24} />
           </DfDocIcon>

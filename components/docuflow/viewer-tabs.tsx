@@ -64,7 +64,11 @@ export function ViewerTabs({
 
   return (
     <div>
-      {/* Tab bar */}
+      {/* Tab bar. 2026-10-11: the parent DfCard sets overflow:hidden (so its
+          rounded corners clip content cleanly) — on a narrow viewport the 4
+          tabs don't all fit, so without its own scroll this row silently
+          clips the Comments tab instead of just squeezing it. overflowX
+          here makes the row scroll internally within the card instead. */}
       <div
         style={{
           padding: "12px 18px",
@@ -73,9 +77,16 @@ export function ViewerTabs({
           alignItems: "center",
           gap: 12,
           background: "var(--df-surface)",
+          overflowX: "auto",
+          WebkitOverflowScrolling: "touch",
+          scrollbarWidth: "none",
         }}
       >
-        <div className="df-seg" role="tablist">
+        <div
+          className="df-seg"
+          role="tablist"
+          style={{ flexShrink: 0 }}
+        >
           <button
             className={tab === "preview" ? "df-on" : undefined}
             onClick={() => setTab("preview")}
