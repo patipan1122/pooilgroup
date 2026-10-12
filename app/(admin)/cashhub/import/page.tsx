@@ -110,6 +110,10 @@ const SOURCES: ImportSource[] = [
     title: "ยอดขายโรงแรม",
     subtitle: "ยอดราย วัน/กะ + ตรวจ QR/OTA/เงินสด · จากชีต Excel",
     status: "ready",
+    // หน้าอัปโหลดมือ /cashhub/import/hotel เป็นแค่ทางสำรอง (สาขาที่ยังไม่ตั้ง
+    // auto-sync) — ปกติให้พาไปหน้าตรวจยอดขายโรงแรมที่ดึงชีตสดอัตโนมัติเลย
+    // href ตั้งต่อท้ายด้วย ?month ปัจจุบันเสมอ ไม่งั้นหน้าปลายทางจะ default
+    // เป็น "2026-04" (เดือน pilot) ตาม app/(admin)/cashhub/hotel/page.tsx
   },
 ];
 
@@ -117,6 +121,11 @@ export default async function ImportHubPage() {
   const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const admin = adminClient();
   const fuelOn = cashhubFuelV1();
+
+  // เดือนปัจจุบัน (เวลาไทย) สำหรับลิงก์การ์ด "ยอดขายโรงแรม" — กันไปเจอ default
+  // เดือนเก่า (pilot เม.ย. 2026) ของหน้า /cashhub/hotel เวลาไม่ส่ง ?month มา
+  const nowBkk = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Bangkok" }));
+  const currentMonthStr = `${nowBkk.getFullYear()}-${String(nowBkk.getMonth() + 1).padStart(2, "0")}`;
 
   // For each "ready" source, peek at the last import (best-effort)
   // — joined via audit_logs (BULK_IMPORT_EV_REPORTS) to surface "last imported X ago"
@@ -152,9 +161,11 @@ export default async function ImportHubPage() {
             s.status === "ready" || (s.slug === "fuel-pump62" && fuelOn);
           const showLastEv = s.slug === "ev-connext" && lastEvAt;
           const Card = isReady ? Link : "div";
-          const cardProps = isReady
-            ? { href: s.href ?? `/cashhub/import/${s.slug}` }
-            : {};
+          const href =
+            s.slug === "hotel"
+              ? `/cashhub/hotel?month=${currentMonthStr}`
+              : (s.href ?? `/cashhub/import/${s.slug}`);
+          const cardProps = isReady ? { href } : {};
 
           return (
             <Card

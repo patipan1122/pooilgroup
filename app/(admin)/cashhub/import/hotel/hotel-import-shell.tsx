@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { formatBaht } from "@/lib/utils/format";
 import { TH_MONTHS } from "@/lib/cashhub/hotel";
 
@@ -33,7 +34,6 @@ export function HotelImportShell({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
-  const [done, setDone] = useState<string | null>(null);
 
   async function send(commit: boolean) {
     if (!file) return setErr("เลือกไฟล์ก่อน");
@@ -58,10 +58,15 @@ export function HotelImportShell({
         return;
       }
       if (commit) {
-        setDone(
-          `บันทึกแล้ว: ใหม่ ${json.diff.new} · แก้ไข ${json.diff.changed} · เท่าเดิม ${json.diff.same}`,
+        toast.success(
+          `นำเข้าสำเร็จ: ใหม่ ${json.diff.new} · แก้ไข ${json.diff.changed} · เท่าเดิม ${json.diff.same}`,
         );
         setPreview(null);
+        // CEO 2026-10-12 (Pinpoint): พาไปหน้าตรวจยอดขายทันทีหลังนำเข้าสำเร็จ
+        // ไม่ต้องให้กดปุ่ม "ดูหน้าตรวจยอดขาย" เองอีกที
+        router.push(
+          `/cashhub/hotel?branchId=${branchId}&month=${year}-${String(month).padStart(2, "0")}`,
+        );
       } else {
         setPreview(json as Preview);
       }
@@ -70,26 +75,6 @@ export function HotelImportShell({
     } finally {
       setBusy(false);
     }
-  }
-
-  if (done) {
-    return (
-      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 text-center">
-        <div className="text-3xl mb-2">✅</div>
-        <div className="font-bold text-emerald-800">นำเข้าสำเร็จ</div>
-        <div className="text-sm text-emerald-700 mt-1">{done}</div>
-        <button
-          onClick={() =>
-            router.push(
-              `/cashhub/hotel?branchId=${branchId}&month=${year}-${String(month).padStart(2, "0")}`,
-            )
-          }
-          className="mt-4 h-10 px-5 rounded-xl bg-[var(--color-brand-600,#1e3aff)] text-white font-semibold text-sm"
-        >
-          ดูหน้าตรวจยอดขาย →
-        </button>
-      </div>
-    );
   }
 
   return (

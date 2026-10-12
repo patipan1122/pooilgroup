@@ -22,6 +22,7 @@ import {
 import { HotelSyncButton } from "./hotel-sync-button";
 import Link from "next/link";
 import { HotelMonthView } from "./hotel-month-view";
+import { HotelTtbUpload, type TtbHistoryItem } from "./hotel-ttb-upload";
 
 export const dynamic = "force-dynamic";
 
@@ -126,6 +127,37 @@ export default async function HotelSalesPage({
     monthCheck = mc as typeof monthCheck;
   }
 
+  // ประวัติการอัปโหลดไฟล์ TTB (จาก audit_logs · kind=ttb · สาขานี้) — เอาไว้โชว์
+  // คู่กับช่องอัปโหลดที่ย้ายมาไว้หน้านี้เลย (CEO 2026-10-12 Pinpoint: ไม่อยากกด
+  // ข้ามไปหน้า /iv แค่เพื่ออัปไฟล์ธนาคาร)
+  let ttbHistory: TtbHistoryItem[] = [];
+  if (branchId) {
+    const { data: logs } = await admin
+      .from("audit_logs")
+      .select("created_at, diff")
+      .eq("org_id", orgId)
+      .eq("action", "IMPORT_HOTEL_SALES")
+      .order("created_at", { ascending: false })
+      .limit(40);
+    ttbHistory = ((logs ?? []) as Array<{ created_at: string; diff: unknown }>)
+      .map((l) => ({
+        at: l.created_at,
+        n: ((l.diff as { new?: Record<string, unknown> } | null)?.new ??
+          {}) as Record<string, unknown>,
+      }))
+      .filter(({ n }) => n.kind === "ttb" && n.branchId === branchId)
+      .slice(0, 8)
+      .map(({ at, n }) => ({
+        at,
+        fileName: String(n.fileName ?? "TTB file"),
+        firstDate: (n.firstDate as string) ?? null,
+        lastDate: (n.lastDate as string) ?? null,
+        daysInFile: Number(n.daysInFile ?? 0),
+        updated: Number(n.updated ?? 0),
+        totalBanked: Number(n.totalBanked ?? 0),
+      }));
+  }
+
   const days = groupByDay(rows);
   const summary = summarize(days);
   const branchName = branches.find((b) => b.id === branchId)?.name ?? "โรงแรม";
@@ -228,20 +260,23 @@ export default async function HotelSalesPage({
       />
 
       {branchId && (
-        <Link
-          href={`/cashhub/hotel/iv?branchId=${branchId}&month=${monthStr}`}
-          className="mt-5 flex items-center justify-between gap-3 rounded-2xl border border-[var(--ch-navy,#0b1850)]/20 bg-[var(--ch-navy,#0b1850)]/[0.03] p-4 hover:bg-[var(--ch-navy,#0b1850)]/[0.06] transition"
-        >
-          <div>
-            <div className="font-bold text-zinc-800">🏦 อัปสลิปธนาคาร + ส่งกระทบยอด</div>
-            <div className="text-xs text-zinc-500">
-              ขั้นถัดไปหลังเช็ค IV ตรงแล้ว — อัปไฟล์ TTB + ส่งกระทบยอดเข้าบัญชี (ไม่ใช่หน้าดูยอดซ้ำ)
+        <div className="mt-5 space-y-2">
+          {/* CEO 2026-10-12 (Pinpoint): อัปไฟล์ธนาคาร TTB ได้ตรงนี้เลย ไม่ต้องกด
+              ข้ามไปหน้าอื่น — ของเดิมอยู่ /iv อย่างเดียว ย้าย component มาวางคู่กัน
+              (ไม่ได้ copy โค้ดใหม่ ใช้ตัวเดิมที่มี history ในตัวอยู่แล้ว) */}
+          <HotelTtbUpload branchId={branchId} month={monthStr} history={ttbHistory} />
+          <Link
+            href={`/cashhub/hotel/iv?branchId=${branchId}&month=${monthStr}`}
+            className="flex items-center justify-between gap-3 rounded-xl border border-zinc-200 bg-white p-3 hover:bg-zinc-50 transition"
+          >
+            <div className="text-sm text-zinc-600">
+              เช็ค IV TRCloud เต็ม + ส่งกระทบยอดธนาคารอย่างเป็นทางการ
             </div>
-          </div>
-          <span className="text-[var(--ch-navy,#0b1850)] font-semibold text-sm shrink-0">
-            เปิดหน้า →
-          </span>
-        </Link>
+            <span className="text-[var(--ch-navy,#0b1850)] font-semibold text-sm shrink-0">
+              เปิดหน้า →
+            </span>
+          </Link>
+        </div>
       )}
     </div>
   );
