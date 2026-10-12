@@ -120,14 +120,6 @@ function isInProgress(r: CollectionRow): boolean {
   return r.isOpen === true;
 }
 
-/* ───────── sample fallback (จาก design) ───────── */
-const SAMPLE_BRANCHES: BranchOption[] = [
-  { value: "all", label: "ทุกสาขา" },
-  { value: "s-rs", label: "รังสิต (RS)" },
-  { value: "s-lp", label: "ลาดพร้าว (LP)" },
-  { value: "s-bk", label: "บางแค (BK)" },
-];
-
 // NOTE (CEO 2026-07-10): เดิมมี SAMPLE_ROWS (฿6,100 ฯลฯ) โชว์เป็น "ตัวอย่าง" ตอนยังไม่มี
 // ข้อมูลจริง — ทำให้ดูเหมือนมีเงินเก็บทั้งที่ยังไม่เคยเก็บ (สับสน/หลอกตา). ตัดทิ้ง →
 // ว่าง = โชว์ empty-state จริง (ดู neverCollected / allClean ด้านล่าง). ไม่โชว์เลขปลอมอีก.
@@ -269,9 +261,10 @@ export function CollectionsClient({
   const router = useRouter();
   // CEO 2026-08-02 · ตัด auto-refresh (เดิม polling ทุก 25 วิ เมื่อมีรอบกำลังเก็บ) ออก —
   //   จอเด้ง/รีเฟรชเองรบกวนการทำงาน · ต้องการดูข้อมูลล่าสุด = กดรีเฟรช/เปลี่ยนหน้าเอง
+  // ⛔ ไม่มีสาขาจริง → เหลือตัวเลือก "ทุกสาขา" เดียว (ห้ามโชว์ชื่อสาขาปลอมในดรอปดาวน์ — CEO: อยากเห็นข้อมูลจริง)
   const branchOpts = branchOptions.length > 0
     ? [{ value: "all", label: "ทุกสาขา" }, ...branchOptions]
-    : SAMPLE_BRANCHES;
+    : [{ value: "all", label: "ทุกสาขา" }];
 
   const [branch, setBranch] = useState("all");
   const [tab, setTab] = useState<"all" | StatusKind | "problem">("all");

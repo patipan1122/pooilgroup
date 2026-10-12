@@ -3,14 +3,15 @@
 /**
  * ตู้คีบ OS — ตั้งค่า & สิทธิ์ (client)
  * 4 role cards + ตารางสิทธิ์ต่อเมนู (สะท้อน role model จาก role-guard) +
- * นโยบายระบบ (toggles, client state) + บัญชีผู้ใช้ (real getTeamData → sample fallback).
+ * นโยบายระบบ (toggles, client state) + บัญชีผู้ใช้ (real getTeamData — ว่าง = empty-state ตรง ๆ
+ * ไม่มี sample fallback แล้ว · CEO 2026-10-12).
  */
 
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Plus, ShieldCheck, Users2, Coins, Wrench } from "lucide-react";
-import { Card, Pill, Toggle, IconBox } from "@/components/clawfleet/os/kit";
+import { Plus, ShieldCheck, Users2, Coins, Wrench } from "lucide-react";
+import { Card, Pill, Toggle, IconBox, EmptyState } from "@/components/clawfleet/os/kit";
 import { TONE, num, type Tone } from "@/components/clawfleet/os/format";
 import { saveClawfleetPolicy, type ClawfleetPolicy } from "@/lib/clawfleet/policy";
 
@@ -70,16 +71,8 @@ const POLICY_DEFS: { key: keyof ClawfleetPolicy; label: string; sub: string; liv
   { key: "meterMatch", label: "มิเตอร์ต้องตรง — ดันเข้าตรวจอัตโนมัติ", sub: "ถ้ารอบมีสัญญาณมิเตอร์ผิดปกติ (ไม่ต่อเนื่อง/ถอยหลัง/ไม่ขยับแต่มีเงิน/เหรียญกับตุ๊กตาไม่สอดคล้อง) บังคับส่งให้หัวหน้าตรวจก่อนอนุมัติ", live: true },
 ];
 
-/* ── sample fallback (เมื่อ DB ว่าง) ─────────────────────────────────────── */
-const SAMPLE_USERS: SettingsUserRow[] = [
-  { id: "s1", name: "คุณเอ (เจ้าของ)", roleKey: "owner", scopeBranches: ["ทุกสาขา"], lastLogin: "เมื่อสักครู่", status: "active" },
-  { id: "s2", name: "พี่หน่อย", roleKey: "manager", scopeBranches: ["รังสิต"], lastLogin: "2 ชม.ก่อน", status: "active" },
-  { id: "s3", name: "พี่ตั้ม", roleKey: "manager", scopeBranches: ["ลาดพร้าว", "บางแค"], lastLogin: "เมื่อวาน", status: "active" },
-  { id: "s4", name: "น้องมิ้น", roleKey: "collector", scopeBranches: ["รังสิต"], lastLogin: "5 ชม.ก่อน", status: "active" },
-  { id: "s5", name: "น้องเบนซ์", roleKey: "collector", scopeBranches: ["บางนา"], lastLogin: "ยังไม่เคยเข้า", status: "invited" },
-  { id: "s6", name: "ช่างโจ", roleKey: "tech", scopeBranches: ["ทุกสาขา"], lastLogin: "3 วันก่อน", status: "active" },
-  { id: "s7", name: "น้องฟ้า", roleKey: "collector", scopeBranches: ["นนทบุรี"], lastLogin: "6 วันก่อน", status: "disabled" },
-];
+// NOTE (CEO 2026-10-12): เดิมมี SAMPLE_USERS (คุณเอ/พี่หน่อย/พี่ตั้ม ฯลฯ) โชว์แทนบัญชีจริงตอน DB ว่าง
+// — ตัดทิ้ง → ว่าง = empty-state จริงเสมอ (ดู EmptyState ในตาราง "บัญชีผู้ใช้" ด้านล่าง).
 
 const STATUS_META: Record<SettingsUserRow["status"], { label: string; dot: string }> = {
   active: { label: "ใช้งานอยู่", dot: "#15803D" },
@@ -109,8 +102,7 @@ export function SettingsClient({
   policy: ClawfleetPolicy;
 }) {
   const router = useRouter();
-  const empty = users.length === 0;
-  const rows = empty ? SAMPLE_USERS : users;
+  const rows = users;
 
   // นโยบายระบบ — init จาก prop (ค่าที่ persist จริง) ไม่ใช่ค่า hardcode
   const [pol, setPol] = useState<ClawfleetPolicy>(policy);
@@ -141,12 +133,6 @@ export function SettingsClient({
 
   return (
     <div>
-      {empty && (
-        <div style={{ display: "flex", gap: 8, alignItems: "center", background: "#FCF8EC", border: "1px solid #F0E2BE", borderRadius: 10, padding: "9px 14px", marginBottom: 16, fontSize: 12, color: "#7A5510" }}>
-          <AlertTriangle size={15} /> ยังไม่มีบัญชีผู้ใช้จริงในระบบ — กำลังแสดง<b> ตัวอย่าง</b> เพื่อให้เห็นภาพ (เพิ่มผู้ใช้จริงได้ที่หน้าพนักงาน)
-        </div>
-      )}
-
       {/* ── 4 role summary cards ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-5">
         {ROLE_ORDER.map((rk) => {
@@ -253,17 +239,8 @@ export function SettingsClient({
 
       {/* ── บัญชีผู้ใช้ ── */}
       <Card
-        title={
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-            บัญชีผู้ใช้
-            {empty && (
-              <span style={{ fontSize: 10.5, fontWeight: 700, color: "#7A5510", background: "#FCF3DC", border: "1px solid #F0E2BE", borderRadius: 20, padding: "2px 9px" }}>
-                ตัวอย่าง · ไม่ใช่บัญชีจริง
-              </span>
-            )}
-          </span>
-        }
-        sub={empty ? "รายชื่อด้านล่างเป็นตัวอย่างเพื่อให้เห็นภาพ — เพิ่มผู้ใช้จริงได้ที่หน้าพนักงาน" : "มอบบทบาทและขอบเขตสาขาที่เข้าถึงได้"}
+        title="บัญชีผู้ใช้"
+        sub="มอบบทบาทและขอบเขตสาขาที่เข้าถึงได้"
         pad={false}
         style={{ marginTop: 18 }}
         right={
@@ -275,6 +252,9 @@ export function SettingsClient({
           </Link>
         }
       >
+        {rows.length === 0 ? (
+          <EmptyState icon={<Users2 size={26} />} title="ยังไม่มีบัญชีผู้ใช้" sub="เพิ่มพนักงานที่หน้าทีม แล้วบัญชีจริงจะแสดงผลที่นี่" />
+        ) : (
         <div style={{ overflowX: "auto" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1.2fr 1.6fr 1fr 0.7fr", padding: "11px 20px", fontSize: 11, fontWeight: 700, color: "#9AA1AB", borderBottom: "1px solid #F4F5F7", minWidth: 640 }}>
             <span>ผู้ใช้</span><span>บทบาท</span><span>ขอบเขตสาขา</span><span>เข้าใช้ล่าสุด</span><span style={{ textAlign: "right" }}>สถานะ</span>
@@ -302,6 +282,7 @@ export function SettingsClient({
             );
           })}
         </div>
+        )}
         <div style={{ padding: "12px 20px", fontSize: 11.5, color: "#9AA1AB", display: "flex", alignItems: "center", gap: 8 }}>
           <button
             type="button"

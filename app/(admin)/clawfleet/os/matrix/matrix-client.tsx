@@ -6,12 +6,13 @@
  *   cash = ยอดเก็บ/วัน · dolls = ตุ๊กตาออก/วัน · cost = บาท/ตุ๊กตา (revenue/dolls) · swapped = มี refill วันนั้น
  * วันที่ใช้ "วันจริง" (เวลาไทย) ย้อนหลัง N วันจากวันนี้ (ส่งมาเป็น isoDays).
  * เปลี่ยนสาขา/ช่วงวัน → navigate (router) ให้ server ดึงข้อมูลจริงของชุดใหม่.
- * DB ว่าง (ไม่มีสาขา) → ใช้ SAMPLE deterministic เพื่อโชว์โครงหน้า + แบนเนอร์เตือน.
+ * DB ว่าง (ไม่มีสาขา) → โชว์ empty-state ตรง ๆ ("ยังไม่มีสาขาตู้คีบ") — ไม่มี fake data substitute
+ * (CEO 2026-10-12: เคยมี SAMPLE_BRANCHES/sample generator ตัดออกแล้ว — ของปลอมทำ CEO ตกใจคิดว่าข้อมูลจริงหาย).
  */
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CalendarX, User } from "lucide-react";
+import { AlertTriangle, Building2, CalendarX, User } from "lucide-react";
 import { Modal, EmptyState } from "@/components/clawfleet/os/kit";
 import { thDate, thWeekday, bahtN } from "@/components/clawfleet/os/format";
 import { assignMachineToStaff } from "@/lib/clawfleet/assignment-actions";
@@ -57,18 +58,6 @@ export type MatrixSerialMachine = {
 
 type Metric = "cost" | "cash" | "dolls" | "all";
 
-/* ── สาขาตัวอย่าง (ใช้เมื่อ DB ว่าง) — code/ชื่อ/จำนวนตู้ จาก design ── */
-const SAMPLE_BRANCHES: MatrixBranch[] = [
-  { id: "s-RS", code: "RS", name: "รังสิต", machines: 12 },
-  { id: "s-LP", code: "LP", name: "ลาดพร้าว", machines: 10 },
-  { id: "s-BK", code: "BK", name: "บางแค", machines: 11 },
-  { id: "s-BN", code: "BN", name: "บางนา", machines: 9 },
-  { id: "s-NB", code: "NB", name: "นนทบุรี", machines: 8 },
-  { id: "s-PT", code: "PT", name: "ปทุมธานี", machines: 10 },
-  { id: "s-SP", code: "SP", name: "สมุทรปราการ", machines: 7 },
-  { id: "s-MB", code: "MB", name: "มีนบุรี", machines: 9 },
-];
-
 /* แถบสีตามต้นทุน/ตัว (cost band): เขียว=กำลังดี · เหลือง=ปล่อยง่ายไป(กำไรหด) · แดง=คีบยากไป(ลูกค้าหนี) */
 function costBand(v: number): { bg: string; co: string } {
   if (v < 180) return { bg: "#FCF1E2", co: "#B45309" }; // ปล่อยง่ายไป — ต้นทุน/ตัวต่ำ กำไรหด
@@ -82,42 +71,6 @@ function dollHeat(v: number): string {
   return `rgba(232,163,61,${(0.06 + Math.max(0, Math.min(1, (v - 4) / 22)) * 0.4).toFixed(2)})`;
 }
 
-/* ── SAMPLE generator (เฉพาะเมื่อ DB ว่าง) — deterministic, ไม่มี hydration mismatch ── */
-function mrng(s: number): number {
-  const x = Math.sin(s * 12.9898) * 43758.5453;
-  return x - Math.floor(x);
-}
-type SampleSeed = { code: string; base: number; swapEvery: number; swapOff: number };
-function sampleMachines(branchCode: string, n: number): SampleSeed[] {
-  const seed0 = (branchCode.charCodeAt(0) || 65) + (branchCode.charCodeAt(1) || 65);
-  return Array.from({ length: n }, (_, i) => ({
-    code: `${branchCode}-${String(i + 1).padStart(2, "0")}`,
-    base: 165 + Math.round(mrng(seed0 + i * 7 + 1) * 130),
-    swapEvery: 9 + Math.round(mrng(seed0 + i * 3 + 2) * 13),
-    swapOff: Math.round(mrng(seed0 + i * 5 + 3) * 12),
-  }));
-}
-function sampleVals(seed0: number, m: SampleSeed, mi: number, d: number): MatrixSerialDay {
-  const phase = (d + m.swapOff) % m.swapEvery;
-  const cost = Math.max(95, m.base + Math.round((mrng(seed0 + mi * 31 + d * 7 + 1) - 0.5) * 46) - Math.round(phase * 1.1));
-  return {
-    cost,
-    cash: 280 + Math.round(mrng(seed0 + mi * 17 + d * 5 + 2) * 520),
-    dolls: 4 + Math.round(mrng(seed0 + mi * 13 + d * 11 + 3) * 22),
-    swapped: phase === 0,
-    baseline: false,
-    collected: true,
-    anomaly: false,
-  };
-}
-/** สร้าง isoDays ตัวอย่าง (วันจริงย้อนหลัง · ใช้เฉพาะ sample path) */
-function sampleIsoDays(n: number): string[] {
-  const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" });
-  const out: string[] = [];
-  const now = Date.now();
-  for (let i = 0; i < n; i++) out.push(fmt.format(new Date(now - i * 86_400_000)));
-  return out;
-}
 /** parse "YYYY-MM-DD" → Date (เที่ยงวัน กัน DST/offset) สำหรับ label เท่านั้น */
 function isoToDate(iso: string): Date {
   const [y, m, d] = iso.split("-").map(Number);
@@ -199,7 +152,7 @@ export function MatrixClient({
   canEditRaw?: boolean;
 }) {
   const empty = branches.length === 0;
-  const rows = empty ? SAMPLE_BRANCHES : branches;
+  const rows = branches;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
@@ -220,7 +173,7 @@ export function MatrixClient({
 
   const branchCode = useMemo(() => {
     const found = initialBranch && rows.find((b) => b.code === initialBranch);
-    return found ? found.code : rows[0]?.code ?? "RS";
+    return found ? found.code : rows[0]?.code ?? "";
   }, [initialBranch, rows]);
 
   const [metric, setMetric] = useState<Metric>("cost");
@@ -320,22 +273,8 @@ export function MatrixClient({
       .finally(() => setAssigning(false));
   };
 
-  /* แถววัน (ใหม่→เก่า) + grid ค่าจริง (หรือ sample เมื่อ DB ว่าง) */
+  /* แถววัน (ใหม่→เก่า) + grid ค่าจริงล้วน — เรียงวันตาม isoDays (ใหม่→เก่า) · เติมช่องว่าง = ไม่มีข้อมูล */
   const grid = useMemo(() => {
-    // SAMPLE path — DB ว่าง: สร้าง deterministic จาก code (โชว์โครงหน้า)
-    if (empty) {
-      const seed0 = (branchCode.charCodeAt(0) || 65) + (branchCode.charCodeAt(1) || 65);
-      const sIso = sampleIsoDays(days);
-      const sMachines = sampleMachines(branchCode, machineCount);
-      const gm: GridMachine[] = sMachines.map((m, mi) => ({
-        machineId: null,
-        code: m.code,
-        nickname: null,
-        days: sIso.map((_iso, di) => ({ ...sampleVals(seed0, m, mi, di), baseline: false, anomaly: false, hasData: true })),
-      }));
-      return { iso: sIso, machines: gm };
-    }
-    // REAL path — เรียงวันตาม isoDays (ใหม่→เก่า) · เติมช่องว่าง = ไม่มีข้อมูล
     const gm: GridMachine[] = machines.map((m) => ({
       machineId: m.machineId,
       code: m.code,
@@ -347,7 +286,7 @@ export function MatrixClient({
       }),
     }));
     return { iso: isoDays, machines: gm };
-  }, [empty, branchCode, machineCount, days, isoDays, machines]);
+  }, [isoDays, machines]);
 
   /* สร้างเมทริกซ์ที่ render ได้ (รายแถว=วัน · คอลัมน์=ตู้) + footer เฉลี่ยตู้ */
   const matrix = useMemo(() => {
@@ -662,6 +601,20 @@ export function MatrixClient({
     grid.machines.length > 0 &&
     grid.machines.every((m) => m.days.every((d) => !d.hasData));
 
+  // ว่างจริง (บริษัทนี้ไม่มีสาขาตู้คีบเลย) → โชว์ empty-state ตรง ๆ ไม่มีสาขา/ตู้/ยอดปลอมให้สับสน
+  // (CEO 2026-10-12: ของปลอมที่ดูเหมือนจริง เช่น "รังสิต"/RS-01 ทำให้คิดว่าสาขาจริงหายไป)
+  if (empty) {
+    return (
+      <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 14 }}>
+        <EmptyState
+          icon={<Building2 size={28} />}
+          title="ยังไม่มีสาขาตู้คีบ"
+          sub="บริษัทนี้ยังไม่มีสาขา/ตู้คีบในระบบ — เพิ่มสาขา + ตั้งค่าตู้ก่อน แล้วตารางเจาะลึกตู้ × วันจะแสดงผล"
+        />
+      </div>
+    );
+  }
+
   return (
     <div style={{ opacity: pending ? 0.6 : 1, transition: "opacity .15s" }}>
       {/* มุมมอง: ตู้×วัน (เจาะลึกรายสาขา) | สาขา×วัน (เช็คลิสต์เก็บเงินทุกสาขา) */}
@@ -708,26 +661,6 @@ export function MatrixClient({
         />
       ) : (
       <>
-      {empty && (
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            alignItems: "center",
-            background: "#FCF8EC",
-            border: "1px solid #F0E2BE",
-            borderRadius: 10,
-            padding: "9px 14px",
-            marginBottom: 16,
-            fontSize: 12,
-            color: "#7A5510",
-          }}
-        >
-          <AlertTriangle size={15} /> ยังไม่มีข้อมูลจริง — กำลังแสดง<b>&nbsp;ตัวอย่าง&nbsp;</b>เพื่อให้เห็นภาพรายงาน
-          (ตารางเจาะลึก ตู้×วัน รอเชื่อมข้อมูลจริงภายหลัง)
-        </div>
-      )}
-
       <div style={{ fontSize: 12, color: "#8A909A", marginBottom: 9 }}>
         {view === "raw"
           ? "เลือกสาขาเพื่อดูข้อมูลดิบที่พนักงานกรอก — ทุกตู้ ทุกรายการ ในหน้าเดียว"
@@ -981,9 +914,6 @@ export function MatrixClient({
       {/* the matrix table — sticky first col (dates) + sticky header (machine codes) */}
       {!noData && (
       <div style={{ position: "relative", background: "#fff", border: "1px solid #E8EAED", borderRadius: 14, overflow: "hidden" }}>
-        {empty && (
-          <span style={{ position: "absolute", top: 10, right: 16, zIndex: 4, fontSize: 11, fontWeight: 700, letterSpacing: 2, color: "#C2C7CF", pointerEvents: "none" }}>ตัวอย่าง · DEMO</span>
-        )}
         <div style={{ overflow: "auto", maxHeight: "60vh" }}>
           <table className="num" style={{ borderCollapse: "separate", borderSpacing: 0, width: "100%", fontSize: 12 }}>
             <thead>

@@ -179,22 +179,10 @@ type AppMachine = {
 // มาจาก branches ทั้งหมดที่ผู้ใช้มีสิทธิ์ (รวมสาขาที่ยังไม่มีตู้แต่มีของรอรับ เช่นเพิ่งเปิด).
 type BranchLite = { id: string; name: string; code: string };
 
-const DEMO_BRANCH_ID = "demo-branch-rs";
-const DEMO_SKUS: CollectSku[] = [
-  { id: "demo-sku-1", sku: "KT-01", name: "ซานริโอ้ คิตตี้" },
-  { id: "demo-sku-2", sku: "BR-01", name: "หมีบราวน์ L" },
-  { id: "demo-sku-3", sku: "MJ-01", name: "โมจิหมีขาว" },
-  { id: "demo-sku-4", sku: "KM-01", name: "คุมะ ไซส์ M" },
-];
-
-const DEMO_MACHINES: AppMachine[] = [
-  { id: "demo-RS-03", code: "RS-03", nickname: null, branch: "รังสิต", zone: "โซน A", branchId: DEMO_BRANCH_ID, lastStock: 10, lastDollMeter: 105, lastCoinMeter: 210, product: "ซานริโอ้ คิตตี้", awaitingSetup: false , sellPriceCents: 25000, pricePerPlayCoins: 1 },
-  { id: "demo-RS-04", code: "RS-04", nickname: null, branch: "รังสิต", zone: "โซน A", branchId: DEMO_BRANCH_ID, lastStock: 12, lastDollMeter: 88, lastCoinMeter: 540, product: "โมจิหมีขาว", awaitingSetup: false , sellPriceCents: 25000, pricePerPlayCoins: 1 },
-  { id: "demo-RS-07", code: "RS-07", nickname: null, branch: "รังสิต", zone: "โซน B", branchId: DEMO_BRANCH_ID, lastStock: 9, lastDollMeter: 150, lastCoinMeter: 300, product: "หมีบราวน์ L", awaitingSetup: false , sellPriceCents: 25000, pricePerPlayCoins: 1 },
-  { id: "demo-RS-05", code: "RS-05", nickname: null, branch: "รังสิต", zone: "โซน B", branchId: DEMO_BRANCH_ID, lastStock: 11, lastDollMeter: 120, lastCoinMeter: 410, product: "คุมะ ไซส์ M", awaitingSetup: false , sellPriceCents: 25000, pricePerPlayCoins: 1 },
-  { id: "demo-BK-02", code: "BK-02", nickname: null, branch: "บางแค", zone: "โซน C", branchId: DEMO_BRANCH_ID, lastStock: 8, lastDollMeter: 212, lastCoinMeter: 880, product: "หมีน้ำตาล S", awaitingSetup: false , sellPriceCents: 25000, pricePerPlayCoins: 1 },
-  { id: "demo-LP-01", code: "LP-01", nickname: null, branch: "ลาดพร้าว", zone: "โซน A", branchId: DEMO_BRANCH_ID, lastStock: 7, lastDollMeter: 64, lastCoinMeter: 150, product: "ซานริโอ้ คิตตี้", awaitingSetup: false , sellPriceCents: 25000, pricePerPlayCoins: 1 },
-];
+// NOTE (CEO 2026-10-12): เดิมมี DEMO_BRANCH_ID/DEMO_SKUS/DEMO_MACHINES (ตู้ปลอม "RS-03"/"บางแค"/
+// "ลาดพร้าว" ฯลฯ พร้อมเลขมิเตอร์ที่ดูเหมือนจริง) แทนตู้จริงเมื่อสาขายังไม่มีตู้เลย — ตัดทิ้งทั้งหมด
+// (เหมือนเคสหน้ารายงานออฟฟิศ). สาขาไม่มีตู้จริง → honest empty-state ("ยังไม่มีตู้ที่ได้รับมอบหมาย" /
+// "สาขานี้ยังไม่มีตู้ในระบบ" ที่มีอยู่แล้วใน HomeScreen) ไม่มีของปลอมให้กดลองอีกต่อไป.
 
 /** flatten real Branch>Group>Claw → a flat machine route (CLAW only). */
 function flattenReal(branches: GroupCollectBranch[], awaitingSetupIds: Set<string>): AppMachine[] {
@@ -647,9 +635,19 @@ function reducer(s: WizardState, a: Action): WizardState {
   }
 }
 
+// ฟอร์มเปล่า (ไม่มีตู้เลือกไว้ตอน mount แรก — step:0 = home screen ยังไม่เห็นฟอร์มนี้อยู่ดี)
+// ใช้ shape เดียวกับ formFor() เส้นทางจริง (ไม่ใช่ demo) — กันพนักงานเห็นเลขเดาตอนเพิ่งเปิดแอป
+const blankForm: Form = {
+  last: 0, left: null, refill: null, refillLines: [], product: "", refillProductId: null,
+  refillWarehouseId: null, category: "ลิขสิทธิ์", price: null,
+  dollPrev: 0, dollMeterOffset: null, prevDollGear: null, prevDollDigi: null, dollDigi: null, dollGear: null,
+  coinPrev: 0, coinMeterOffset: null, prevCoinGear: null, prevCoinDigi: null, coinDigi: null, coinGear: null,
+  cash: null, returnedTotal: 0, remainBySku: {},
+};
+
 const initialState: WizardState = {
   step: 0, machineId: null,
-  form: formFor(DEMO_MACHINES[0], DEMO_SKUS),
+  form: blankForm,
   photos: { ...blankPhotos },
   photosCaptured: { ...blankPhotos },
   meterDeferred: false, resumed: false, configSent: false, photoHub: false, sessionId: null,
@@ -793,10 +791,12 @@ export function StaffAppClient({ orgId, branches, skus, photoRequired, userName,
     () => branches.map((b) => ({ id: b.id, name: b.name, code: b.code })),
     [branches],
   );
+  // usingDemo = "สาขานี้ยังไม่มีตู้จริง" (สัญญาณจริง ไม่ใช่ตัวอย่างปลอมอีกแล้ว — ดู NOTE ด้านบน)
+  // machines/skuList = ข้อมูลจริงเสมอ · ว่าง = HomeScreen โชว์ empty-state ของมันเอง (ไม่เติมตู้ปลอม)
   const usingDemo = realMachines.length === 0;
-  const machines = usingDemo ? DEMO_MACHINES : realMachines;
-  const skuList = usingDemo || skus.length === 0 ? DEMO_SKUS : skus;
-  // ในโหมด demo ไม่มี backend อัปโหลด → ปุ่มถ่ายถูก disable อยู่แล้ว, จึงไม่บังคับถ่าย (กันค้าง)
+  const machines = realMachines;
+  const skuList = skus;
+  // ยังไม่มีตู้จริง → ยังไม่มีอะไรให้ถ่ายรูป/บังคับถ่าย (กันค้างตอนสาขายังไม่มีตู้)
   const enforcePhoto = photoRequired && !usingDemo;
 
   // ONE StaffApp instance per render-slot. Each keeps its own local state, but the
@@ -1722,11 +1722,8 @@ function StaffApp({ orgId, machines, branchList, skus, usingDemo, photoRequired,
 
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, height: "100%" }}>
-      {usingDemo && onHome && (
-        <div style={{ margin: "8px 18px 0", background: "#FCF8EC", border: "1px solid #F0E2BE", borderRadius: 11, padding: "8px 12px", fontSize: 11, color: "#7A5510", lineHeight: 1.4 }}>
-          กำลังแสดงตัวอย่าง (ยังไม่มีข้อมูลจริง) — กดลองเดินขั้นตอนได้ ไม่บันทึกจริง
-        </div>
-      )}
+      {/* CEO 2026-10-12: เดิมมีแบนเนอร์ "กำลังแสดงตัวอย่าง — กดลองเดินขั้นตอนได้" คู่กับตู้ปลอม DEMO_MACHINES
+          ตอนนี้ไม่มีตู้ปลอมให้ลองกดแล้ว (สาขาไม่มีตู้จริง → HomeScreen โชว์ empty-state ของมันเองด้านล่าง) */}
       {error && (
         <div style={{ margin: "8px 18px 0", background: "#FDF3F2", border: "1px solid #F3D4D0", borderRadius: 11, padding: "8px 12px", fontSize: 11.5, color: "#B42318", lineHeight: 1.4 }}>
           {error}
@@ -2727,17 +2724,13 @@ function HistoryPanel({ history, branchMachineCounts, isHistoryAdmin, usingDemo,
   const branchPendingDeposits = selectedBranchId ? pendingDeposits.filter((r) => r.branchId === selectedBranchId) : [];
   const canDeposit = !usingDemo && !!selectedBranchId && balance.outstandingCents > 0;
   const todayYmd = clientTodayBangkokYmd();
-  // โหมดตัวอย่าง (ยังไม่มีข้อมูลจริง) → โชว์ตัวอย่างแต่ติดป้ายชัดว่าเป็นตัวอย่าง (ไม่หลอกว่าเป็นของจริง)
-  const demoRows: StaffHistoryRow[] = [
-    { kind: "collect", code: "LP-11", branch: "ลาดพร้าว", date: todayYmd, time: "09:20", cashBaht: 480, expectedCashBaht: 480, cashDiffBaht: 0, coinMeter: 258, coinMeterBefore: 210, dollMeter: 109, dollMeterBefore: 105, refillQty: 4, sellPriceCents: 25000, dollsOut: 4, stockBefore: 8, stockAfter: 12, ok: true, refillSkus: [{ name: "หมีน้ำตาล S", qty: 3 }, { name: "หมีขาว M", qty: 1 }], photos: [] },
-    { kind: "swap", code: "DL03-02", branch: "โนนแดง", date: shiftYmd(todayYmd, -1), time: "16:40", cashBaht: 0, swapReturned: 1, swapRefilled: 6, ok: true, swapRefilledSkus: [{ name: "ซานริโอ้ คิตตี้", qty: 6 }] },
-    { kind: "collect", code: "DL03-01", branch: "โนนแดง", date: shiftYmd(todayYmd, -2), time: "14:12", cashBaht: 300, expectedCashBaht: 340, cashDiffBaht: -40, coinMeter: 148, coinMeterBefore: 100, dollMeter: 86, dollMeterBefore: 84, refillQty: 7, sellPriceCents: 25000, dollsOut: 2, stockBefore: 7, stockAfter: 12, ok: false, shortReason: "เก็บเงินได้ ฿300 แต่มิเตอร์เหรียญขึ้น ฿480 (ต่าง −฿40 หลังหักทอน)", refillSkus: [{ name: "หมีน้ำตาล S", qty: 7 }], photos: [] },
-  ];
-  const rows = usingDemo ? demoRows : history;
+  // ข้อมูลจริงล้วน — ว่าง (ยังไม่มีตู้/ยังไม่เคยเก็บ) = empty-state ตรง ๆ ด้านล่าง ไม่มี demoRows ปลอมแล้ว
+  // (CEO 2026-10-12: ของปลอมที่ดูเหมือนรอบเก็บเงินจริง เช่น "฿480"/"LP-11" ทำ CEO ตกใจคิดว่าข้อมูลจริงหาย)
+  const rows = history;
 
   // CEO 2026-08-02 · ประวัติล็อกตาม "สาขาที่เลือกบนหน้าหลัก" เท่านั้น — เปลี่ยนสาขาต้องไปที่หน้าหลัก
   //   (เอาชิปสลับสาขาออก · กันสับสน/แก้ผิดสาขา) · เทียบด้วย branchId (ไม่ใช่ชื่อ กันสาขาชื่อซ้ำ)
-  const effectiveFilter = usingDemo ? null : (selectedBranchId ?? null);
+  const effectiveFilter = selectedBranchId ?? null;
   const branchScopedRows = effectiveFilter ? rows.filter((r) => r.branchId === effectiveFilter) : rows;
   // CEO 2026-08-01 · กรองตาม "ผู้เก็บ" — null=ทุกคน · "__mine__"=ฉัน · else=ชื่อคน (จาก server collectedBy)
   const [personFilter, setPersonFilter] = useState<string | null>(null);
@@ -2809,10 +2802,6 @@ function HistoryPanel({ history, branchMachineCounts, isHistoryAdmin, usingDemo,
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {usingDemo && (
-        <ComingSoonBanner text="กำลังแสดงตัวอย่าง (ยังไม่มีข้อมูลจริง) — รายการจริงจะขึ้นเมื่อเก็บเงินผ่านระบบ" />
-      )}
-
       {/* เวิร์กช็อป 2026-08-29 · แถบยอดฝากเงิน — "วันนี้ต้องฝาก" แยกจาก "สะสมยังไม่ฝาก" (CEO ขอแยกกัน) +
           ปุ่มฝากเงินเปิด DepositSheet ตรงนี้เลย (ไม่ต้องไปหน้า /clawfleet/os/deposits) */}
       {!usingDemo && (
@@ -2860,7 +2849,7 @@ function HistoryPanel({ history, branchMachineCounts, isHistoryAdmin, usingDemo,
         </div>
       )}
 
-      {!usingDemo && rows.length === 0 ? (
+      {rows.length === 0 ? (
         <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 14 }}>
           <EmptyState icon={<Inbox size={30} strokeWidth={1.6} />} title="ยังไม่มีประวัติการเก็บ"
             sub="เมื่อมีการเก็บเงิน / เปลี่ยนตุ๊กตาในสาขาที่คุณดูแล รายการจะขึ้นที่นี่ (ย้อนหลัง 45 วัน)" />
@@ -3845,12 +3834,12 @@ function repairStatusStyle(status: string): { label: string; c: string; bg: stri
   }
 }
 
-function RepairPanel({ orgId, machines, usingDemo, myRecentTickets }: {
+function RepairPanel({ orgId, machines, myRecentTickets }: {
   orgId: string; machines: AppMachine[]; usingDemo: boolean; myRecentTickets: RepairTicketRow[];
 }) {
-  // ตู้จริงเท่านั้น (โหมด demo ไม่มี backend → แจ้งซ่อมจริงไม่ได้ · โชว์ป้ายตัวอย่าง)
+  // ตู้จริงเท่านั้น (isDemo เป็น no-op เสมอตอนนี้ — เผื่อไว้ให้ปลอดภัยถ้ามี id แปลกหลุดมา)
   const realMachines = useMemo(() => machines.filter((m) => !isDemo(m.id)), [machines]);
-  const canSubmit = !usingDemo && realMachines.length > 0;
+  const canSubmit = realMachines.length > 0;
 
   const [machineId, setMachineId] = useState<string>(realMachines[0]?.id ?? "");
   const [symptom, setSymptom] = useState<string>(REPAIR_SYMPTOMS[0]);
@@ -3923,10 +3912,7 @@ function RepairPanel({ orgId, machines, usingDemo, myRecentTickets }: {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
-      {usingDemo && (
-        <ComingSoonBanner text="กำลังแสดงตัวอย่าง (ยังไม่มีข้อมูลจริง) — แจ้งซ่อมจริงได้เมื่อมีตู้ในระบบ" />
-      )}
-      {!usingDemo && realMachines.length === 0 && (
+      {realMachines.length === 0 && (
         <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 14 }}>
           <EmptyState icon={<Inbox size={30} strokeWidth={1.6} />} title="ยังไม่มีตู้ในระบบ" sub="ติดต่อผู้ดูแลเพื่อเพิ่มตู้ก่อนแจ้งซ่อม" />
         </div>
@@ -4060,7 +4046,7 @@ function RepairPanel({ orgId, machines, usingDemo, myRecentTickets }: {
 }
 
 /* ─────────────────── N3 · นับสต๊อกมือถือ (ProductCountCard list → submitStockCount DRAFT) ─────────────────── */
-function StockCountPanel({ orgId, usingDemo, branchId, branchCode, products, warehouses, countDocs }: {
+function StockCountPanel({ orgId, branchId, branchCode, products, warehouses, countDocs }: {
   orgId: string; usingDemo: boolean; branchId: string; branchCode: string; products: BranchStockProduct[];
   // WAVE-3b · N3 · คลัง active ของสาขานี้ — picker "นับคลัง" โผล่เฉพาะเมื่อ >1 ห้อง (default คลังหลัก).
   warehouses: BranchWarehouse[];
@@ -4103,7 +4089,8 @@ function StockCountPanel({ orgId, usingDemo, branchId, branchCode, products, war
     .map((p) => ({ productId: p.id, countedQty: counts[p.id] }))
     .filter((l): l is { productId: string; countedQty: number } => l.countedQty != null);
 
-  const canSubmit = !usingDemo && !!branchId && countedLines.length > 0 && uploadingPhotos.size === 0;
+  // นับสต๊อกไม่เกี่ยวกับว่ามีตู้คีบหรือยัง (usingDemo) — ใช้ branchId + รายการนับจริงเท่านั้น
+  const canSubmit = !!branchId && countedLines.length > 0 && uploadingPhotos.size === 0;
 
   function submit() {
     if (!canSubmit) return;
@@ -4143,10 +4130,8 @@ function StockCountPanel({ orgId, usingDemo, branchId, branchCode, products, war
     });
   }
 
-  // demo → ยังไม่มีข้อมูลจริง (ไม่มีทั้งนับจริง+ประวัติ) → banner เดียว
-  if (usingDemo) {
-    return <ComingSoonBanner text="กำลังแสดงตัวอย่าง (ยังไม่มีข้อมูลจริง) — นับสต๊อกจริงได้เมื่อมีสินค้าในคลังสาขา" />;
-  }
+  // CEO 2026-10-12: เดิมมี if(usingDemo) ปิดทั้งแท็บด้วย banner "ตัวอย่าง" ทั้งที่ข้อมูลสต๊อกจริง
+  // (products) ไม่เกี่ยวกับว่ามีตู้คีบหรือยัง — ตัดทิ้ง ใช้ empty-state ของ products.length===0 ด้านล่างแทน
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -4338,7 +4323,7 @@ function CountHistoryCard({ doc }: { doc: CfCountRow }) {
 }
 
 /* ─────────────────── N6 · รับสินค้ามือถือ (ใบกระจายขาเข้า → confirmShipmentReceived) ─────────────────── */
-function GoodsReceivePanel({ orgId, usingDemo, branchCode, deliveries, onHandByProduct, receivedDocs }: {
+function GoodsReceivePanel({ orgId, branchCode, deliveries, onHandByProduct, receivedDocs }: {
   orgId: string; usingDemo: boolean; branchCode: string; deliveries: InboundDelivery[];
   onHandByProduct: Record<string, number>; // F1 · คลังตอนนี้ต่อสินค้า
   receivedDocs: CfReceivedDoc[]; // F2 · ประวัติรับแล้ว
@@ -4346,9 +4331,8 @@ function GoodsReceivePanel({ orgId, usingDemo, branchCode, deliveries, onHandByP
   // F2 · แท็บ "รอรับ" | "รับแล้ว" — default = รอรับ (งานที่ต้องทำก่อน)
   const [tab, setTab] = useState<"pending" | "received">("pending");
 
-  if (usingDemo) {
-    return <ComingSoonBanner text="กำลังแสดงตัวอย่าง (ยังไม่มีข้อมูลจริง) — รับสินค้าจริงได้เมื่อมีใบกระจายเข้าสาขา" />;
-  }
+  // CEO 2026-10-12: เดิมมี if(usingDemo) ปิดทั้งแท็บด้วย banner "ตัวอย่าง" ทั้งที่ deliveries/receivedDocs
+  // เป็นข้อมูลจริงของสาขา ไม่เกี่ยวกับว่ามีตู้คีบหรือยัง — ตัดทิ้ง ใช้ empty-state ของแต่ละแท็บด้านล่างแทน
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
