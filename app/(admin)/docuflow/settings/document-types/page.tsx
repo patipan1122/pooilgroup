@@ -35,7 +35,14 @@ const EXTRA_BIZTYPE_META: Record<string, { label: string; emoji: string }> = {
 };
 
 interface PageProps {
-  searchParams: Promise<{ company?: string }>;
+  /** `businessType` — Pinpoint 18-pt Batch 3 (2026-10-13): the checklist
+   *  page (/docuflow/checklist) deep-links here with this param so an
+   *  admin who clicks "จัดการ" on a specific business type's card lands
+   *  with that biztype already preselected on the create form, instead of
+   *  having to re-pick it. Purely a create-dialog default — does not
+   *  filter the list below (the list stays scoped to `company` only, same
+   *  as before). */
+  searchParams: Promise<{ company?: string; businessType?: string }>;
 }
 
 export default async function DocumentTypesSettingsPage({
@@ -44,7 +51,7 @@ export default async function DocumentTypesSettingsPage({
   const session = await requireSession();
   await requireModuleAdmin(session.user, "docuflow");
   const orgId = session.user.org_id;
-  const { company } = await searchParams;
+  const { company, businessType } = await searchParams;
 
   // Company-switcher scoping Phase 3 (2026-10-11) — same "no combined view"
   // rule as every other page: only show types scoped to the currently
@@ -115,6 +122,7 @@ export default async function DocumentTypesSettingsPage({
         businessTypeOptions={businessTypeOptions}
         companyOptions={companies}
         defaultCompanyId={companyId || undefined}
+        defaultBusinessType={businessType || undefined}
       />
     </div>
   );

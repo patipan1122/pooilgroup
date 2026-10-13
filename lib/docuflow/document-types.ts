@@ -216,6 +216,94 @@ export async function listDocumentTypesForUpload(
 }
 
 /* ============================================================
+   listChecklistRequirements — merged real+canonical requirements list,
+   used ONLY by the Checklist compliance page
+   (app/(admin)/docuflow/checklist/page.tsx), Pinpoint 18-pt Batch 3
+   (2026-10-13).
+
+   This is DELIBERATELY different from listDocumentTypesForBusinessType()
+   above. That function is all-or-nothing (real rows win completely the
+   moment ANY exist) — correct for the upload-form picker, where showing
+   one coherent list matters more than exhaustiveness. But the Checklist
+   page's whole purpose is "never let a legally-required document silently
+   disappear" ("ขาดแม้แต่ใบเดียวก็โดนปิดสาขา/ปรับ" per the page's own copy) —
+   if an admin creates ONE custom org-specific checklist item for a
+   business type, the all-or-nothing rule would hide every other static
+   legal requirement for that business type from the compliance view,
+   which is a correctness regression for a compliance tool, not a cosmetic
+   one.
+
+   So this ADDITIVELY merges:
+     - every real active DocumentType row for this org+businessType
+       (includes rows created via the admin CRUD UI at
+       /docuflow/settings/document-types, whether genuinely custom or
+       previously imported from the canonical list)
+     - every canonical-docs.ts spec NOT already covered by a real row,
+       matched by canonicalKey (set when a row was created via the
+       explicit "นำเข้าจากรายการมาตรฐาน" import action) OR by exact
+       case-insensitive name (covers a manually-created row that happens
+       to share a canonical item's name without going through import)
+
+   Read-time only; nothing written here. Company-unscoped on purpose —
+   this page has never had a company switcher (shows every company's
+   requirements org-wide), so this keeps that existing behavior rather
+   than introducing new scoping as a side effect of this fix.
+   ============================================================ */
+
+export async function listChecklistRequirements(
+  orgId: string,
+  businessType: string,
+): Promise<DocumentTypeOption[]> {
+  const rows = await prisma.documentType.findMany({
+    where: { orgId, isActive: true, businessType },
+    orderBy: { name: "asc" },
+  });
+
+  const real: DocumentTypeOption[] = rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    category: row.category,
+    businessType: row.businessType,
+    companyId: row.companyId,
+    frequency: row.frequency,
+    dangerLevel: row.dangerLevel,
+    regulator: row.regulator,
+    description: row.description,
+    canonicalKey: row.canonicalKey,
+    isCanonical: false,
+  }));
+
+  const coveredKeys = new Set(
+    rows.map((r) => r.canonicalKey).filter((k): k is string => !!k),
+  );
+  const coveredNames = new Set(rows.map((r) => r.name.trim().toLowerCase()));
+
+  const canonicalFallback: DocumentTypeOption[] = getCanonicalDocsForBizType(
+    businessType,
+  )
+    .filter(
+      (spec) =>
+        !coveredKeys.has(spec.name) &&
+        !coveredNames.has(spec.name.trim().toLowerCase()),
+    )
+    .map((spec) => ({
+      id: null,
+      name: spec.name,
+      category: spec.category,
+      businessType,
+      companyId: null,
+      frequency: spec.frequency,
+      dangerLevel: spec.dangerLevel,
+      regulator: spec.regulator,
+      description: spec.description,
+      canonicalKey: spec.name,
+      isCanonical: true,
+    }));
+
+  return [...real, ...canonicalFallback];
+}
+
+/* ============================================================
    CRUD helpers — org-scoped wrappers used by the settings CRUD API
    routes (app/api/docuflow/document-types/**).
    ============================================================ */

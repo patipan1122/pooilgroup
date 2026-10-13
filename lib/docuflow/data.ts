@@ -60,6 +60,11 @@ export interface CanonicalDocument {
    *  list/detail view can show + change the current placement. */
   documentGroupId: string | null;
   documentGroup: CanonicalDocumentGroupRef | null;
+  /** FK to document_types (lib/docuflow/document-types.ts), null for legacy
+   *  free-text-only uploads. Added for the Pinpoint 18-pt Batch 3 checklist
+   *  fix (2026-10-13) so compliance matching can use the exact FK instead
+   *  of fuzzy name matching whenever a real DocumentType row is linked. */
+  documentTypeId: string | null;
 }
 
 export interface CanonicalDocumentGroupRef {
@@ -533,6 +538,9 @@ type DocumentWithRelations = {
   costFrequency: string | null;
   documentGroupId: string | null;
   documentGroupRef: { id: string; name: string } | null;
+  /** FK to document_types — Pinpoint 18-pt Batch 3 (2026-10-13), additive
+   *  scalar already returned by this query (no `select` override above). */
+  documentTypeId: string | null;
 };
 
 function toCanonicalDocument(row: DocumentWithRelations): CanonicalDocument {
@@ -561,6 +569,7 @@ function toCanonicalDocument(row: DocumentWithRelations): CanonicalDocument {
     documentGroup: row.documentGroupRef
       ? { id: row.documentGroupRef.id, name: row.documentGroupRef.name }
       : null,
+    documentTypeId: row.documentTypeId,
     ownership: row.ownership.map((o) => ({
       id: o.id,
       level: o.level,

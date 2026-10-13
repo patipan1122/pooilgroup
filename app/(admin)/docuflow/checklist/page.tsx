@@ -1,11 +1,26 @@
 // DocuFlow · Checklist เอกสารที่ต้องมี (per business type)
 // ────────────────────────────────────────────────────────────────────
-// แสดงเทียบ "เอกสารที่อัปโหลดแล้ว" vs "เอกสารที่กฎหมายกำหนดให้ต้องมี"
-// ต่อ business type — ช่วยผู้บริหารเห็น compliance gap ทันที
+// แสดงเทียบ "เอกสารที่อัปโหลดแล้ว" vs "เอกสารที่ต้องมี" ต่อ business type —
+// ช่วยผู้บริหารเห็น compliance gap ทันที
 //
-// Data sources:
-//   - Canonical: lib/docuflow/canonical-docs.ts (static, ไม่มี orgId)
+// Data sources (Pinpoint 18-pt Batch 3, 2026-10-13 — CEO complaint #9:
+// checklist used to be 100% read-only, hardcoded to the static catalog
+// below, with ZERO connection to the org's own DocumentType rows even
+// though a full admin CRUD page for DocumentType already existed at
+// /docuflow/settings/document-types):
+//   - Requirements: lib/docuflow/document-types.ts →
+//       listChecklistRequirements(orgId, bt) — merges the org's real,
+//       admin-managed DocumentType rows (create/edit/deactivate at
+//       /docuflow/settings/document-types) with any canonical-docs.ts
+//       (static, ไม่มี orgId) entries not yet covered by a real row, so an
+//       org that has customized nothing still sees the full legal list
+//       exactly as before, and any custom/edited row the admin creates
+//       now actually affects this page.
 //   - Uploaded : lib/docuflow/data.ts → loadDocuments(orgId, { businessType })
+//     — matched against each requirement by the real DocumentType.id FK
+//     (documentTypeId) when the requirement is a real row, falling back
+//     to the original fuzzy name-match only for still-unimported
+//     canonical entries (preserves today's behavior for those).
 //
 // Spec: ดีเทลv1/DOCUFLOW.md §3 (เอกสารตามประเภทธุรกิจ)
 // ────────────────────────────────────────────────────────────────────
@@ -17,26 +32,29 @@ import {
   CheckCircle2,
   XCircle,
   ChevronRight,
-  ArrowLeft,
   ShieldCheck,
+  Settings,
 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { userIsModuleAdmin, requireModuleView } from "@/lib/auth/module-access";
 import { loadDocuments } from "@/lib/docuflow/data";
 import { BUSINESS_TYPES } from "@/constants/business-types";
 import {
-  getCanonicalDocsForBizType,
   listSupportedBizTypes,
   DOC_DANGER_TONE,
-  type CanonicalDocSpec,
+  type DocDangerLevel,
   type CanonicalBizType,
 } from "@/lib/docuflow/canonical-docs";
+import {
+  listChecklistRequirements,
+  type DocumentTypeOption,
+} from "@/lib/docuflow/document-types";
 import { Section } from "@/components/ui/section";
 import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { thaiDateLong } from "@/lib/utils/format";
 import {
-  DfCard,
+  DfButton,
   DfEyebrow,
   DfPageHeader,
   DfStatCard,
@@ -44,6 +62,17 @@ import {
 import { DfTopBanner } from "@/components/docuflow/df-top-banner";
 
 export const dynamic = "force-dynamic";
+
+/** Safe lookup — DocumentTypeOption.dangerLevel is `string | null` (an
+ *  admin-typed free value on custom rows), unlike CanonicalDocSpec's
+ *  closed DocDangerLevel union, so an unrecognized/missing value falls
+ *  back to a neutral badge instead of throwing/indexing undefined. */
+function dangerTone(level: string | null): "danger" | "warning" | "neutral" | "success" {
+  if (level && level in DOC_DANGER_TONE) {
+    return DOC_DANGER_TONE[level as DocDangerLevel];
+  }
+  return "neutral";
+}
 
 // FuelOS biztypes ที่ไม่มีใน BUSINESS_TYPES registry — ใส่ label/emoji เอง
 const EXTRA_BIZTYPE_META: Record<
@@ -58,37 +87,49 @@ interface ChecklistRow {
   bizType: CanonicalBizType;
   label: string;
   emoji: string;
-  canonical: CanonicalDocSpec[];
-  /** uploaded — distinct doc names ที่อัปโหลดผูก biztype นี้ */
+  /** org's real DocumentType rows for this biztype, merged with any
+   *  not-yet-covered canonical-docs.ts entries — see
+   *  listChecklistRequirements() for the merge rule. */
+  requirements: DocumentTypeOption[];
+  /** uploaded — distinct doc names ที่อัปโหลดผูก biztype นี้ (fuzzy-match
+   *  fallback for requirements not yet linked to a real DocumentType row) */
   uploadedNames: Set<string>;
   /** total uploaded ฉบับ (รวม duplicate sub-branches) */
   uploadedCount: number;
-  /** matched canonical specs (อัปโหลดครบแล้ว) */
-  matched: CanonicalDocSpec[];
-  /** missing canonical specs */
-  missing: CanonicalDocSpec[];
+  /** matched requirements (อัปโหลดครบแล้ว) */
+  matched: DocumentTypeOption[];
+  /** missing requirements */
+  missing: DocumentTypeOption[];
 }
 
 /**
- * Match canonical name → uploaded name (fuzzy substring both ways)
- * เพื่อให้ทนต่อชื่อที่ admin พิมพ์ยาว/สั้นกว่ามาตรฐาน
+ * Match each requirement against what's been uploaded. A requirement
+ * backed by a real DocumentType row (`id` populated) matches by the exact
+ * `documentTypeId` FK — precise, no guessing. A requirement still
+ * unimported from the static catalog (`id === null`) has no FK to match
+ * against yet, so it falls back to the original fuzzy name substring
+ * match (both ways) — identical to this page's pre-existing behavior,
+ * so an org that hasn't customized anything sees zero change.
  */
-function matchCanonical(
-  canonical: CanonicalDocSpec[],
+function matchRequirements(
+  requirements: DocumentTypeOption[],
   uploadedNames: Set<string>,
-): { matched: CanonicalDocSpec[]; missing: CanonicalDocSpec[] } {
+  uploadedTypeIds: Set<string>,
+): { matched: DocumentTypeOption[]; missing: DocumentTypeOption[] } {
   const uploadedLowerArr = Array.from(uploadedNames).map((n) =>
     n.toLowerCase(),
   );
-  const matched: CanonicalDocSpec[] = [];
-  const missing: CanonicalDocSpec[] = [];
-  for (const c of canonical) {
-    const cLower = c.name.toLowerCase();
-    const hit = uploadedLowerArr.some(
-      (u) => u.includes(cLower) || cLower.includes(u),
-    );
-    if (hit) matched.push(c);
-    else missing.push(c);
+  const matched: DocumentTypeOption[] = [];
+  const missing: DocumentTypeOption[] = [];
+  for (const req of requirements) {
+    const hit = req.id
+      ? uploadedTypeIds.has(req.id)
+      : uploadedLowerArr.some((u) => {
+          const cLower = req.name.toLowerCase();
+          return u.includes(cLower) || cLower.includes(u);
+        });
+    if (hit) matched.push(req);
+    else missing.push(req);
   }
   return { matched, missing };
 }
@@ -107,20 +148,28 @@ export default async function DocuFlowChecklistPage() {
         BUSINESS_TYPES[bt] ??
         EXTRA_BIZTYPE_META[bt] ?? { label: bt, emoji: "📦" };
 
-      const canonical = getCanonicalDocsForBizType(bt);
-      const uploaded = await loadDocuments(orgId, {
-        businessType: bt,
-        limit: 200,
-      });
+      const [requirements, uploaded] = await Promise.all([
+        listChecklistRequirements(orgId, bt),
+        loadDocuments(orgId, { businessType: bt, limit: 200 }),
+      ]);
 
       const uploadedNames = new Set(uploaded.map((d) => d.name));
-      const { matched, missing } = matchCanonical(canonical, uploadedNames);
+      const uploadedTypeIds = new Set(
+        uploaded
+          .map((d) => d.documentTypeId)
+          .filter((id): id is string => !!id),
+      );
+      const { matched, missing } = matchRequirements(
+        requirements,
+        uploadedNames,
+        uploadedTypeIds,
+      );
 
       return {
         bizType: bt,
         label: meta.label,
         emoji: meta.emoji,
-        canonical,
+        requirements,
         uploadedNames,
         uploadedCount: uploaded.length,
         matched,
@@ -131,17 +180,17 @@ export default async function DocuFlowChecklistPage() {
 
   // เรียงตาม % ขาด มากสุดก่อน (เน้น compliance gap)
   const rows = rowsRaw.sort((a, b) => {
-    const aRatio = a.canonical.length === 0 ? 0 : a.missing.length / a.canonical.length;
-    const bRatio = b.canonical.length === 0 ? 0 : b.missing.length / b.canonical.length;
+    const aRatio = a.requirements.length === 0 ? 0 : a.missing.length / a.requirements.length;
+    const bRatio = b.requirements.length === 0 ? 0 : b.missing.length / b.requirements.length;
     return bRatio - aRatio;
   });
 
   // Org-wide stats
-  const totalCanonical = rows.reduce((s, r) => s + r.canonical.length, 0);
+  const totalRequired = rows.reduce((s, r) => s + r.requirements.length, 0);
   const totalMatched = rows.reduce((s, r) => s + r.matched.length, 0);
   const totalMissing = rows.reduce((s, r) => s + r.missing.length, 0);
   const overallPct =
-    totalCanonical === 0 ? 100 : Math.round((totalMatched / totalCanonical) * 100);
+    totalRequired === 0 ? 100 : Math.round((totalMatched / totalRequired) * 100);
 
   return (
     <div
@@ -171,10 +220,18 @@ export default async function DocuFlowChecklistPage() {
             >
               {overallPct}%
             </span>{" "}
-            · {totalMatched}/{totalCanonical} ฉบับครบ
+            · {totalMatched}/{totalRequired} ฉบับครบ
           </>
         }
         description={`${thaiDateLong(new Date())} · เทียบเอกสารที่อัปโหลดกับมาตรฐานกฎหมายต่อประเภทธุรกิจ`}
+        actions={
+          adminTier ? (
+            <DfButton href="/docuflow/settings/document-types" variant="ghost" size="sm">
+              <Settings size={14} />
+              จัดการประเภทเอกสาร
+            </DfButton>
+          ) : undefined
+        }
       />
 
       <div
@@ -188,7 +245,7 @@ export default async function DocuFlowChecklistPage() {
       >
         <DfStatCard
           label="กฎหมายกำหนด"
-          value={totalCanonical.toLocaleString("th-TH")}
+          value={totalRequired.toLocaleString("th-TH")}
           sub="ทุกประเภทธุรกิจ"
           tone="ink"
           icon={<CheckSquare size={17} />}
@@ -228,7 +285,7 @@ export default async function DocuFlowChecklistPage() {
       >
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {rows.map((r) => {
-            const total = r.canonical.length;
+            const total = r.requirements.length;
             const pct =
               total === 0 ? 100 : Math.round((r.matched.length / total) * 100);
 
@@ -242,11 +299,21 @@ export default async function DocuFlowChecklistPage() {
                         {r.emoji}
                       </div>
                       <div className="min-w-0">
-                        <p className="font-bold text-zinc-900 text-base truncate font-display">
-                          {r.label}
-                        </p>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-bold text-zinc-900 text-base truncate font-display">
+                            {r.label}
+                          </p>
+                          {adminTier && (
+                            <Link
+                              href={`/docuflow/settings/document-types?businessType=${r.bizType}`}
+                              className="text-[11px] font-medium text-[var(--color-brand-700)] hover:text-[var(--color-brand-800)] whitespace-nowrap"
+                            >
+                              จัดการ
+                            </Link>
+                          )}
+                        </div>
                         <p className="text-[11px] text-zinc-500 mt-0.5">
-                          ตามกฎหมาย {total} · อัปโหลด {r.uploadedCount} ฉบับ
+                          ต้องมี {total} · อัปโหลด {r.uploadedCount} ฉบับ
                         </p>
                       </div>
                     </div>
@@ -296,7 +363,7 @@ export default async function DocuFlowChecklistPage() {
                         <ul className="space-y-1.5">
                           {r.missing.slice(0, 6).map((m) => (
                             <li
-                              key={m.name}
+                              key={m.id ?? m.canonicalKey ?? m.name}
                               className="flex items-start gap-2 text-sm"
                             >
                               <span className="text-rose-400 select-none mt-[3px]">
@@ -307,7 +374,7 @@ export default async function DocuFlowChecklistPage() {
                                   {m.name}
                                 </p>
                                 <p className="text-[11px] text-zinc-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
-                                  <span>{m.frequency}</span>
+                                  {m.frequency && <span>{m.frequency}</span>}
                                   {m.regulator && (
                                     <>
                                       <span className="text-zinc-300">·</span>
@@ -316,9 +383,11 @@ export default async function DocuFlowChecklistPage() {
                                       </span>
                                     </>
                                   )}
-                                  <Badge tone={DOC_DANGER_TONE[m.dangerLevel]}>
-                                    {m.dangerLevel}
-                                  </Badge>
+                                  {m.dangerLevel && (
+                                    <Badge tone={dangerTone(m.dangerLevel)}>
+                                      {m.dangerLevel}
+                                    </Badge>
+                                  )}
                                 </p>
                               </div>
                             </li>
@@ -344,7 +413,7 @@ export default async function DocuFlowChecklistPage() {
                         <ul className="space-y-1">
                           {r.matched.slice(0, 4).map((m) => (
                             <li
-                              key={m.name}
+                              key={m.id ?? m.canonicalKey ?? m.name}
                               className="text-sm text-zinc-600 flex items-center gap-2"
                             >
                               <span className="text-green-400 select-none">
@@ -362,7 +431,7 @@ export default async function DocuFlowChecklistPage() {
                       </div>
                     )}
 
-                    {r.canonical.length === 0 && (
+                    {r.requirements.length === 0 && (
                       <p className="text-sm text-zinc-500 text-center py-4">
                         ยังไม่มีรายการมาตรฐานสำหรับประเภทธุรกิจนี้
                       </p>

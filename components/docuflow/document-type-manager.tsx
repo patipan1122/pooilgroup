@@ -90,6 +90,11 @@ interface Props {
    *  used to (a) default the create dialog's "บริษัท" field and (b) keep
    *  `refetchAll()`'s client-side re-fetch in the same scope. */
   defaultCompanyId?: string;
+  /** Pinpoint 18-pt Batch 3 (2026-10-13) — set when arriving from the
+   *  checklist page's "จัดการ" deep link for one specific business type.
+   *  Only pre-fills the create dialog's "ประเภทธุรกิจ" field, same as
+   *  defaultCompanyId above — does not filter the list. */
+  defaultBusinessType?: string;
 }
 
 export function DocumentTypeManager({
@@ -97,6 +102,7 @@ export function DocumentTypeManager({
   businessTypeOptions,
   companyOptions,
   defaultCompanyId,
+  defaultBusinessType,
 }: Props) {
   const router = useRouter();
   const [rows, setRows] = useState<DocumentTypeRow[]>(initialDocumentTypes);
@@ -272,6 +278,7 @@ export function DocumentTypeManager({
         businessTypeOptions={businessTypeOptions}
         companyOptions={companyOptions}
         defaultCompanyId={defaultCompanyId}
+        defaultBusinessType={defaultBusinessType}
         onSaved={(row) => {
           upsertRow(row);
           setFormOpen(false);
@@ -415,6 +422,7 @@ function DocumentTypeFormDialog({
   businessTypeOptions,
   companyOptions,
   defaultCompanyId,
+  defaultBusinessType,
   onSaved,
 }: {
   open: boolean;
@@ -427,6 +435,9 @@ function DocumentTypeFormDialog({
    *  ITS real companyId, never overridden by the currently-selected
    *  company. */
   defaultCompanyId?: string;
+  /** Checklist deep-link (Pinpoint 18-pt Batch 3, 2026-10-13) — same
+   *  new-row-only rule as defaultCompanyId above. */
+  defaultBusinessType?: string;
   onSaved: (row: DocumentTypeRow) => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -440,14 +451,15 @@ function DocumentTypeFormDialog({
     () => ({
       name: editing?.name ?? "",
       category: editing?.category ?? "",
-      businessType: editing?.businessType ?? "",
+      businessType:
+        editing?.businessType ?? (editing === null ? defaultBusinessType ?? "" : ""),
       companyId: editing?.companyId ?? (editing === null ? defaultCompanyId ?? "" : ""),
       dangerLevel: editing?.dangerLevel ?? "",
       frequency: editing?.frequency ?? "",
       regulator: editing?.regulator ?? "",
       description: editing?.description ?? "",
     }),
-    [editing, defaultCompanyId],
+    [editing, defaultCompanyId, defaultBusinessType],
   );
 
   const {
