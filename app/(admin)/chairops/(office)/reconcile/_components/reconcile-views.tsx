@@ -37,6 +37,8 @@ import {
   type ReconcileOverview,
   type TimelinePoint,
   type PeriodWindow,
+  type PeriodWindowV2,
+  type PeriodsV2Totals,
   type ReconcileDayDetail,
   type ReconcilePerChair,
   type PerChairRow,
@@ -231,8 +233,10 @@ function SparkArea({ data }: { data: number[] }) {
 // ─────────────────────────────────────────────────────────────
 type ReconcileTabKey =
   | "ledger"
+  | "ledgerv2"
   | "timeline"
   | "periods"
+  | "periodsv2"
   | "perchair"
   | "checklist";
 
@@ -260,8 +264,10 @@ export function ReconcileTabs({
     <div className="rc-tabs-row">
       <div className="rc-tabs">
         {tab("ledger", "Ledger")}
+        {tab("ledgerv2", "Ledger V2")}
         {tab("timeline", "Timeline")}
         {tab("periods", "รอบเก็บ (Periods)")}
+        {tab("periodsv2", "รอบเก็บ V2")}
         {tab("perchair", "รายตู้")}
         {tab("checklist", "✅ เช็คลิสต์")}
       </div>
@@ -681,6 +687,133 @@ export function LedgerTab({
           ยอดรวมทุกสาขา · เรียงวันใหม่ก่อน
         </p>
       )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Ledger V2 — "Ledger V2" report (CEO 2026-10-13 · Pinpoint A1 mockup).
+// Same LedgerDay[]/LedgerTotals the original Ledger tab already fetches —
+// this is a relabeled/reordered PRESENTATION only (CEO: "ดึงข้อมูลของเดิม
+// ทั้งหมด แค่เปลี่ยนการจัดวาง"), not a new data source. "ต่างสะสม(ระบบ-
+// แจ้งเก็บ)" is -cumDrift — the exact same running balance the original
+// Ledger/engine already track, just shown in the mockup's stated sign
+// direction (cumDrift itself is signed the opposite way: negative=shortage;
+// this header explicitly says ระบบ−แจ้งเก็บ, so flip it for display only).
+// ─────────────────────────────────────────────────────────────
+export function LedgerV2Tab({
+  ledger,
+  totals,
+}: {
+  ledger: LedgerDay[];
+  totals: LedgerTotals | null;
+}) {
+  return (
+    <div className="rc-ledger">
+      <table className="tbl rc-ledger-tbl">
+        <thead>
+          <tr>
+            <th>วันที่</th>
+            <th className="num">เงินออนไลน์</th>
+            <th className="num">เงินสด</th>
+            <th className="num">เหรียญ</th>
+            <th className="num">รวมรายได้</th>
+            <th className="rc-v2-gap" aria-hidden="true"></th>
+            <th className="num rc-tcol">รวมเงินสด (ระบบ)</th>
+            <th className="num rc-tcol">เงินฝาก (แจ้งเก็บ)</th>
+            <th className="num rc-tcol">
+              ต่างสะสม (ระบบ-แจ้งเก็บ)
+              <div className="text-3" style={{ fontWeight: 400, fontSize: 10 }}>
+                เช็คแม่บ้าน กรอกเงิน
+              </div>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {ledger.length === 0 && (
+            <tr>
+              <td
+                colSpan={9}
+                style={{ textAlign: "center", padding: "48px 0" }}
+                className="text-3"
+              >
+                ยังไม่มีข้อมูล · อัพ POS แล้ว Recompute ก่อน
+              </td>
+            </tr>
+          )}
+          {ledger.map((d) => (
+            <tr key={d.date} className={d.collected ? "rc-row-collected" : ""}>
+              <td>
+                <span className="mono" style={{ fontSize: 12 }}>
+                  {d.date.slice(5)}
+                </span>{" "}
+                <span className="text-3" style={{ fontSize: 10.5 }}>
+                  {dayOfWeekTh(d.date)}
+                </span>
+              </td>
+              <td className="num mono">{fmtN(d.online)}</td>
+              <td className="num mono">{fmtN(d.cash)}</td>
+              <td className="num mono" title={`${fmtN(d.coin)} ครั้ง × 10 บาท`}>
+                {fmtN(d.coinBaht)}
+              </td>
+              <td className="num mono" style={{ fontWeight: 500 }}>
+                {fmtN(d.totalRev)}
+              </td>
+              <td className="rc-v2-gap" aria-hidden="true"></td>
+              <td className="num mono rc-tcol">{fmtN(d.cashTotal)}</td>
+              <td className="num mono rc-tcol">
+                {d.deposit != null ? (
+                  fmtN(d.deposit)
+                ) : (
+                  <span className="text-muted">—</span>
+                )}
+              </td>
+              <td className={"num mono rc-tcol co-drift " + ledgerCumClass(d)}>
+                {fmtSigned(-d.cumDrift)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+        {totals && ledger.length > 0 && (
+          <tfoot>
+            <tr
+              style={{
+                background: "var(--surface-soft)",
+                borderTop: "2px solid var(--border-strong)",
+                fontWeight: 600,
+              }}
+            >
+              <th style={{ textAlign: "left" }}>
+                รวม{" "}
+                <span className="text-3" style={{ fontWeight: 400 }}>
+                  ({totals.days} วัน)
+                </span>
+              </th>
+              <td />
+              <td />
+              <td />
+              <td />
+              <td className="rc-v2-gap" aria-hidden="true"></td>
+              <td className="num mono rc-tcol">{fmtN(totals.cashTotal)}</td>
+              <td className="num mono rc-tcol">{fmtN(totals.deposit)}</td>
+              <td
+                className={
+                  "num mono rc-tcol co-drift " +
+                  (totals.driftEndingEngine > 500
+                    ? "crit"
+                    : totals.driftEndingEngine > 100
+                      ? "warn"
+                      : totals.driftEndingEngine < -100
+                        ? "ok"
+                        : "muted")
+                }
+              >
+                {fmtSigned(totals.driftEndingEngine)}
+              </td>
+            </tr>
+          </tfoot>
+        )}
+      </table>
     </div>
   );
 }
@@ -3311,6 +3444,224 @@ export function PeriodsTab({
               );
             })}
           </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Periods V2 — "รอบเก็บ V2" report (CEO 2026-10-13 · Pinpoint A2 mockup).
+// Reuses getReconcilePeriodsV2()'s windows (which themselves reuse the
+// original Periods tab's verified window boundaries + collectedSum/slips
+// wholesale) — just a new column layout + the 3-way shortage breakdown the
+// mockup asks for. "เงินหายจริง" (ระบบ−สลิป) is the column that matters most
+// (compares against the real AI-read bank slip, not what anyone typed in).
+// ─────────────────────────────────────────────────────────────
+function periodsV2DiffClass(n: number): "crit" | "warn" | "ok" | "muted" {
+  if (n < -500) return "crit";
+  if (n < -100) return "warn";
+  if (n > 100) return "ok";
+  return "muted";
+}
+
+export function PeriodsV2Tab({
+  data,
+  branchId,
+}: {
+  data: { windows: PeriodWindowV2[]; totals: PeriodsV2Totals };
+  branchId: string | null;
+}) {
+  const { windows, totals } = data;
+  if (windows.length === 0) {
+    return (
+      <p className="text-3" style={{ padding: "48px 0", textAlign: "center" }}>
+        ยังไม่มีรอบเก็บ
+      </p>
+    );
+  }
+  return (
+    <div className="rc-ledger">
+      <div
+        className="text-3"
+        style={{ fontSize: 11, padding: "6px 2px 8px", lineHeight: 1.5 }}
+      >
+        แจ้งเก็บขาด = รวมเงินสด(ระบบ) − เงินฝาก(แจ้งเก็บ) · เงินหายตามแจ้ง = เงินฝาก(แจ้งเก็บ) − รวมยอดสลิป ·{" "}
+        <strong>เงินหายจริง</strong> = รวมเงินสด(ระบบ) − รวมยอดสลิป (เทียบกับสลิปธนาคารจริงที่ AI อ่าน — ตัวเลขที่สำคัญที่สุด)
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table className="tbl rc-ledger-tbl">
+          <thead>
+            <tr>
+              <th>ก่อนเก็บ</th>
+              <th>หลังเก็บ</th>
+              <th className="num">จำนวนวัน</th>
+              <th>คนเก็บ</th>
+              <th className="num">เงินออนไลน์</th>
+              <th className="num">แบงค์</th>
+              <th className="num">เหรียญ</th>
+              <th className="num">รวมรายได้</th>
+              <th className="rc-v2-gap" aria-hidden="true"></th>
+              <th className="num rc-tcol">รวมเงินสด (ระบบ)</th>
+              <th className="num rc-tcol">เงินฝาก (แจ้งเก็บ)</th>
+              <th>สลิป</th>
+              <th className="num">รวมยอดสลิป</th>
+              <th className="num">แจ้งเก็บขาด</th>
+              <th className="num">เงินหายตามแจ้ง</th>
+              <th className="num rc-tcol">เงินหายจริง</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {windows.map((w, i) => (
+              <tr key={i} className={w.open ? "rc-row-active" : ""}>
+                <td className="mono" style={{ fontSize: 11 }}>
+                  {w.beforeCollectAt ? w.beforeCollectAt.slice(5) : "เริ่มมีข้อมูล"}
+                </td>
+                <td className="mono" style={{ fontSize: 11 }}>
+                  {w.afterCollectAt ? (
+                    w.afterCollectAt.slice(5)
+                  ) : (
+                    <span className="text-3">—</span>
+                  )}
+                  {w.open && (
+                    <span
+                      className="chip chip-warn"
+                      style={{ marginLeft: 6, padding: "1px 6px", fontSize: 10 }}
+                    >
+                      ⏳ ยังไม่เก็บ
+                    </span>
+                  )}
+                </td>
+                <td className="num mono">{w.days}</td>
+                <td style={{ fontSize: 11 }}>
+                  {w.collectors.length === 0 ? (
+                    <span className="text-3">—</span>
+                  ) : (
+                    w.collectors.map((s) => {
+                      const meta = sourceBadge(s);
+                      return (
+                        <span
+                          key={s}
+                          title={meta.title}
+                          className={
+                            "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium mr-1 " +
+                            SOURCE_TONE_CLASS[meta.tone]
+                          }
+                        >
+                          {meta.label}
+                        </span>
+                      );
+                    })
+                  )}
+                </td>
+                <td className="num mono">{fmtN(w.online)}</td>
+                <td className="num mono">{fmtN(w.cash)}</td>
+                <td className="num mono">{fmtN(w.coinBaht)}</td>
+                <td className="num mono" style={{ fontWeight: 500 }}>
+                  {fmtN(w.totalRev)}
+                </td>
+                <td className="rc-v2-gap" aria-hidden="true"></td>
+                <td className="num mono rc-tcol">{fmtN(w.cashTotal)}</td>
+                <td className="num mono rc-tcol">{fmtN(w.depositedTotal)}</td>
+                <td>
+                  {w.slips.length > 0 ? (
+                    <SlipChipGroup
+                      sumLabel={fmtN(w.slipTotal)}
+                      anyFlagged={w.slips.some((s) => s.flagged)}
+                      slips={w.slips.map((s) => ({
+                        id: s.id,
+                        amount: fmtN(s.amount),
+                        slipUrl: s.slipUrl,
+                        status: s.ledgerStatus,
+                        flagged: s.flagged,
+                        caption: `สลิปฝากเงิน · ${s.depositedAt}${s.amountIsOcr ? " · ยอดจาก AI อ่านสลิป" : ""}`,
+                        additionalSlips: s.additionalSlips,
+                      }))}
+                    />
+                  ) : (
+                    <span className="text-muted">—</span>
+                  )}
+                </td>
+                <td className="num mono">{fmtN(w.slipTotal)}</td>
+                <td
+                  className={"num mono co-drift " + periodsV2DiffClass(w.shortDeclared)}
+                >
+                  {fmtSigned(w.shortDeclared)}
+                </td>
+                <td
+                  className={
+                    "num mono co-drift " + periodsV2DiffClass(w.missingPerReport)
+                  }
+                >
+                  {fmtSigned(w.missingPerReport)}
+                </td>
+                <td
+                  className={
+                    "num mono rc-tcol co-drift " + periodsV2DiffClass(w.missingActual)
+                  }
+                  style={{ fontWeight: 600 }}
+                >
+                  {fmtSigned(w.missingActual)}
+                </td>
+                <td style={{ whiteSpace: "nowrap" }}>
+                  {branchId && (
+                    <Link
+                      href={`/chairops/reconcile/${branchId}?view=perchair&from=${w.from}&to=${w.to}`}
+                      className="rc-date"
+                      title="กดดูรายตู้ในรอบนี้"
+                      style={{ textDecoration: "none", color: "var(--accent)", fontSize: 11 }}
+                      scroll={false}
+                    >
+                      <Eye size={11} aria-hidden="true" /> รายตู้
+                    </Link>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr
+              style={{
+                background: "var(--surface-soft)",
+                borderTop: "2px solid var(--border-strong)",
+                fontWeight: 600,
+              }}
+            >
+              <th colSpan={4} style={{ textAlign: "left" }}>
+                ยอดสะสม
+              </th>
+              <td className="num mono">{fmtN(totals.online)}</td>
+              <td className="num mono">{fmtN(totals.cash)}</td>
+              <td className="num mono">{fmtN(totals.coinBaht)}</td>
+              <td className="num mono">{fmtN(totals.totalRev)}</td>
+              <td className="rc-v2-gap" aria-hidden="true"></td>
+              <td className="num mono rc-tcol">{fmtN(totals.cashTotal)}</td>
+              <td className="num mono rc-tcol">{fmtN(totals.depositedTotal)}</td>
+              <td />
+              <td className="num mono">{fmtN(totals.slipTotal)}</td>
+              <td
+                className={"num mono co-drift " + periodsV2DiffClass(totals.shortDeclared)}
+              >
+                {fmtSigned(totals.shortDeclared)}
+              </td>
+              <td
+                className={
+                  "num mono co-drift " + periodsV2DiffClass(totals.missingPerReport)
+                }
+              >
+                {fmtSigned(totals.missingPerReport)}
+              </td>
+              <td
+                className={
+                  "num mono rc-tcol co-drift " + periodsV2DiffClass(totals.missingActual)
+                }
+              >
+                {fmtSigned(totals.missingActual)}
+              </td>
+              <td />
+            </tr>
+          </tfoot>
         </table>
       </div>
     </div>

@@ -2669,6 +2669,161 @@ export async function getReconcilePeriods(args: {
 }
 
 // ----------------------------------------------------------------
+// 4b) PERIODS V2 — "รอบเก็บ V2" report (CEO 2026-10-13 · Pinpoint A2 mockup)
+// Reuses getReconcilePeriods()'s verified window boundaries + collectedSum/
+// slips/collector info WHOLESALE (CEO: "ดึงข้อมูลของเดิมทั้งหมด แค่เปลี่ยนการ
+// จัดวางและการคำนวณ") — adds exactly 2 things that table doesn't carry:
+//   1. the online/cash/coin revenue split per round (buildLedger() already
+//      computes this per DAY — re-summed here per window boundary).
+//   2. "เงินฝาก(แจ้งเก็บ)" (what the office typed in) kept SEPARATE from
+//      "สลิป" (what the AI read off the real bank slip) — today's slip chips
+//      already collapse these into one `amount` (ocrAmount ?? depositedAmount)
+//      per slip; this report needs both raw numbers so the 3-way breakdown
+//      below can tell "office typo" (แจ้งเก็บขาด) apart from "doesn't match
+//      the real bank slip" (เงินหายจริง — the one that matters most).
+// ----------------------------------------------------------------
+export interface PeriodWindowV2 {
+  from: string;
+  to: string;
+  days: number;
+  open: boolean;
+  /** ก่อนเก็บ — เวลาที่เก็บรอบก่อนหน้า (= จุดเริ่มของรอบนี้). null = เริ่มมีข้อมูล. */
+  beforeCollectAt: string | null;
+  /** หลังเก็บ — เวลาที่เก็บรอบนี้. null = ยังไม่เก็บ (open tail). */
+  afterCollectAt: string | null;
+  // ข้อมูลรายได้ STARTTHING
+  online: number;
+  cash: number;
+  coinBaht: number;
+  totalRev: number;
+  cashTotal: number; // รวมเงินสด (ระบบ) = Σ cashTotal ของทุกวันในรอบ (เดิม getReconcilePeriods เรียก cashSum)
+  depositedTotal: number; // เงินฝาก (แจ้งเก็บ) = Σ depositedAmount + bankFee ที่ฝากในช่วงรอบนี้
+  slipTotal: number; // รวมยอดสลิป = Σ ocrAmount (fallback depositedAmount ถ้ายังไม่อ่าน AI)
+  slips: PeriodSlip[];
+  shortDeclared: number; // แจ้งเก็บขาด = รวมเงินสด(ระบบ) − เงินฝาก(แจ้งเก็บ)
+  missingPerReport: number; // เงินหายตามแจ้ง = เงินฝาก(แจ้งเก็บ) − รวมยอดสลิป
+  missingActual: number; // เงินหายจริง = รวมเงินสด(ระบบ) − รวมยอดสลิป
+  collectors: LedgerDaySource[];
+  intent: "crit" | "warn" | "ok";
+}
+
+export interface PeriodsV2Totals {
+  online: number;
+  cash: number;
+  coinBaht: number;
+  totalRev: number;
+  cashTotal: number;
+  depositedTotal: number;
+  slipTotal: number;
+  shortDeclared: number;
+  missingPerReport: number;
+  missingActual: number;
+}
+
+const ZERO_PERIODS_V2_TOTALS: PeriodsV2Totals = {
+  online: 0,
+  cash: 0,
+  coinBaht: 0,
+  totalRev: 0,
+  cashTotal: 0,
+  depositedTotal: 0,
+  slipTotal: 0,
+  shortDeclared: 0,
+  missingPerReport: 0,
+  missingActual: 0,
+};
+
+export async function getReconcilePeriodsV2(args: {
+  orgId: string;
+  branchId?: string;
+}): Promise<{ windows: PeriodWindowV2[]; totals: PeriodsV2Totals }> {
+  const { orgId, branchId } = args;
+  const [baseWindows, ledger] = await Promise.all([
+    getReconcilePeriods({ orgId, branchId }), // newest-first · fully verified window math
+    buildLedger({ orgId, branchId, days: 365 }), // ascending · for the per-round revenue split
+  ]);
+  if (baseWindows.length === 0) {
+    return { windows: [], totals: ZERO_PERIODS_V2_TOTALS };
+  }
+
+  const byDate = new Map(ledger.map((d) => [d.date, d]));
+  const since = startOfDayMinus(365);
+  const deposits = await prisma.chairopsCashDeposit.findMany({
+    where: { orgId, ...(branchId ? { branchId } : {}), depositedAt: { gte: since } },
+    select: { depositedAt: true, depositedAmount: true, bankFee: true, ocrAmount: true },
+    orderBy: { depositedAt: "asc" },
+  });
+
+  const windows: PeriodWindowV2[] = baseWindows.map((w) => {
+    let online = 0;
+    let cash = 0;
+    let coinBaht = 0;
+    let totalRev = 0;
+    for (let d = w.from; d <= w.to; d = nextDate(d)) {
+      const row = byDate.get(d);
+      if (!row) continue;
+      online += row.online;
+      cash += row.cash;
+      coinBaht += row.coinBaht;
+      totalRev += row.totalRev;
+    }
+    let depositedTotal = 0;
+    let slipTotal = 0;
+    for (const dep of deposits) {
+      const day = isoDay(dep.depositedAt);
+      if (day < w.from || day > w.to) continue;
+      depositedTotal += dep.depositedAmount + dep.bankFee;
+      slipTotal += dep.ocrAmount ?? dep.depositedAmount;
+    }
+    const cashTotal = w.cashSum;
+    const shortDeclared = cashTotal - depositedTotal;
+    const missingPerReport = depositedTotal - slipTotal;
+    const missingActual = cashTotal - slipTotal;
+    return {
+      from: w.from,
+      to: w.to,
+      days: w.days,
+      open: w.open,
+      beforeCollectAt: w.meterWindowStart,
+      afterCollectAt: w.meterWindowEnd,
+      online,
+      cash,
+      coinBaht,
+      totalRev,
+      cashTotal,
+      depositedTotal,
+      slipTotal,
+      slips: w.slips,
+      shortDeclared,
+      missingPerReport,
+      missingActual,
+      collectors: w.collectors,
+      intent: w.open ? "warn" : Math.abs(missingActual) < 100 ? "ok" : "crit",
+    };
+  });
+
+  const totals = windows
+    .filter((w) => !w.open)
+    .reduce<PeriodsV2Totals>(
+      (t, w) => ({
+        online: t.online + w.online,
+        cash: t.cash + w.cash,
+        coinBaht: t.coinBaht + w.coinBaht,
+        totalRev: t.totalRev + w.totalRev,
+        cashTotal: t.cashTotal + w.cashTotal,
+        depositedTotal: t.depositedTotal + w.depositedTotal,
+        slipTotal: t.slipTotal + w.slipTotal,
+        shortDeclared: t.shortDeclared + w.shortDeclared,
+        missingPerReport: t.missingPerReport + w.missingPerReport,
+        missingActual: t.missingActual + w.missingActual,
+      }),
+      { ...ZERO_PERIODS_V2_TOTALS },
+    );
+
+  return { windows, totals };
+}
+
+// ----------------------------------------------------------------
 // ACTIVITY — "ใครทำอะไร" (who did what) · per-person summary + per-day log
 // CEO 2026-07-01: a 3rd per-chair sub-view beside รายวัน/สรุปรวม. DISPLAY-ONLY —
 // reads the SAME collection/deposit rows the money tabs use, never touches the

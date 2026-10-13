@@ -773,6 +773,19 @@
 .co-scope .rc-ledger-tbl .rc-tcol { background: var(--surface-2); }
 .co-scope .rc-ledger-tbl thead .rc-tcol { background: var(--bg-sunken); }
 
+/* Ledger V2 / Periods V2 (CEO 2026-10-13 mockup): the gray spacer column
+   between "revenue" and "reconciliation" column groups, matching the
+   spreadsheet mockup's merged gray divider column. */
+.co-scope .rc-ledger-tbl .rc-v2-gap {
+  width: 10px;
+  min-width: 10px;
+  max-width: 10px;
+  padding: 0 !important;
+  background: var(--bg-sunken);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
 /* ── Freeze-panes (CEO 2026-06-03): lock the date column like Excel ──
    First column (วันที่) stays pinned-left while scrolling sideways; the
    thead corner cell sits above both sticky layers. Solid bg required so

@@ -16,6 +16,7 @@ import {
   getReconcileLedger,
   getReconcileTimeline,
   getReconcilePeriods,
+  getReconcilePeriodsV2,
   getReconcileDayDetail,
   getReconcilePerChairTW,
   getReconcilePerChairRoundsTW,
@@ -33,10 +34,12 @@ import {
   DriftHero,
   ReconcileTabs,
   LedgerTab,
+  LedgerV2Tab,
   LedgerPager,
   DayDetailPanel,
   TimelineTab,
   PeriodsTab,
+  PeriodsV2Tab,
   PerChairTab,
   PerChairDetailTab,
   PerChairViewToggle,
@@ -52,14 +55,18 @@ const LEDGER_PAGE_SIZE = 120;
 
 export type ReconcileView =
   | "ledger"
+  | "ledgerv2"
   | "timeline"
   | "periods"
+  | "periodsv2"
   | "perchair"
   | "checklist";
 
 export function normalizeView(raw: string | undefined): ReconcileView {
-  return raw === "timeline" ||
+  return raw === "ledgerv2" ||
+    raw === "timeline" ||
     raw === "periods" ||
+    raw === "periodsv2" ||
     raw === "perchair" ||
     raw === "checklist"
     ? raw
@@ -140,12 +147,12 @@ export async function ReconcileShell({
   // cumShortage is the canonical "ค้างฝากรวม" aggregate shared with the exec
   // home tile (CEO ruling 2026-06-02 — positive-only sum across active
   // branches · see lib/chairops/queries/_cumulative-shortage.ts).
-  const [sidebar, overview, cumShortage, ledger, timeline, periods, dayDetail] =
+  const [sidebar, overview, cumShortage, ledger, timeline, periods, periodsV2, dayDetail] =
     await Promise.all([
       getReconcileSidebar({ orgId }),
       getReconcileOverview({ orgId, branchId: branchId ?? undefined }),
       getCumulativeShortage(orgId),
-      view === "ledger"
+      view === "ledger" || view === "ledgerv2"
         ? getReconcileLedger({
             orgId,
             branchId: branchId ?? undefined,
@@ -161,6 +168,9 @@ export async function ReconcileShell({
       view === "periods"
         ? getReconcilePeriods({ orgId, branchId: branchId ?? undefined })
         : Promise.resolve([]),
+      view === "periodsv2"
+        ? getReconcilePeriodsV2({ orgId, branchId: branchId ?? undefined })
+        : Promise.resolve(null),
       view === "ledger" && safeDay
         ? getReconcileDayDetail({ orgId, branchId: branchId ?? undefined, day: safeDay })
         : Promise.resolve(null as ReconcileDayDetail | null),
@@ -279,7 +289,13 @@ export async function ReconcileShell({
     // untouched default opens on the latest 30-day window (bank-statement style).
     // CEO 2026-06-25 BUGFIX: "ทั้งหมด" (allTime) previously fell into this 30-day
     // default because it carries no ?from/?to — so it silently showed 30 days.
-    if (view !== "ledger" || safeFrom || safeTo || allTime) return ledger;
+    if (
+      (view !== "ledger" && view !== "ledgerv2") ||
+      safeFrom ||
+      safeTo ||
+      allTime
+    )
+      return ledger;
     if (!posThrough) return ledger;
     const cutoff = isoMinusDays(posThrough, 29); // 30-day inclusive window
     const today = new Date().toISOString().slice(0, 10);
@@ -288,7 +304,8 @@ export async function ReconcileShell({
   // Totals reflect the WHOLE selected range (all pages), not just the visible
   // page, so the "ยอดรวม" footer is the range summary. Pagination only slices
   // which rows render.
-  const totals = view === "ledger" ? ledgerTotals(defaultedLedger) : null;
+  const totals =
+    view === "ledger" || view === "ledgerv2" ? ledgerTotals(defaultedLedger) : null;
   const totalRows = defaultedLedger.length;
   const pageCount = Math.max(1, Math.ceil(totalRows / LEDGER_PAGE_SIZE));
   const safePage = Math.min(pageNum, pageCount - 1);
@@ -463,7 +480,7 @@ export async function ReconcileShell({
 
         <ReconcileTabs baseHref={baseHref} active={view} />
 
-        {(view === "ledger" || view === "perchair") && (
+        {(view === "ledger" || view === "ledgerv2" || view === "perchair") && (
           <LedgerDateFilter
             baseHref={baseHref}
             view={view}
@@ -570,9 +587,35 @@ export async function ReconcileShell({
               )}
             </>
           )}
+          {view === "ledgerv2" && (
+            <>
+              <LedgerV2Tab ledger={pagedLedger} totals={totals} />
+              {pageCount > 1 && (
+                <LedgerPager
+                  page={safePage}
+                  pageCount={pageCount}
+                  total={totalRows}
+                  pageSize={LEDGER_PAGE_SIZE}
+                  prevHref={
+                    safePage > 0
+                      ? buildLedgerHref({ page: safePage - 1, day: null })
+                      : null
+                  }
+                  nextHref={
+                    safePage < pageCount - 1
+                      ? buildLedgerHref({ page: safePage + 1, day: null })
+                      : null
+                  }
+                />
+              )}
+            </>
+          )}
           {view === "timeline" && <TimelineTab series={timeline} />}
           {view === "periods" && (
             <PeriodsTab periods={periods} branchId={branchId} />
+          )}
+          {view === "periodsv2" && periodsV2 && (
+            <PeriodsV2Tab data={periodsV2} branchId={branchId} />
           )}
           {view === "perchair" && (
             <>
