@@ -33,8 +33,6 @@ import {
   User as UserIcon,
   Pencil,
   RotateCcw,
-  Clock,
-  UserX,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -1002,48 +1000,30 @@ export function SignaturePlacementEditor({
                           true outsider with no Pooilgroup account at all.
                           Mints a real account scoped to ONLY this
                           placement (zero module grants), separate from the
-                          "pick an existing user" SignerPicker above. */}
+                          "pick an existing user" SignerPicker above.
+
+                          `key={selected.id}` remounts this ONLY when the
+                          selected placement itself changes — NOT when
+                          signerUser.isExternalSigner flips true after a
+                          successful invite. It used to be branched on
+                          right here (render status card XOR this button),
+                          which unmounted the button + its invite-link
+                          dialog the instant an invite succeeded, before
+                          the admin could copy the link. That branch now
+                          lives inside InviteDocumentSignerButton itself,
+                          gated on its own local state instead. */}
                       <div className="pt-2 border-t border-zinc-100">
-                        {selected.signerUser?.isExternalSigner ? (
-                          <div className="space-y-2">
-                            <div
-                              className={cn(
-                                "flex items-center gap-2 text-sm rounded-xl px-3 py-2 border",
-                                selected.signerUser.isActive
-                                  ? "text-green-700 bg-green-50 border-green-200"
-                                  : "text-amber-700 bg-amber-50 border-amber-200",
-                              )}
-                            >
-                              {selected.signerUser.isActive ? (
-                                <CheckCircle2 className="size-4 shrink-0" />
-                              ) : (
-                                <Clock className="size-4 shrink-0" />
-                              )}
-                              <span>
-                                {selected.signerUser.isActive
-                                  ? `${selected.signerUser.name} ตั้งรหัสผ่านแล้ว — เข้าเซ็นได้`
-                                  : `เชิญ ${selected.signerUser.name} แล้ว รอตั้งรหัสผ่าน`}
-                              </span>
-                            </div>
-                            {selected.signerUser.isActive && (
-                              <button
-                                type="button"
-                                onClick={() => setPendingRevokeId(selected.id)}
-                                className="w-full inline-flex items-center justify-center gap-2 h-9 px-3 text-xs rounded-xl bg-white text-red-600 border border-red-200 hover:bg-red-50 font-medium"
-                              >
-                                <UserX className="size-3.5" />
-                                ปิดสิทธิ์เข้าถึงผู้เซ็นนี้
-                              </button>
-                            )}
-                          </div>
-                        ) : (
-                          <InviteDocumentSignerButton
-                            placementId={selected.id}
-                            onInvited={(signer) =>
-                              applyInvitedSigner(selected.id, signer)
-                            }
-                          />
-                        )}
+                        <InviteDocumentSignerButton
+                          key={selected.id}
+                          placementId={selected.id}
+                          signerUser={selected.signerUser}
+                          onInvited={(signer) =>
+                            applyInvitedSigner(selected.id, signer)
+                          }
+                          onRequestRevoke={() =>
+                            setPendingRevokeId(selected.id)
+                          }
+                        />
                       </div>
                     </>
                   )}

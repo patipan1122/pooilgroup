@@ -8,21 +8,60 @@
 
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { Copy, Check, UserPlus2, Mail, User, Phone } from "lucide-react";
+import {
+  Copy,
+  Check,
+  UserPlus2,
+  Mail,
+  User,
+  Phone,
+  CheckCircle2,
+  Clock,
+  UserX,
+} from "lucide-react";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils/cn";
 import { inviteDocumentSigner } from "@/lib/docuflow/invite-signer";
 
 export function InviteDocumentSignerButton({
   placementId,
+  signerUser,
   onInvited,
+  onRequestRevoke,
 }: {
   placementId: string;
+  /** Current signer attached to this placement, if any. When it's already
+   *  an external signer (isExternalSigner: true), we show a status card
+   *  ("invited, waiting" / "active, can revoke") instead of the invite
+   *  form — UNLESS this component itself just generated a fresh invite
+   *  link this session (see `inviteUrl` below), in which case the link
+   *  dialog takes priority so the admin can still copy it.
+   *
+   *  BUG FIX (2026-10-13): this used to be branched on by the PARENT,
+   *  which conditionally rendered either this component or the status
+   *  card — so the instant `onInvited` flipped `signerUser.isExternalSigner`
+   *  to true, the parent's ternary swapped branches and unmounted this
+   *  whole component, wiping its local `open`/`inviteUrl` state and
+   *  closing the just-created invite-link dialog before the admin could
+   *  copy the link. Now the parent always keeps this component mounted
+   *  (keyed only on placementId), and the status-card-vs-form decision
+   *  lives in here instead, gated on local `inviteUrl` state that
+   *  survives the `isExternalSigner` flag flip. */
+  signerUser?: {
+    id: string;
+    name: string;
+    isActive: boolean;
+    isExternalSigner: boolean;
+  } | null;
   /** Called once with the newly-created (or reused-pending) signer so the
    *  parent can patch its local placement state without a full reload. */
   onInvited: (signer: { id: string; name: string }) => void;
+  /** Ask the parent to open its revoke-access confirm dialog for this
+   *  placement (parent owns that confirm modal + the actual revoke call). */
+  onRequestRevoke?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -74,6 +113,48 @@ export function InviteDocumentSignerButton({
     setName("");
     setEmail("");
     setPhone("");
+  }
+
+  // Already has an external signer attached (prior session, or a prior
+  // invite this session that the admin has since closed via `reset()`) —
+  // show the status card instead of the invite button/form. `!inviteUrl`
+  // keeps this from taking over the instant an invite succeeds: `submit()`
+  // sets `inviteUrl` in the same tick it calls `onInvited()`, so the
+  // just-generated link dialog (rendered below) still wins that render.
+  if (signerUser?.isExternalSigner && !inviteUrl) {
+    return (
+      <div className="space-y-2">
+        <div
+          className={cn(
+            "flex items-center gap-2 text-sm rounded-xl px-3 py-2 border",
+            signerUser.isActive
+              ? "text-green-700 bg-green-50 border-green-200"
+              : "text-amber-700 bg-amber-50 border-amber-200",
+          )}
+        >
+          {signerUser.isActive ? (
+            <CheckCircle2 className="size-4 shrink-0" />
+          ) : (
+            <Clock className="size-4 shrink-0" />
+          )}
+          <span>
+            {signerUser.isActive
+              ? `${signerUser.name} ตั้งรหัสผ่านแล้ว — เข้าเซ็นได้`
+              : `เชิญ ${signerUser.name} แล้ว รอตั้งรหัสผ่าน`}
+          </span>
+        </div>
+        {signerUser.isActive && onRequestRevoke && (
+          <button
+            type="button"
+            onClick={onRequestRevoke}
+            className="w-full inline-flex items-center justify-center gap-2 h-9 px-3 text-xs rounded-xl bg-white text-red-600 border border-red-200 hover:bg-red-50 font-medium"
+          >
+            <UserX className="size-3.5" />
+            ปิดสิทธิ์เข้าถึงผู้เซ็นนี้
+          </button>
+        )}
+      </div>
+    );
   }
 
   return (
