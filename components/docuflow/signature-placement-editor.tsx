@@ -52,6 +52,11 @@ import { InviteDocumentSignerButton } from "./invite-document-signer-button";
 import { revokeDocumentSignerAccess } from "@/lib/docuflow/invite-signer";
 import { configurePdfJs } from "@/lib/docuflow/pdfjs-config";
 import { useResponsivePdfWidth } from "@/lib/docuflow/use-responsive-pdf-width";
+import {
+  SIGNER_ROLE_OPTIONS,
+  signerRoleLabel,
+  type SignerRole,
+} from "@/lib/docuflow/signer-role-labels";
 
 /* ============================================================
    Dynamic react-pdf imports (client-only)
@@ -72,7 +77,7 @@ const ReactPdfPage = dynamic(
    Types (mirror /api/docuflow/[id]/signatures GET shape)
    ============================================================ */
 
-export type SignerRole = "owner" | "employee" | "counterparty" | "other";
+export type { SignerRole };
 
 export interface PlacementVm {
   id: string;
@@ -125,12 +130,9 @@ export interface SignaturePlacementEditorProps {
   origin: string;
 }
 
-const ROLE_OPTIONS: { value: SignerRole; label: string; emoji: string }[] = [
-  { value: "owner", label: "เจ้าของ", emoji: "👑" },
-  { value: "employee", label: "พนักงาน", emoji: "👤" },
-  { value: "counterparty", label: "คู่ค้า", emoji: "🤝" },
-  { value: "other", label: "อื่น ๆ", emoji: "✍️" },
-];
+// Single source of truth: lib/docuflow/signer-role-labels.ts — reused as-is
+// (name kept local so the render code below is untouched).
+const ROLE_OPTIONS = SIGNER_ROLE_OPTIONS;
 
 interface TypeOption {
   value: PlacementType;
@@ -168,9 +170,7 @@ const TYPE_OPTIONS: TypeOption[] = [
   },
 ];
 
-function roleLabel(role: SignerRole): string {
-  return ROLE_OPTIONS.find((r) => r.value === role)?.label ?? role;
-}
+const roleLabel = signerRoleLabel;
 
 function typeLabel(type: PlacementType): string {
   return TYPE_OPTIONS.find((t) => t.value === type)?.label ?? type;

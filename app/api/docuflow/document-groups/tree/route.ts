@@ -16,6 +16,7 @@ import { zUUID } from "@/lib/zod-helpers";
 import {
   listDocumentGroupChildren,
   getDocumentGroupBreadcrumb,
+  getDocumentGroupNode,
 } from "@/lib/docuflow/document-groups";
 
 export const dynamic = "force-dynamic";
@@ -43,12 +44,25 @@ export async function GET(req: NextRequest) {
   }
 
   const orgId = session.user.org_id;
-  const [children, breadcrumb] = await Promise.all([
+  const [children, breadcrumb, currentNode] = await Promise.all([
     listDocumentGroupChildren(orgId, companyId, parentGroupId || null),
     parentGroupId
       ? getDocumentGroupBreadcrumb(orgId, parentGroupId)
       : Promise.resolve([]),
+    // CEO Pinpoint item #12a (2026-10-13): the drill-down's empty state
+    // said "ยังไม่มีโฟลเดอร์ในนี้" (no sub-folder here) even when the
+    // current folder has documents placed directly in it — misleading,
+    // reads as "this folder is empty" when it isn't. The company-root
+    // "folder" (parentGroupId null) isn't a real DocumentGroup row — its
+    // own direct documents are a different, pre-existing concept shown
+    // elsewhere (tree-browser.tsx's "ของบริษัท" bucket) — so there's
+    // nothing to fetch there; only a real folder node needs this.
+    parentGroupId ? getDocumentGroupNode(orgId, parentGroupId) : Promise.resolve(null),
   ]);
 
-  return NextResponse.json({ children, breadcrumb });
+  return NextResponse.json({
+    children,
+    breadcrumb,
+    currentDocumentCount: currentNode?.documentCount ?? 0,
+  });
 }

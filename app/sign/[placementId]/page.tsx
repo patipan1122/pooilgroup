@@ -27,6 +27,8 @@ import { prisma } from "@/lib/prisma";
 import { getSignedDownloadUrl } from "@/lib/docuflow/r2";
 import { getCachedAnalysis } from "@/lib/docuflow/ai-analyze";
 import { getMySignatureUrl } from "@/lib/docuflow/my-signature";
+import { isZeroGrantStaffAccount } from "@/lib/docuflow/signer-helpers";
+import { signerRoleEmojiLabel } from "@/lib/docuflow/signer-role-labels";
 import {
   SignerInterface,
   type SignerPlacementVm,
@@ -93,7 +95,7 @@ export default async function SignerPage({
     redirect("/403");
   }
 
-  const [pdfUrl, riskAnalysis, allPlacementRows, savedSignatureUrl] =
+  const [pdfUrl, riskAnalysis, allPlacementRows, savedSignatureUrl, isExternalViewer] =
     await Promise.all([
       getSignedDownloadUrl(placement.document.fileKey).catch(() => null),
       getCachedAnalysis(placement.document.id, orgId).catch(() => null),
@@ -110,12 +112,22 @@ export default async function SignerPage({
           widthRatio: true,
           heightRatio: true,
           placementType: true,
+          signerRole: true,
           signerName: true,
           signerUserId: true,
           signedAt: true,
         },
       }),
       getMySignatureUrl(session.user.id).catch(() => null),
+      // Privacy fix (Customer persona finding, 2026-10-13 — not one of the
+      // original 18 points, found live during the Pinpoint review): an
+      // external/invited signer (role==="staff", zero active user_modules
+      // grants — same definition `isExternalSigner` already uses on the
+      // admin signatures page) must never see other signers' real names —
+      // only their OWN placement's identity is theirs to see. Internal
+      // staff checking on a document (has a real module grant) keep
+      // seeing real names as today.
+      isZeroGrantStaffAccount(session.user.id, orgId),
     ]);
   if (!pdfUrl) notFound();
 
@@ -141,20 +153,28 @@ export default async function SignerPage({
   };
 
   const allPlacements: SignerPreviewPlacementVm[] = allPlacementRows.map(
-    (p) => ({
-      id: p.id,
-      pageNumber: p.pageNumber,
-      xRatio: p.xRatio,
-      yRatio: p.yRatio,
-      widthRatio: p.widthRatio,
-      heightRatio: p.heightRatio,
-      placementType:
-        (p.placementType as SignerPreviewPlacementVm["placementType"]) ??
-        "signature",
-      signerName: p.signerName,
-      signerUserId: p.signerUserId,
-      signedAt: p.signedAt ? p.signedAt.toISOString() : null,
-    }),
+    (p) => {
+      // "Is this MY OWN placement?" by signerUserId, not by placement.id —
+      // an external signer can have more than one box assigned to them on
+      // the same document; every one of those is theirs to see for real,
+      // only OTHER signers' boxes get redacted.
+      const isOwnPlacement = p.signerUserId === session.user.id;
+      const redact = isExternalViewer && !isOwnPlacement;
+      return {
+        id: p.id,
+        pageNumber: p.pageNumber,
+        xRatio: p.xRatio,
+        yRatio: p.yRatio,
+        widthRatio: p.widthRatio,
+        heightRatio: p.heightRatio,
+        placementType:
+          (p.placementType as SignerPreviewPlacementVm["placementType"]) ??
+          "signature",
+        signerName: redact ? signerRoleEmojiLabel(p.signerRole) : p.signerName,
+        signerUserId: redact ? null : p.signerUserId,
+        signedAt: p.signedAt ? p.signedAt.toISOString() : null,
+      };
+    },
   );
 
   const signerDisplayName =

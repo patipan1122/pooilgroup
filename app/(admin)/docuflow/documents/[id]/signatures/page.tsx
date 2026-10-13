@@ -13,6 +13,7 @@ import { loadDocumentById } from "@/lib/docuflow/data";
 import { getSignedDownloadUrl } from "@/lib/docuflow/r2";
 import { prisma } from "@/lib/prisma";
 import { requireModuleAdmin } from "@/lib/auth/module-access";
+import { isExecutiveRole } from "@/lib/auth/role-guards";
 import { filterZeroGrantStaffUserIds } from "@/lib/docuflow/signer-helpers";
 import {
   SignaturePlacementEditor,
@@ -56,10 +57,33 @@ export default async function SignaturePlacementPage({
         },
       },
     }),
-    prisma.user.findMany({
-      where: { orgId, isActive: true },
-      select: { id: true, name: true, role: true },
-      orderBy: { name: "asc" },
+    // CEO Pinpoint item #6 (2026-10-13): this list feeds the "pick a NEW
+    // signer" picker — it previously returned every active org user, so an
+    // admin assigning a signature could accidentally hand a placement to
+    // someone with no DocuFlow access at all. Scoped to the same "can view
+    // this module" gate as userCanViewModule() (lib/auth/module-access.ts):
+    // isExecutiveRole(role) covers the org-wide tiers that can view ANY
+    // module without an explicit grant, OR an active user_modules row for
+    // "docuflow" specifically. Computed as one bulk query + an in-memory
+    // filter (not N calls to userCanViewModule) to avoid N+1 queries.
+    // Already-placed signers keep showing via `signerUser` (joined straight
+    // off `rawPlacements` above) regardless of this filter, so revoking a
+    // signer's module access later never hides their historical placement.
+    Promise.all([
+      prisma.user.findMany({
+        where: { orgId, isActive: true },
+        select: { id: true, name: true, role: true },
+        orderBy: { name: "asc" },
+      }),
+      prisma.userModule.findMany({
+        where: { orgId, moduleName: "docuflow", isActive: true },
+        select: { userId: true },
+      }),
+    ]).then(([allUsers, grants]) => {
+      const grantedIds = new Set(grants.map((g) => g.userId));
+      return allUsers.filter(
+        (u) => isExecutiveRole(u.role) || grantedIds.has(u.id),
+      );
     }),
     prisma.documentSignaturePlacement.count({
       where: {

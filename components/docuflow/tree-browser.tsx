@@ -297,19 +297,36 @@ function TreeNode({
         <span className="size-6 rounded-md bg-zinc-100 flex items-center justify-center text-zinc-700 shrink-0">
           {icon}
         </span>
-        <span className="flex-1 min-w-0 flex items-baseline gap-2">
+        {/* CEO Pinpoint item #3 (2026-10-13): company/branch-level node
+            names were hard-truncated to one line with no way to see the
+            full name (e.g. a long company name reads as "JP Sync Group…"
+            with nothing to reveal the rest). `title` gives a native
+            browser tooltip on hover/long-press for every depth; depth 0
+            (ทั้งกลุ่ม / each company / เอกสารบุคลากร) additionally gets a
+            2-line clamp instead of a 1-line ellipsis so most real names
+            fit without any hover at all. Deeper rows (folders/people) keep
+            single-line truncate — this row is denser once expanded and a
+            fixed line-height matters more for scanability there. */}
+        <span
+          className={cn(
+            "flex-1 min-w-0 flex gap-2",
+            depth === 0 ? "flex-col items-start" : "items-baseline",
+          )}
+          title={sublabel ? `${label} · ${sublabel}` : label}
+        >
           <span
             className={cn(
-              "truncate",
               depth === 0
-                ? "font-bold text-zinc-900"
-                : "font-semibold text-zinc-800 text-sm",
+                ? "line-clamp-2 font-bold text-zinc-900"
+                : "truncate font-semibold text-zinc-800 text-sm",
             )}
           >
             {label}
           </span>
           {sublabel && (
-            <span className="text-xs text-zinc-500 truncate">{sublabel}</span>
+            <span className="text-xs text-zinc-500 truncate shrink-0">
+              {sublabel}
+            </span>
           )}
         </span>
         {right}

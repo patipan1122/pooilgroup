@@ -53,6 +53,11 @@ export function DocumentGroupDrillDown({
   const [parentId, setParentId] = useState<string | null>(null);
   const [children, setChildren] = useState<Node[]>([]);
   const [breadcrumb, setBreadcrumb] = useState<Breadcrumb[]>([]);
+  // CEO Pinpoint item #12a (2026-10-13) — how many documents sit DIRECTLY
+  // in the folder currently being viewed (not inside its sub-folders).
+  // Drives the empty-state copy below: "no sub-folders" is misleading
+  // when the folder actually holds documents.
+  const [currentDocumentCount, setCurrentDocumentCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -68,6 +73,7 @@ export function DocumentGroupDrillDown({
       const data = await res.json();
       setChildren(data.children ?? []);
       setBreadcrumb(data.breadcrumb ?? []);
+      setCurrentDocumentCount(data.currentDocumentCount ?? 0);
       setParentId(nextParentId);
     } catch {
       toast.error("โหลดโฟลเดอร์ไม่สำเร็จ");
@@ -94,6 +100,7 @@ export function DocumentGroupDrillDown({
         if (cancelled) return;
         setChildren(data.children ?? []);
         setBreadcrumb(data.breadcrumb ?? []);
+        setCurrentDocumentCount(data.currentDocumentCount ?? 0);
         setParentId(null);
       } catch {
         if (!cancelled) toast.error("โหลดโฟลเดอร์ไม่สำเร็จ");
@@ -232,7 +239,15 @@ export function DocumentGroupDrillDown({
                 textAlign: "center",
               }}
             >
-              ยังไม่มีโฟลเดอร์ในนี้
+              {/* CEO Pinpoint item #12a (2026-10-13): previously always said
+                  "ยังไม่มีโฟลเดอร์ในนี้" (no sub-folder here) even when the
+                  folder has documents placed directly in it — reads as
+                  "this folder is empty," which is wrong. Full document
+                  browsing inside the drill-down is Batch 2's #12b — this
+                  only fixes the misleading copy. */}
+              {currentDocumentCount > 0
+                ? `ไม่มีโฟลเดอร์ย่อย — มีเอกสาร ${currentDocumentCount} รายการ`
+                : "ยังไม่มีโฟลเดอร์ในนี้"}
             </p>
           )}
           {children.map((node) => (

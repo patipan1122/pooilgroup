@@ -40,6 +40,10 @@ import { buildDocumentTree } from "@/lib/docuflow/tree";
 import { DocumentCard } from "@/components/docuflow/document-card";
 import { DocumentFilterSelect } from "@/components/docuflow/document-filter-select";
 import { DocumentViewTabs } from "@/components/docuflow/document-view-tabs";
+import {
+  DocumentSortTabs,
+  type DocumentSortValue,
+} from "@/components/docuflow/document-sort-tabs";
 import { TreeBrowser } from "@/components/docuflow/tree-browser";
 import { QuickCreateDocumentGroupButton } from "@/components/docuflow/quick-create-document-group-button";
 import { DocumentSearchInput } from "@/components/docuflow/document-search-input";
@@ -116,6 +120,10 @@ interface SP {
   businessType?: string;
   documentTypeId?: string;
   shared?: string;
+  /** List-view sort (CEO Pinpoint item #11, 2026-10-13) — "newest" is the
+   *  default/fallback so it's omitted from the URL, same convention as
+   *  `view`'s "" default above. */
+  sort?: string;
   /** Global company-switcher param (lib/auth/company-context.ts) — the
    *  SINGLE source of truth for which company's documents this page shows
    *  by default. Company-switcher scoping Phase 3, 2026-10-11. */
@@ -146,6 +154,8 @@ export default async function DocumentsListPage({
   const filterBusinessType = sp.businessType || "";
   const filterDocumentTypeId = sp.documentTypeId || "";
   const sharedOnly = sp.shared === "1";
+  const sort: DocumentSortValue =
+    sp.sort === "oldest" || sp.sort === "name_asc" ? sp.sort : "newest";
 
   // Company-switcher scoping Phase 3 (2026-10-11) — the global switcher's
   // ?company=/cookie selection is now the SINGLE source of truth for which
@@ -171,6 +181,7 @@ export default async function DocumentsListPage({
           search: search || undefined,
           limit: 200,
           visibleToCompanyId: companyId || undefined,
+          sort,
         }),
     loadDocumentTags(orgId),
     listDocumentTypes(orgId, companyId || undefined),
@@ -189,6 +200,7 @@ export default async function DocumentsListPage({
   if (filterDocumentTypeId) preserve.documentTypeId = filterDocumentTypeId;
   if (sharedOnly) preserve.shared = "1";
   if (sp.company) preserve.company = sp.company;
+  if (sort !== "newest") preserve.sort = sort;
 
   const tagChips = allTags.slice(0, 12).map((t) => ({ value: t, label: `#${t}` }));
   const docTypeChips = docTypes.map((dt) => ({ value: dt.id, label: dt.name }));
@@ -503,6 +515,18 @@ export default async function DocumentsListPage({
           <DfSection
             number="02"
             label={`เอกสาร · ${docs.length} รายการ`}
+            action={
+              docs.length > 0 ? (
+                <DocumentSortTabs
+                  current={sort}
+                  preserve={(() => {
+                    const p = { ...preserve };
+                    delete p.sort;
+                    return p;
+                  })()}
+                />
+              ) : null
+            }
             className="df-fade-up df-fade-up-200"
           >
             {docs.length === 0 ? (

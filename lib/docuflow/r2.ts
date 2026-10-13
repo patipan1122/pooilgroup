@@ -39,17 +39,49 @@ export function buildDocumentKey(
 }
 
 /**
+ * Builds a `Content-Disposition: attachment` header value for a presigned
+ * download — CEO Pinpoint item #16 (2026-10-13). Includes BOTH the plain
+ * ASCII `filename=` fallback (older clients) and the RFC 5987/6266
+ * UTF-8 `filename*=` form (so a Thai document name downloads with its
+ * real name, not a mangled/stripped one — most DocuFlow document names
+ * are in Thai).
+ */
+function buildAttachmentDisposition(filename: string): string {
+  const asciiFallback =
+    filename.replace(/[^\x20-\x7E]/g, "_").replace(/["\\]/g, "_").trim() ||
+    "document";
+  const utf8Encoded = encodeURIComponent(filename).replace(
+    /['()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${utf8Encoded}`;
+}
+
+/**
  * Presigned GET URL for downloading/viewing a stored document.
  * Default: 1 hour expiry — long enough for view in browser, short
  * enough that links shared accidentally don't outlive the session.
+ *
+ * `downloadFilename` (CEO Pinpoint item #16, 2026-10-13): when set, adds
+ * an R2/S3 `ResponseContentDisposition` override so opening this URL
+ * triggers a native "Save File" download instead of a browser navigation
+ * — the bug was a plain 302 redirect to the signed URL, which opens as a
+ * new-tab navigation with no disposition hint. Left undefined for every
+ * OTHER existing caller (inline PDF/image preview via react-pdf/<img>) so
+ * their behavior is completely unchanged — only the download ROUTE passes
+ * this.
  */
 export async function getSignedDownloadUrl(
   fileKey: string,
   expiresIn = 3600,
+  downloadFilename?: string,
 ): Promise<string> {
   const cmd = new GetObjectCommand({
     Bucket: R2_BUCKET,
     Key: fileKey,
+    ...(downloadFilename
+      ? { ResponseContentDisposition: buildAttachmentDisposition(downloadFilename) }
+      : {}),
   });
   return getSignedUrl(r2, cmd, { expiresIn });
 }

@@ -147,6 +147,10 @@ export function ViewerTabs({
       >
         {tab === "preview" && (
           <div
+            // CEO Pinpoint item #14/#17 (2026-10-13) — print target. Marks
+            // the exact subtree `window.print()` should show; everything
+            // else is hidden via the `@media print` rule in docuflow.css.
+            className="df-print-area"
             style={{
               background: "var(--df-line-soft)",
               minHeight: 480,

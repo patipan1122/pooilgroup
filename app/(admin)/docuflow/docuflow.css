@@ -382,6 +382,34 @@
 .df-fade-up-200 { animation-delay: 0.16s; }
 .df-fade-up-300 { animation-delay: 0.24s; }
 
+/* ============= Print (CEO Pinpoint #14/#17, 2026-10-13) =============
+ * "Print only this one area" — standard technique: hide EVERYTHING on the
+ * page, then re-reveal just the marked `.df-print-area` subtree. This is
+ * the only way to keep the surrounding app chrome (admin top-nav, side
+ * nav, buttons, unrelated cards) out of the printout without having to
+ * tag every single piece of that chrome individually — the selector reach
+ * is global (`body *`) on purpose, but this stylesheet is only ever
+ * loaded on DocuFlow routes (same assumption `.df-bottomnav` above
+ * already relies on), so it never touches printing anywhere else in the
+ * app. Mark exactly one container per page with `.df-print-area` —
+ * viewer-tabs.tsx's Preview tab panel is the only one today.
+ */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .df-print-area,
+  .df-print-area * {
+    visibility: visible;
+  }
+  .df-print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+}
+
 /* ============= Helper text scale (Thai-friendly) ============= */
 .df-text-xs { font-size: 11px; line-height: 1.4; }
 .df-text-sm { font-size: 13px; line-height: 1.5; }

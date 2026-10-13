@@ -19,7 +19,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { ChevronLeft, ChevronRight, Loader2, RotateCcw } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, Printer, RotateCcw } from "lucide-react";
 import { configurePdfJs } from "@/lib/docuflow/pdfjs-config";
 import { useResponsivePdfWidth } from "@/lib/docuflow/use-responsive-pdf-width";
 
@@ -96,35 +96,52 @@ export function PdfPreview({ pdfUrl, docName }: Props) {
           justifyContent: "space-between",
           gap: 8,
           marginBottom: 10,
+          flexWrap: "wrap",
         }}
       >
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button
+            type="button"
+            onClick={() => setPageNumber((p) => Math.max(1, p - 1))}
+            disabled={pageNumber <= 1}
+            style={navButtonStyle(pageNumber <= 1)}
+          >
+            <ChevronLeft size={14} /> หน้าก่อน
+          </button>
+          <span
+            style={{
+              fontSize: 13,
+              color: "var(--df-muted)",
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            หน้า {pageNumber}
+            {pageCount ? ` / ${pageCount}` : ""}
+          </span>
+          <button
+            type="button"
+            onClick={() =>
+              setPageNumber((p) => (pageCount ? Math.min(pageCount, p + 1) : p + 1))
+            }
+            disabled={pageCount !== null && pageNumber >= pageCount}
+            style={navButtonStyle(pageCount !== null && pageNumber >= pageCount)}
+          >
+            หน้าถัดไป <ChevronRight size={14} />
+          </button>
+        </div>
+        {/* CEO Pinpoint item #17 (2026-10-13) — print straight from the
+            viewer, no need to go find the document-detail page's own
+            print button first. Relies on ViewerTabs marking this whole
+            Preview panel `.df-print-area` (docuflow.css) so only the
+            current page prints, not the surrounding app chrome. */}
         <button
           type="button"
-          onClick={() => setPageNumber((p) => Math.max(1, p - 1))}
-          disabled={pageNumber <= 1}
-          style={navButtonStyle(pageNumber <= 1)}
+          onClick={() => window.print()}
+          title="พิมพ์หน้านี้"
+          aria-label="พิมพ์หน้านี้"
+          style={navButtonStyle(false)}
         >
-          <ChevronLeft size={14} /> หน้าก่อน
-        </button>
-        <span
-          style={{
-            fontSize: 13,
-            color: "var(--df-muted)",
-            fontVariantNumeric: "tabular-nums",
-          }}
-        >
-          หน้า {pageNumber}
-          {pageCount ? ` / ${pageCount}` : ""}
-        </span>
-        <button
-          type="button"
-          onClick={() =>
-            setPageNumber((p) => (pageCount ? Math.min(pageCount, p + 1) : p + 1))
-          }
-          disabled={pageCount !== null && pageNumber >= pageCount}
-          style={navButtonStyle(pageCount !== null && pageNumber >= pageCount)}
-        >
-          หน้าถัดไป <ChevronRight size={14} />
+          <Printer size={14} /> พิมพ์
         </button>
       </div>
 

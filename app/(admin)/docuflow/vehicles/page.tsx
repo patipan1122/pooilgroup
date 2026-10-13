@@ -33,6 +33,7 @@ import {
 } from "@/lib/vehicles/data";
 import { userIsModuleAdmin, requireModuleView } from "@/lib/auth/module-access";
 import { VehicleCard, type VehicleCardVm } from "@/components/docuflow/vehicle-card";
+import { VehicleTable } from "@/components/docuflow/vehicle-table";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -373,17 +374,28 @@ export default async function DocuFlowVehiclesPage({
             )}
           </DfCard>
         ) : (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))",
-              gap: 14,
-            }}
-          >
-            {rows.map((vm) => (
-              <VehicleCard key={vm.id} vm={vm} />
-            ))}
-          </div>
+          <>
+            {/* CEO Pinpoint item #10 (2026-10-13): real sortable/filterable
+                TABLE requested, but the UI persona flagged that cards must
+                stay the canonical MOBILE layout (a 5-column table doesn't
+                fit a phone screen) — so this is additive, not a swap.
+                VehicleTable hides itself below `lg:` via its own
+                `hidden lg:block`; the card grid below hides itself at
+                `lg:` and up so exactly one view renders per breakpoint. */}
+            <VehicleTable rows={rows} />
+            <div
+              className="lg:hidden"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))",
+                gap: 14,
+              }}
+            >
+              {rows.map((vm) => (
+                <VehicleCard key={vm.id} vm={vm} />
+              ))}
+            </div>
+          </>
         )}
       </DfSection>
     </div>

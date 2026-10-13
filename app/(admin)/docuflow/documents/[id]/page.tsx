@@ -31,6 +31,7 @@ import { DeleteDocumentButton } from "@/components/docuflow/delete-document-butt
 import { MoveDocumentButton } from "@/components/docuflow/move-document-button";
 import { EditDocumentButton } from "@/components/docuflow/edit-document-button";
 import { DriveExportButton } from "@/components/docuflow/drive-export-button";
+import { PrintButton } from "@/components/docuflow/print-button";
 import { DocumentCostEditor } from "@/components/docuflow/document-cost-editor";
 import { RiskAnalysisPanel } from "@/components/docuflow/risk-analysis-panel";
 import { RenewalHistorySection } from "@/components/docuflow/renewal-history-section";
@@ -315,6 +316,7 @@ export default async function DocumentDetailPage({
               ดาวน์โหลด
             </DfButton>
           )}
+          {downloadUrl && <PrintButton />}
           {!downloadUrl && downloadError && (
             <DfPill tone="danger">
               <AlertTriangle size={11} /> {downloadError}
@@ -492,6 +494,9 @@ export default async function DocumentDetailPage({
                   documentId={doc.id}
                   initialDriveFileId={doc.driveFileId}
                   initialDriveFileUrl={doc.driveFileUrl}
+                  initialDriveExportedAt={
+                    doc.driveExportedAt ? doc.driveExportedAt.toISOString() : null
+                  }
                 />
               </div>
             </DfCard>

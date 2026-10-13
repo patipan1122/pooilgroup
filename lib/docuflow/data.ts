@@ -187,7 +187,22 @@ export interface LoadDocumentsOpts {
    *     "fuel_station" shows under every company that runs fuel stations).
    */
   visibleToCompanyId?: string;
+  /** Sort order for the main documents list (CEO Pinpoint item #11,
+   *  2026-10-13) — "newest" (default, matches the previous hardcoded
+   *  behavior) / "oldest" / "name_asc". Applied at the Prisma query level
+   *  (not a post-sort in JS) so it composes correctly with `take`/cursor
+   *  pagination above. */
+  sort?: "newest" | "oldest" | "name_asc";
 }
+
+const SORT_ORDER_BY: Record<
+  NonNullable<LoadDocumentsOpts["sort"]>,
+  { uploadedAt?: "asc" | "desc"; name?: "asc" | "desc" }
+> = {
+  newest: { uploadedAt: "desc" },
+  oldest: { uploadedAt: "asc" },
+  name_asc: { name: "asc" },
+};
 
 export async function loadDocuments(
   orgId: string,
@@ -206,6 +221,7 @@ export async function loadDocuments(
     cursor,
     limit = 50,
     visibleToCompanyId,
+    sort = "newest",
   } = opts;
 
   const safeLimit = Math.min(Math.max(limit, 1), 200);
@@ -271,7 +287,7 @@ export async function loadDocuments(
       },
       documentGroupRef: { select: { id: true, name: true } },
     },
-    orderBy: { uploadedAt: "desc" },
+    orderBy: SORT_ORDER_BY[sort] ?? SORT_ORDER_BY.newest,
     take: safeLimit,
     ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
   });
