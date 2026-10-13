@@ -40,9 +40,10 @@ import { Input } from "@/components/ui/input";
 import { Dialog } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils/cn";
 import type { DocumentTypeOption } from "@/lib/docuflow/document-types";
-import type { DocumentGroupRecord } from "@/lib/docuflow/document-groups";
-import { createDocumentGroupViaApi } from "@/lib/docuflow/document-groups-client";
-import { QuickCreateDocGroupDialog } from "./quick-create-document-group-dialog";
+import {
+  DocumentGroupPicker,
+  type DocumentGroupSelection,
+} from "./document-group-picker";
 import { TagCombobox } from "./tag-combobox";
 import {
   CostFieldsSection,
@@ -97,7 +98,6 @@ interface Props {
   users: UserRow[];
   businessTypes: BizType[];
   documentTypes: DocumentTypeOption[];
-  documentGroups: DocumentGroupRecord[];
   /** Distinct tags already used org-wide — powers the tag combobox suggestions. */
   availableTags: string[];
   orgId: string;
@@ -249,7 +249,6 @@ export function UploadForm({
   users,
   businessTypes,
   documentTypes,
-  documentGroups,
   availableTags,
   orgId,
   defaultBusinessType,
@@ -296,14 +295,13 @@ export function UploadForm({
     setLocalDocumentTypes(documentTypes);
   }, [documentTypes]);
 
-  // Same pattern as localDocumentTypes above, for the "+ สร้างใหม่" quick-create
-  // next to the กลุ่มเอกสาร (DocumentGroup) dropdown — CEO click-report item 2.
-  const [localDocumentGroups, setLocalDocumentGroups] =
-    useState<DocumentGroupRecord[]>(documentGroups);
-  const [quickCreateGroupOpen, setQuickCreateGroupOpen] = useState(false);
-  useEffect(() => {
-    setLocalDocumentGroups(documentGroups);
-  }, [documentGroups]);
+  // DocumentGroupPicker (CEO Pinpoint item #4, 2026-10-13) — replaces the
+  // old flat <select> + localDocumentGroups/quickCreateGroupOpen state;
+  // the picker now owns its own data-fetch (tree API) and its own inline
+  // create-folder form (DocumentGroupDrillDown, mode="picker"), so there's
+  // no prop-drilled list or quick-create dialog to sync here anymore.
+  const [groupSelection, setGroupSelection] =
+    useState<DocumentGroupSelection | null>(null);
 
   const {
     register,
@@ -474,25 +472,6 @@ export function UploadForm({
     setValue("documentTypeId", data.documentType.id);
     setQuickCreateOpen(false);
     toast.success(`สร้างประเภทเอกสาร "${created.name}" แล้ว`);
-  }
-
-  // Mirrors handleQuickCreateDocType above — same "create then auto-select"
-  // UX, but posting to /api/docuflow/document-groups (name + description
-  // only, no company/UUID field so the strict-UUID bug class from the
-  // doc-type quick-create postmortem doesn't apply here).
-  async function handleQuickCreateGroup(input: { name: string }) {
-    const created = await createDocumentGroupViaApi(input);
-    // flushSync — see the matching comment in handleQuickCreateDocType above
-    // for why this is required (real race, not a timing hack): setValue()
-    // for an uncontrolled <select> writes to the DOM synchronously, before
-    // React would otherwise have committed the new <option> from the state
-    // update below.
-    flushSync(() => {
-      setLocalDocumentGroups((prev) => [...prev, created]);
-    });
-    setValue("documentGroupId", created.id);
-    setQuickCreateGroupOpen(false);
-    toast.success(`สร้างกลุ่มเอกสาร "${created.name}" แล้ว`);
   }
 
   function addScope(s: Scope) {
@@ -754,6 +733,7 @@ export function UploadForm({
     setUploadMode("multiple");
     setTags([]);
     setCostFields(EMPTY_COST_FIELDS);
+    setGroupSelection(null);
     fileNameSyncRef.current = false;
     setNameLooksHashLike(false);
     reset({
@@ -1378,47 +1358,33 @@ export function UploadForm({
       />
 
       <div className="space-y-1.5">
-        <div className="flex items-center justify-between">
-          <label
-            htmlFor="documentGroupId"
-            className="flex items-center gap-1 text-sm font-medium text-zinc-800"
-          >
-            กลุ่มเอกสาร
-            <span className="text-zinc-500 font-normal">(ไม่บังคับ)</span>
-          </label>
-          <button
-            type="button"
-            onClick={() => setQuickCreateGroupOpen(true)}
-            disabled={busy}
-            className="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-brand-600)] hover:underline disabled:opacity-50"
-          >
-            <Plus className="size-3.5" />
-            สร้างใหม่
-          </button>
-        </div>
-        <select
-          id="documentGroupId"
-          {...register("documentGroupId")}
+        <label className="flex items-center gap-1 text-sm font-medium text-zinc-800">
+          กลุ่มเอกสาร
+          <span className="text-zinc-500 font-normal">(ไม่บังคับ)</span>
+        </label>
+        {/* CEO Pinpoint item #4 (2026-10-13) — compact searchable-tree
+            picker (DocumentGroupDrillDown in picker mode behind a Dialog),
+            replacing the flat <select> that showed every nested folder as
+            a bare name with no company/path context. Creating a new folder
+            now happens INSIDE this picker (same company-scoped nested-
+            create path as the main tree view) — this also closes the
+            upload form's own copy of the orphan-group bug (CEO Pinpoint
+            item #1, 2nd instance), since there's no more flat quick-create
+            call site left to repoint. */}
+        <DocumentGroupPicker
+          companies={companies}
+          defaultCompanyId={defaultCompanyId}
+          value={groupSelection}
+          onChange={(sel) => {
+            setGroupSelection(sel);
+            setValue("documentGroupId", sel?.id ?? "");
+          }}
           disabled={busy}
-          className="w-full rounded-lg border-2 border-zinc-200 px-3 py-2 text-sm focus:border-[var(--color-brand-500)] focus:outline-none bg-white"
-        >
-          <option value="">— ไม่ระบุ —</option>
-          {localDocumentGroups.map((g) => (
-            <option key={g.id} value={g.id}>
-              {g.name}
-            </option>
-          ))}
-        </select>
+        />
         <p className="text-xs text-zinc-500">
           การจัดกลุ่มอีกมิติหนึ่ง นอกเหนือจากประเภทเอกสาร
         </p>
       </div>
-
-      <QuickCreateDocGroupDialog
-        open={quickCreateGroupOpen}
-        onClose={() => setQuickCreateGroupOpen(false)}
-        onCreate={handleQuickCreateGroup}
-      />
 
       <Field
         label="Tag"

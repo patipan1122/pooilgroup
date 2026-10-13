@@ -1,17 +1,19 @@
 // DOCUMENT GROUPS — browser-side fetch helper
 // ────────────────────────────────────────────────────────────────────
-// Single reusable "create a DocumentGroup" network call, shared by every
-// client surface that offers a quick-create dialog for it:
-//   - components/docuflow/upload-form.tsx (inside the upload wizard)
-//   - components/docuflow/quick-create-document-group-button.tsx (the
-//     standalone button mounted on /docuflow/documents — CEO click-report
-//     item 3, 2026-10-10: the dialog already existed in the upload form,
-//     this just gives it a second entry point without a second
-//     implementation of the POST/validate/success path).
+// Creates a FLAT DocumentGroup row (companyId/parentGroupId both null) via
+// the legacy POST /api/docuflow/document-groups endpoint.
 //
-// Keeping this in one place means both call sites hit the exact same
-// endpoint with the exact same error-handling — if the API contract ever
-// changes, there is only one function to update.
+// CEO Pinpoint item #1 (2026-10-13): this used to be called from BOTH
+// components/docuflow/upload-form.tsx AND
+// components/docuflow/quick-create-document-group-button.tsx — a flat row
+// has no home in the per-company nested tree (TreeBrowser/
+// DocumentGroupDrillDown only render companyId-scoped folders), so every
+// group created this way read as "created, then vanished." Both call
+// sites now create through the company-scoped nested path instead
+// (createDocumentGroupFolder in document-group-tree-actions.ts) — this
+// function is kept in place (not deleted) per the Owner persona's
+// "repoint rather than remove" call, in case another legacy flat-group
+// surface still needs it, but has no caller in the app today.
 // ────────────────────────────────────────────────────────────────────
 
 import type { DocumentGroupRecord } from "./document-groups";

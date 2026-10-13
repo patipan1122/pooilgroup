@@ -1141,6 +1141,13 @@ model DocumentGroup {
   parentGroupId String? @map("parent_group_id") @db.Uuid
   name        String
   description String?
+  /// Folder icon picker (CEO Pinpoint item #13, 2026-10-13) — one of a
+  /// small fixed set of keys ("folder" | "star" | "lock") rendered via the
+  /// existing Lucide icon set already used everywhere else in DocuFlow
+  /// (DfDocIcon/.df-docico), not a new icon library. Nullable + no backfill
+  /// — every existing folder renders the same default Folder icon as
+  /// before (null = "folder"), so this is purely additive/cosmetic.
+  icon        String?
   isActive    Boolean  @default(true) @map("is_active")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)

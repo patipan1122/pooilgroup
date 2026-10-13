@@ -27,6 +27,9 @@ export async function createDocumentGroupFolder(input: {
   companyId: string;
   parentGroupId: string | null;
   name: string;
+  /** CEO Pinpoint item #13 (2026-10-13) — optional icon key; normalized
+   *  (invalid/unknown → null) at the data layer, never rejected here. */
+  icon?: string | null;
 }): Promise<CreateFolderResult> {
   if (!UUID.safeParse(input.companyId).success) {
     return { ok: false, error: "ไม่พบบริษัทนี้" };
@@ -41,10 +44,14 @@ export async function createDocumentGroupFolder(input: {
   }
 
   try {
+    // normalizeDocumentGroupIcon() is applied inside createNestedDocumentGroup
+    // itself (single normalization point) — invalid/unknown icon values are
+    // never rejected here, just silently stored as the default.
     const group = await createNestedDocumentGroup(session.user.org_id, {
       companyId: input.companyId,
       parentGroupId: input.parentGroupId,
       name: input.name,
+      icon: input.icon,
     });
     await audit({
       orgId: session.user.org_id,
@@ -57,6 +64,7 @@ export async function createDocumentGroupFolder(input: {
           name: group.name,
           companyId: group.companyId,
           parentGroupId: group.parentGroupId,
+          icon: group.icon,
         },
       },
     });

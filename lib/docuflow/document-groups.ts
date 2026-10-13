@@ -16,6 +16,7 @@
 // ────────────────────────────────────────────────────────────────────
 
 import { prisma } from "@/lib/prisma";
+import { normalizeDocumentGroupIcon } from "./document-group-icons";
 
 /* ============================================================
    TYPES
@@ -33,6 +34,9 @@ export interface DocumentGroupRecord {
    *  top-level group created before this feature. */
   companyId: string | null;
   parentGroupId: string | null;
+  /** Folder icon picker (CEO Pinpoint item #13, 2026-10-13) — see
+   *  DOCUMENT_GROUP_ICONS below. Null on every pre-existing row. */
+  icon: string | null;
 }
 
 function toDocumentGroupRecord(row: {
@@ -45,6 +49,7 @@ function toDocumentGroupRecord(row: {
   updatedAt: Date;
   companyId: string | null;
   parentGroupId: string | null;
+  icon: string | null;
 }): DocumentGroupRecord {
   return { ...row };
 }
@@ -182,6 +187,7 @@ export interface DocumentGroupNode {
   description: string | null;
   companyId: string | null;
   parentGroupId: string | null;
+  icon: string | null;
   childCount: number;
   documentCount: number;
 }
@@ -215,6 +221,7 @@ export async function listDocumentGroupChildren(
     description: r.description,
     companyId: r.companyId,
     parentGroupId: r.parentGroupId,
+    icon: r.icon,
     childCount: r._count.childGroups,
     documentCount: r._count.documents,
   }));
@@ -244,9 +251,34 @@ export async function getDocumentGroupNode(
     description: row.description,
     companyId: row.companyId,
     parentGroupId: row.parentGroupId,
+    icon: row.icon,
     childCount: row._count.childGroups,
     documentCount: row._count.documents,
   };
+}
+
+/**
+ * Documents placed DIRECTLY in a folder (not its sub-folders) — CEO
+ * Pinpoint item #12b (2026-10-13). Deliberately minimal: id + name only,
+ * no pagination/sort (the main document list page already owns that, per
+ * Batch 1's #11) — this is a "peek inside this folder" list, not a second
+ * document browser.
+ */
+export interface DocumentInGroupLite {
+  id: string;
+  name: string;
+}
+
+export async function listDocumentsInGroup(
+  orgId: string,
+  groupId: string,
+): Promise<DocumentInGroupLite[]> {
+  const rows = await prisma.document.findMany({
+    where: { orgId, documentGroupId: groupId, isActive: true },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  });
+  return rows;
 }
 
 export interface BreadcrumbEntry {
@@ -286,6 +318,10 @@ export interface CreateNestedDocumentGroupInput {
   parentGroupId: string | null;
   name: string;
   description?: string | null;
+  /** CEO Pinpoint item #13 (2026-10-13) — one of DOCUMENT_GROUP_ICONS, or
+   *  null/omitted for the default folder icon. Invalid values are silently
+   *  normalized to null via normalizeDocumentGroupIcon, never rejected. */
+  icon?: string | null;
 }
 
 /**
@@ -351,6 +387,7 @@ export async function createNestedDocumentGroup(
       parentGroupId: input.parentGroupId,
       name,
       description: input.description?.trim() || null,
+      icon: normalizeDocumentGroupIcon(input.icon),
     },
   });
   return toDocumentGroupRecord(row);

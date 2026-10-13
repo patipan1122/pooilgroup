@@ -29,6 +29,11 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Dialog } from "@/components/ui/dialog";
+import {
+  DOCUMENT_GROUP_ICONS,
+  type DocumentGroupIconKey,
+} from "@/lib/docuflow/document-group-icons";
+import { FolderIconPicker } from "./folder-icon-picker";
 
 export function QuickCreateDocGroupDialog({
   open,
@@ -37,14 +42,16 @@ export function QuickCreateDocGroupDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  onCreate: (input: { name: string }) => Promise<void>;
+  onCreate: (input: { name: string; icon: string | null }) => Promise<void>;
 }) {
   const [name, setName] = useState("");
+  const [icon, setIcon] = useState<DocumentGroupIconKey>(DOCUMENT_GROUP_ICONS[0]);
   const [busy, setBusy] = useState(false);
 
   function handleClose() {
     if (busy) return;
     setName("");
+    setIcon(DOCUMENT_GROUP_ICONS[0]);
     onClose();
   }
 
@@ -55,8 +62,9 @@ export function QuickCreateDocGroupDialog({
     }
     setBusy(true);
     try {
-      await onCreate({ name: name.trim() });
+      await onCreate({ name: name.trim(), icon });
       setName("");
+      setIcon(DOCUMENT_GROUP_ICONS[0]);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "สร้างกลุ่มเอกสารไม่สำเร็จ");
     } finally {
@@ -82,6 +90,11 @@ export function QuickCreateDocGroupDialog({
             autoFocus
             placeholder="เช่น เอกสารต่ออายุประจำปี"
           />
+        </Field>
+
+        {/* CEO Pinpoint item #13 (2026-10-13) — folder icon picker. */}
+        <Field label="ไอคอน" optional>
+          <FolderIconPicker value={icon} onChange={setIcon} disabled={busy} />
         </Field>
 
         <div className="flex justify-end gap-2 pt-2">

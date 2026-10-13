@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { userIsModuleAdmin, requireModuleView } from "@/lib/auth/module-access";
-import { resolveCompanyFilter } from "@/lib/auth/company-context";
+import { resolveCompanyFilter, loadCompaniesForOrg } from "@/lib/auth/company-context";
 import {
   loadDocuments,
   loadDocumentsSharedToBranch,
@@ -166,6 +166,13 @@ export default async function DocumentsListPage({
   // it (branch-documents-section.tsx), it just no longer drives the default
   // scope — see lib/docuflow/data.ts's `visibleToCompanyId` doc comment.
   const companyId = await resolveCompanyFilter(orgId, sp.company);
+  // CEO Pinpoint item #1 (2026-10-13) — the top-level "สร้างกลุ่มเอกสาร"
+  // quick-create button needs to know which company to scope the new
+  // folder to (see quick-create-document-group-button.tsx). Cheap/cached
+  // (loadCompaniesForOrg already backs resolveCompanyFilter above).
+  const allCompanies = await loadCompaniesForOrg(orgId);
+  const currentCompanyName =
+    allCompanies.find((c) => c.id === companyId)?.name ?? "";
 
   const [docs, allTags, docTypes, tree, documentGroups] = await Promise.all([
     sharedOnly && filterBranchId
@@ -289,7 +296,12 @@ export default async function DocumentsListPage({
                 DocumentGroup dialog already existed inside the upload form,
                 but was only reachable from there — mounted here too, same
                 dialog + same API call (see quick-create-document-group-button.tsx). */}
-            {adminTier && <QuickCreateDocumentGroupButton />}
+            {adminTier && (
+              <QuickCreateDocumentGroupButton
+                companyId={companyId}
+                companyName={currentCompanyName}
+              />
+            )}
             {/* CEO click-report item 4 (2026-09-30): "ตั้งค่าประเภทเอกสาร" was
                 only reachable by scrolling to the bottom of the category grid
                 below, then landing on the settings HUB (an extra hop before

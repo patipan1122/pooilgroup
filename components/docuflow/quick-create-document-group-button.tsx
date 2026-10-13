@@ -1,17 +1,20 @@
 "use client";
 
 // QuickCreateDocumentGroupButton — "สร้างกลุ่มเอกสาร" shortcut mounted on
-// /docuflow/documents (CEO click-report item 3, 2026-10-10). The dialog
-// already existed inside the upload form (components/docuflow/upload-form.tsx,
-// handleQuickCreateGroup) but was only reachable from there — the CEO asked
-// for it on the main browse/list page too.
+// /docuflow/documents (CEO click-report item 3, 2026-10-10).
 //
-// Reuses the exact same dialog component and the exact same
-// createDocumentGroupViaApi() network call the upload form uses — this is
-// a second MOUNT POINT, not a second implementation. The only thing that
-// differs is what happens after a successful create: the upload form
-// auto-selects the new group in its <select>; here there's no form to
-// select into, so we just toast + refresh the server page.
+// CEO Pinpoint item #1 (2026-10-13) — this button used to call the legacy
+// FLAT createDocumentGroupViaApi(), which writes a DocumentGroup row with
+// companyId=null. TreeBrowser/DocumentGroupDrillDown only ever render
+// folders scoped to a real company — a flat row has no home anywhere in
+// the nested tree, so it reads as "created, then vanished." Per the Owner
+// persona's call ("repoint rather than remove"), this now creates the
+// folder under whichever company is CURRENTLY SELECTED (the page's own
+// company-switcher scope, passed down as `companyId`/`companyName`),
+// through the exact same company-scoped nested-create server action the
+// in-drilldown "create folder here" button already uses
+// (createDocumentGroupFolder) — not a second implementation, a second
+// MOUNT POINT of the same create path.
 // ────────────────────────────────────────────────────────────────────
 
 import { useState } from "react";
@@ -20,19 +23,45 @@ import { toast } from "sonner";
 import { FolderPlus } from "lucide-react";
 import { DfButton } from "./df-ui";
 import { QuickCreateDocGroupDialog } from "./quick-create-document-group-dialog";
-import { createDocumentGroupViaApi } from "@/lib/docuflow/document-groups-client";
+import { createDocumentGroupFolder } from "@/lib/docuflow/document-group-tree-actions";
 
-export function QuickCreateDocumentGroupButton() {
+interface Props {
+  /** The company currently selected (lib/auth/company-context.ts
+   *  resolveCompanyFilter) — always a concrete company id at Pooilgroup
+   *  today (CEO decision 2026-10-10: no more "all companies" state), but
+   *  guarded defensively below in case an org ever has zero companies. */
+  companyId: string;
+  companyName: string;
+}
+
+export function QuickCreateDocumentGroupButton({ companyId, companyName }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
-  async function handleCreate(input: { name: string }) {
-    const created = await createDocumentGroupViaApi(input);
+  async function handleCreate(input: { name: string; icon: string | null }) {
+    const res = await createDocumentGroupFolder({
+      companyId,
+      parentGroupId: null,
+      name: input.name,
+      icon: input.icon,
+    });
+    if (!res.ok) {
+      throw new Error(res.error);
+    }
     setOpen(false);
     toast.success(
-      `สร้างกลุ่มเอกสาร "${created.name}" แล้ว — เลือกใช้ได้ตอนอัปโหลดเอกสาร`,
+      `สร้างกลุ่มเอกสาร "${res.group.name}" ในบริษัท ${companyName} แล้ว — ดูได้ที่แท็บ "ตามบริษัท"`,
     );
     router.refresh();
+  }
+
+  if (!companyId) {
+    return (
+      <DfButton variant="ghost" disabled title="เลือกบริษัทก่อน">
+        <FolderPlus size={15} />
+        สร้างกลุ่มเอกสาร
+      </DfButton>
+    );
   }
 
   return (

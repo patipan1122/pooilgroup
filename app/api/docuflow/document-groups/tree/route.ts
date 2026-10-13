@@ -17,6 +17,7 @@ import {
   listDocumentGroupChildren,
   getDocumentGroupBreadcrumb,
   getDocumentGroupNode,
+  listDocumentsInGroup,
 } from "@/lib/docuflow/document-groups";
 
 export const dynamic = "force-dynamic";
@@ -44,7 +45,7 @@ export async function GET(req: NextRequest) {
   }
 
   const orgId = session.user.org_id;
-  const [children, breadcrumb, currentNode] = await Promise.all([
+  const [children, breadcrumb, currentNode, currentDocuments] = await Promise.all([
     listDocumentGroupChildren(orgId, companyId, parentGroupId || null),
     parentGroupId
       ? getDocumentGroupBreadcrumb(orgId, parentGroupId)
@@ -58,11 +59,16 @@ export async function GET(req: NextRequest) {
     // elsewhere (tree-browser.tsx's "ของบริษัท" bucket) — so there's
     // nothing to fetch there; only a real folder node needs this.
     parentGroupId ? getDocumentGroupNode(orgId, parentGroupId) : Promise.resolve(null),
+    // CEO Pinpoint item #12b (2026-10-13) — the actual documents placed
+    // directly in the folder being viewed, not just their count. Same
+    // "only a real folder node has this" scoping as currentNode above.
+    parentGroupId ? listDocumentsInGroup(orgId, parentGroupId) : Promise.resolve([]),
   ]);
 
   return NextResponse.json({
     children,
     breadcrumb,
     currentDocumentCount: currentNode?.documentCount ?? 0,
+    currentDocuments,
   });
 }

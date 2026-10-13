@@ -10,7 +10,6 @@ import { prisma } from "@/lib/prisma";
 import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import { BUSINESS_TYPE_LIST } from "@/constants/business-types";
 import { listDocumentTypesForUpload } from "@/lib/docuflow/document-types";
-import { listDocumentGroups } from "@/lib/docuflow/document-groups";
 import { loadDocumentTags } from "@/lib/docuflow/data";
 import { UploadForm } from "@/components/docuflow/upload-form";
 import {
@@ -42,7 +41,7 @@ export default async function DocumentUploadPage({ searchParams }: PageProps) {
   // same spirit as Phase 2's rentspace default-company-on-create fix.
   const companyId = await resolveCompanyFilter(orgId, company);
 
-  const [companies, branches, users, documentTypes, documentGroups, availableTags] =
+  const [companies, branches, users, documentTypes, availableTags] =
     await Promise.all([
       prisma.company.findMany({
         where: { orgId, isActive: true },
@@ -66,7 +65,6 @@ export default async function DocumentUploadPage({ searchParams }: PageProps) {
         orderBy: { name: "asc" },
       }),
       listDocumentTypesForUpload(orgId, companyId || undefined),
-      listDocumentGroups(orgId),
       loadDocumentTags(orgId),
     ]);
 
@@ -220,7 +218,6 @@ export default async function DocumentUploadPage({ searchParams }: PageProps) {
               users={users}
               businessTypes={businessTypes}
               documentTypes={documentTypes}
-              documentGroups={documentGroups}
               availableTags={availableTags}
               orgId={orgId}
               defaultBusinessType={businessType}
