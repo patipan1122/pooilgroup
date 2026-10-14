@@ -194,7 +194,15 @@ export default async function DocuFlowOverviewPage() {
       sub: "ระบบจะส่ง SLA reminder ทุก 4 ชม.",
       badge: "รอเซ็น",
       badgeTone: "warn",
-      href: `/docuflow/documents/${pendingSignatures[0].documentId}/signatures`,
+      // Bug fix (found while wiring up /sign/to-sign, 2026-10-13): this used
+      // to point into the admin-only placement EDITOR
+      // (/docuflow/documents/[id]/signatures, gated by requireModuleAdmin),
+      // so a regular non-admin-tier signer clicking "เซ็นเอกสาร N ฉบับที่รอ"
+      // got bounced to /403 instead of being able to sign. /sign/to-sign is
+      // the real signer-facing queue (same access level as the existing
+      // single-document /sign/[placementId] flow) and now also supports
+      // signing all of them at once.
+      href: "/sign/to-sign",
     });
   }
 
@@ -364,7 +372,7 @@ export default async function DocuFlowOverviewPage() {
           }
           tone={pendingSignatures.length > 0 ? "accent" : "ink"}
           icon={<PenSquare size={17} />}
-          href={pendingSignatures.length > 0 ? "/docuflow/documents" : undefined}
+          href={pendingSignatures.length > 0 ? "/sign/to-sign" : undefined}
         />
       </div>
 
@@ -801,7 +809,15 @@ export default async function DocuFlowOverviewPage() {
                   return (
                     <Link
                       key={p.id}
-                      href={`/docuflow/documents/${p.documentId}/signatures`}
+                      // Bug fix (found while wiring up /sign/to-sign,
+                      // 2026-10-13): this used to point into the admin-only
+                      // placement editor (requireModuleAdmin-gated), 403-ing
+                      // any non-admin-tier signer who clicked their own
+                      // pending-signature row. /sign/[placementId] is the
+                      // real signer flow, same access level this row's
+                      // owner already has by definition (it's their own
+                      // placement).
+                      href={`/sign/${p.id}`}
                       style={{
                         display: "flex",
                         alignItems: "flex-start",
@@ -855,7 +871,7 @@ export default async function DocuFlowOverviewPage() {
                   );
                 })}
                 <DfButton
-                  href="/docuflow/documents"
+                  href="/sign/to-sign"
                   variant="ghost"
                   size="sm"
                   style={{

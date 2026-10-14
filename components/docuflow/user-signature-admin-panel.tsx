@@ -30,7 +30,9 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
+  Check,
   CheckCircle2,
+  Copy,
   Loader2,
   PenLine,
   RotateCcw,
@@ -67,6 +69,7 @@ export function UserSignatureAdminPanel({
   const [drawing, setDrawing] = useState(!currentSignatureUrl);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const padRef = useRef<SignaturePadHandle | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -87,6 +90,26 @@ export function UserSignatureAdminPanel({
 
   function handleClear() {
     padRef.current?.clear();
+  }
+
+  // "คัดลอกลิงก์ให้พนักงานลงทะเบียนเอง" — gives the admin something concrete
+  // to paste into a LINE chat by hand (same "copyable link, human pastes
+  // it" convention invite-document-signer-button.tsx already uses — there
+  // is no per-program LINE push infra for DocuFlow to send this
+  // automatically, and building one would be disproportionate scope here).
+  // Always `/profile/signature` relative to the ORIGIN THE ADMIN IS
+  // CURRENTLY ON (window.location.origin, same pattern as
+  // components/playland/playland-app.tsx and
+  // components/recruit/my-referral-card.tsx) rather than a hardcoded
+  // domain, so it also works from a preview/staging URL.
+  function copySelfRegisterLink() {
+    const origin =
+      typeof window !== "undefined" ? window.location.origin : "https://pooilgroup.com";
+    navigator.clipboard.writeText(`${origin}/profile/signature`).then(() => {
+      setLinkCopied(true);
+      toast.success("คัดลอกลิงก์แล้ว — ส่งให้พนักงานทาง LINE ได้เลย");
+      setTimeout(() => setLinkCopied(false), 2000);
+    });
   }
 
   async function handleSave() {
@@ -164,6 +187,16 @@ export function UserSignatureAdminPanel({
           ระหว่างเริ่มงาน) ไม่เกี่ยวกับลายเซ็นของคุณเอง (ตั้งค่าที่
           /profile/signature)
         </p>
+
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={copySelfRegisterLink}
+        >
+          {linkCopied ? <Check className="size-4" /> : <Copy className="size-4" />}
+          คัดลอกลิงก์ให้พนักงานลงทะเบียนเอง
+        </Button>
 
         {!drawing && currentSignatureUrl ? (
           <>
