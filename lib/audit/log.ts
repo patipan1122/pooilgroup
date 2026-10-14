@@ -54,6 +54,15 @@ export type AuditAction =
   // here, so every bind/unbind by an admin is audited (app/api/users/[id]/signature).
   | "DOCUFLOW_ADMIN_SET_USER_SIGNATURE"
   | "DOCUFLOW_ADMIN_CLEAR_USER_SIGNATURE"
+  // Telegram account-link pairing (CEO #8/#18, 2026-10-14) — a user connects
+  // their OWN Telegram account (users.telegram_user_id/telegram_chat_id) via
+  // the "/start <token>" flow (lib/telegram/pairing.ts). The mechanism is
+  // account-level, not DocuFlow-only, but DocuFlow's settings page is the
+  // first UI entry point, hence the module prefix (same precedent as
+  // LEDGER_ADMIN_LINE_LINKED — an account-level link named after the module
+  // that exposes it).
+  | "DOCUFLOW_TELEGRAM_CONNECTED"
+  | "DOCUFLOW_TELEGRAM_DISCONNECTED"
   | "DOCUFLOW_ANALYZE"
   | "DOCUFLOW_EXTRACT_METADATA"
   | "DOCUFLOW_SEARCH"

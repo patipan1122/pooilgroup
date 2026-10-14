@@ -10,6 +10,7 @@ import { requireSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ConnectTelegramButton } from "@/components/telegram/connect-telegram-button";
 import { ProfileForm } from "./profile-form";
 
 export const dynamic = "force-dynamic";
@@ -96,9 +97,9 @@ export default async function ProfilePage() {
           <ChannelRow
             icon={<MessageSquare className="size-5" />}
             name="Telegram Bot"
-            description="รับการแจ้งเตือน + อนุมัติงานจาก Telegram โดยตรง"
+            description="รับแจ้งเตือนเอกสารที่ต้องเซ็น + อนุมัติงานจาก Telegram โดยตรง"
             linked={telegramLinked}
-            disabled
+            action={<ConnectTelegramButton connected={telegramLinked} />}
           />
           <ChannelRow
             icon={<Smartphone className="size-5" />}
@@ -108,8 +109,7 @@ export default async function ProfilePage() {
             disabled
           />
           <p className="text-xs text-zinc-400 pt-1 border-t border-zinc-100">
-            ⏳ ผูกบัญชี Telegram / LINE ใช้งานได้หลังจาก Admin ตั้ง Bot/Channel
-            (Phase ถัดไป)
+            ⏳ ผูกบัญชี LINE ใช้งานได้หลังจาก Admin ตั้ง Channel (Phase ถัดไป)
           </p>
         </CardBody>
       </Card>
@@ -123,12 +123,16 @@ function ChannelRow({
   description,
   linked,
   disabled,
+  action,
 }: {
   icon: React.ReactNode;
   name: string;
   description: string;
   linked: boolean;
   disabled?: boolean;
+  /** Overrides the default status badge — used by Telegram to show the
+   *  real connect/disconnect widget instead of a static badge. */
+  action?: React.ReactNode;
 }) {
   return (
     <div className="flex items-center justify-between gap-3 py-2">
@@ -141,13 +145,14 @@ function ChannelRow({
           <div className="text-xs text-zinc-500">{description}</div>
         </div>
       </div>
-      {linked ? (
-        <Badge tone="success">ผูกแล้ว</Badge>
-      ) : (
-        <Badge tone={disabled ? "neutral" : "warning"}>
-          {disabled ? "ยังไม่พร้อม" : "ยังไม่ผูก"}
-        </Badge>
-      )}
+      {action ??
+        (linked ? (
+          <Badge tone="success">ผูกแล้ว</Badge>
+        ) : (
+          <Badge tone={disabled ? "neutral" : "warning"}>
+            {disabled ? "ยังไม่พร้อม" : "ยังไม่ผูก"}
+          </Badge>
+        ))}
     </div>
   );
 }

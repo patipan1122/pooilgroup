@@ -8,7 +8,19 @@
 //   cashhub:bulkapprove:{orgId}       → bulk-approve all submitted reports for org (admin only)
 //
 // Text routes:
-//   "/start"                          → greeting
+//   "/start <token>"                  → account-link pairing (lib/telegram/pairing.ts) —
+//                                        resolves the one-time token minted by
+//                                        POST /api/telegram/connect, writes
+//                                        telegram_user_id/telegram_chat_id onto the
+//                                        target users row. Runs BEFORE the tgUser
+//                                        lookup below on purpose: the whole point is
+//                                        this Telegram account isn't linked to any
+//                                        user row yet. DocuFlow (CEO #8/#18) is the
+//                                        first caller, but the mechanism is account-
+//                                        level, not module-scoped — any module can
+//                                        reuse it the same way CashHub's flows below
+//                                        reuse telegram_chat_id.
+//   "/start" (no token)               → greeting, only for an already-linked user
 //   <free text> while a TELEGRAM_PENDING_REJECT exists → finalises reject + reason
 //
 // Security:
@@ -34,6 +46,7 @@ import {
   buildApprovedAcknowledgement,
   buildRejectedAcknowledgement,
 } from "@/lib/telegram/messages";
+import { resolvePairingToken } from "@/lib/telegram/pairing";
 import { formatInTimeZone } from "date-fns-tz";
 
 const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
@@ -463,6 +476,16 @@ async function handleTextMessage(
 ) {
   try {
     const text = msg.text?.trim() ?? "";
+
+    // Account-link pairing — "/start <token>". Must run BEFORE the tgUser
+    // lookup below: this Telegram account is, by definition, not linked to
+    // any users row yet (that's the whole point of pairing). A bare "/start"
+    // with no token falls through untouched to the existing greeting below.
+    const startMatch = text.match(/^\/start(?:@\w+)?\s+(\S+)/);
+    if (startMatch) {
+      return await handlePairingStart(msg, startMatch[1]);
+    }
+
     const fromId = msg.from.id.toString();
     const admin = adminClient();
 
@@ -618,6 +641,78 @@ async function handleTextMessage(
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("[telegram-webhook] handleTextMessage error", err);
+    return NextResponse.json({ ok: true });
+  }
+}
+
+/**
+ * "/start <token>" — resolves a one-time connect token (minted by
+ * POST /api/telegram/connect) and links this Telegram chat to the target
+ * Pooilgroup user. First real consumer of telegram_pairing_tokens — see
+ * lib/telegram/pairing.ts header comment.
+ *
+ * Deliberately does NOT reuse the tgUser-by-telegram_user_id lookup this
+ * file already does elsewhere: that lookup exists to identify an ALREADY
+ * linked account, which is exactly the thing this flow is establishing for
+ * the first time (or re-establishing, if the user is reconnecting on a new
+ * Telegram account/device).
+ */
+async function handlePairingStart(
+  msg: TgMessage & { from: TgUser },
+  token: string,
+) {
+  try {
+    const resolved = await resolvePairingToken(token);
+    if (!resolved) {
+      await sendTelegramMessage({
+        chatId: msg.chat.id,
+        text: "ลิงก์เชื่อมบัญชีนี้ใช้ไม่ได้แล้ว (หมดอายุ หรือถูกใช้ไปแล้ว) — กลับไปที่หน้าตั้งค่าในเว็บแล้วขอลิงก์ใหม่",
+      });
+      return NextResponse.json({ ok: true });
+    }
+
+    const admin = adminClient();
+    const fromId = msg.from.id.toString();
+    const chatId = msg.chat.id.toString();
+
+    const { data: updated, error } = await admin
+      .from("users")
+      .update({
+        telegram_user_id: fromId,
+        telegram_chat_id: chatId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", resolved.userId)
+      .eq("org_id", resolved.orgId)
+      .select("id, name")
+      .maybeSingle();
+
+    if (error || !updated) {
+      console.error("[telegram-webhook] handlePairingStart update failed", error);
+      await sendTelegramMessage({
+        chatId: msg.chat.id,
+        text: "เชื่อมบัญชีไม่สำเร็จ ลองใหม่อีกครั้งจากหน้าตั้งค่าในเว็บ",
+      });
+      return NextResponse.json({ ok: true });
+    }
+
+    await audit({
+      orgId: resolved.orgId,
+      userId: resolved.userId,
+      action: "DOCUFLOW_TELEGRAM_CONNECTED",
+      resourceType: "user",
+      resourceId: resolved.userId,
+      diff: { new: { telegramUserId: fromId, via: "telegram_start_token" } },
+    });
+
+    await sendTelegramMessage({
+      chatId: msg.chat.id,
+      text: `✅ เชื่อมบัญชี Telegram สำเร็จ สวัสดี ${htmlEscape(updated.name)} 👋\nจากนี้จะได้รับแจ้งเตือนเอกสารที่ต้องเซ็นทาง Telegram ทันที`,
+      parseMode: "HTML",
+    });
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("[telegram-webhook] handlePairingStart error", err);
     return NextResponse.json({ ok: true });
   }
 }
@@ -806,6 +901,7 @@ export async function GET() {
       "cashhub:bulkapprove",
       "text:reject_reason_capture",
       "text:/start",
+      "text:/start_token_pairing",
     ],
   });
 }
