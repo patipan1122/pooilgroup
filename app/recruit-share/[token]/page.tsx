@@ -20,19 +20,36 @@
 // recruiter-only fields (aiScore, aiSummary, aiStrengths, aiRisks,
 // screeningVerdict, tags, notes) must never ride along even if someone later
 // adds more fields to RecruitApplication.
+//
+// Table layout (2026-10-14, CEO-approved): shows เพศ/อายุ/ประสบการณ์ทำงาน in
+// addition to the original safe fields — these are applicant-submitted form
+// answers (same trust level as phone number, already public here), NOT
+// internal assessment data. อายุ/ประสบการณ์ทำงาน aren't fixed DB columns —
+// each posting's form is custom-built, so they're located by fuzzy label
+// match (findFieldByLabelKeyword) and may be blank ("—") for postings whose
+// form never asked that question.
 
 import { notFound } from "next/navigation";
-import { Phone, Users } from "lucide-react";
+import { Users } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { Badge } from "@/components/ui/badge";
+import { DataTable } from "@/components/ui/data-table";
 import {
   STATUS_LABELS,
   STATUS_TONE,
   POSTING_STATUS_LABELS,
+  GENDER_LABELS,
+  FormSchemaSchema,
   type ApplicationStatus,
   type PostingStatus,
+  type Gender,
 } from "@/lib/recruit/types";
-import { ApplicationFiles } from "@/components/recruit/application-files";
+import {
+  findFieldByLabelKeyword,
+  formatAnswerValue,
+  type AppFileMeta,
+} from "@/lib/recruit/answers";
+import { FileQuickOpen } from "@/components/recruit/file-quick-open";
 import { thaiDateLong } from "@/lib/utils/format";
 
 export const dynamic = "force-dynamic";
@@ -51,6 +68,7 @@ export default async function ApplicantShareListPage({
       id: true,
       title: true,
       status: true,
+      fieldSchema: true,
       company: { select: { name: true } },
       applications: {
         where: { draft: false },
@@ -61,7 +79,8 @@ export default async function ApplicantShareListPage({
           status: true,
           submittedAt: true,
           files: true,
-          applicant: { select: { fullName: true, phone: true } },
+          answers: true,
+          applicant: { select: { fullName: true, phone: true, gender: true } },
         },
       },
     },
@@ -70,17 +89,34 @@ export default async function ApplicantShareListPage({
   // which case it was).
   if (!posting) notFound();
 
-  const applicants = posting.applications.map((a) => ({
-    ...a,
-    files: Array.isArray(a.files)
-      ? (a.files as unknown as Array<{
-          key: string;
-          name: string;
-          size: number;
-          mime: string;
-        }>)
-      : [],
-  }));
+  // อายุ/ประสบการณ์ทำงาน ไม่ใช่ column ตายตัว — หาจาก label ของฟอร์มตำแหน่งนี้
+  // เท่านั้น (ไม่ดึง answers ทั้งก้อนออกไปโชว์ — เลือกแค่ 2 คำถามนี้).
+  const schemaResult = FormSchemaSchema.safeParse(posting.fieldSchema);
+  const schema = schemaResult.success ? schemaResult.data : null;
+  const ageField = schema ? findFieldByLabelKeyword(schema, ["อายุ"]) : null;
+  const experienceField = schema
+    ? findFieldByLabelKeyword(schema, ["ประสบการณ์"])
+    : null;
+
+  const applicants = posting.applications.map((a) => {
+    const rawAnswers = (a.answers ?? {}) as unknown as Record<string, unknown>;
+    return {
+      id: a.id,
+      refId: a.refId,
+      status: a.status,
+      submittedAt: a.submittedAt,
+      fullName: a.applicant.fullName,
+      phone: a.applicant.phone,
+      gender: a.applicant.gender as Gender | null,
+      age: ageField
+        ? formatAnswerValue(ageField, rawAnswers[ageField.id])
+        : "",
+      experience: experienceField
+        ? formatAnswerValue(experienceField, rawAnswers[experienceField.id])
+        : "",
+      files: Array.isArray(a.files) ? (a.files as unknown as AppFileMeta[]) : [],
+    };
+  });
 
   return (
     <div className="min-h-[calc(100vh-60px)] bg-zinc-50/40 pb-10">
@@ -92,7 +128,7 @@ export default async function ApplicantShareListPage({
             "linear-gradient(135deg, var(--color-brand-600), var(--color-brand-900))",
         }}
       >
-        <div className="max-w-2xl mx-auto">
+        <div className="max-w-6xl mx-auto">
           <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide opacity-90">
             <Users className="size-3.5" />
             ลิงก์แชร์ · รายชื่อผู้สมัคร
@@ -110,43 +146,68 @@ export default async function ApplicantShareListPage({
         </div>
       </div>
 
-      {/* Applicant list */}
-      <div className="max-w-2xl mx-auto px-3 sm:px-6 mt-4">
-        {applicants.length === 0 ? (
-          <div className="rounded-2xl border-2 border-dashed border-zinc-200 bg-white p-10 text-center text-sm text-zinc-500">
-            ยังไม่มีผู้สมัครสำหรับตำแหน่งนี้
-          </div>
-        ) : (
-          <div className="divide-y divide-zinc-200 rounded-2xl border border-zinc-200 bg-white overflow-hidden">
-            {applicants.map((a) => (
-              <div key={a.id} className="p-3.5 sm:p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-bold text-zinc-900 truncate">
-                      {a.applicant.fullName}
-                    </p>
-                    <a
-                      href={`tel:${a.applicant.phone}`}
-                      className="mt-0.5 inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-[var(--color-brand-700)]"
-                    >
-                      <Phone className="size-3" />
-                      {a.applicant.phone}
-                    </a>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <Badge tone={STATUS_TONE[a.status as ApplicationStatus]}>
-                      {STATUS_LABELS[a.status as ApplicationStatus]}
-                    </Badge>
-                    <p className="mt-1 text-[11px] text-zinc-400">
-                      {a.submittedAt ? thaiDateLong(a.submittedAt) : "—"}
-                    </p>
-                  </div>
+      {/* Applicant table */}
+      <div className="max-w-6xl mx-auto px-3 sm:px-6 mt-4">
+        <DataTable
+          stickyHeader={false}
+          columns={[
+            { key: "name", header: "ชื่อ / เบอร์โทร" },
+            { key: "gender", header: "เพศ" },
+            { key: "age", header: "อายุ" },
+            { key: "status", header: "สถานะ" },
+            { key: "date", header: "วันที่สมัคร" },
+            { key: "experience", header: "ประสบการณ์ทำงาน", className: "max-w-[260px]" },
+            { key: "files", header: "ไฟล์แนบ" },
+          ]}
+          rows={applicants.map((a) => ({
+            key: a.id,
+            cells: {
+              name: (
+                <div className="min-w-[140px]">
+                  <p className="font-bold text-zinc-900">{a.fullName}</p>
+                  <a
+                    href={`tel:${a.phone}`}
+                    className="text-xs text-zinc-500 hover:text-[var(--color-brand-700)]"
+                  >
+                    {a.phone}
+                  </a>
                 </div>
-                {a.files.length > 0 && <ApplicationFiles files={a.files} />}
-              </div>
-            ))}
-          </div>
-        )}
+              ),
+              gender: a.gender ? (
+                GENDER_LABELS[a.gender]
+              ) : (
+                <span className="text-zinc-300">—</span>
+              ),
+              age: a.age || <span className="text-zinc-300">—</span>,
+              status: (
+                <Badge tone={STATUS_TONE[a.status as ApplicationStatus]}>
+                  {STATUS_LABELS[a.status as ApplicationStatus]}
+                </Badge>
+              ),
+              date: (
+                <span className="text-xs text-zinc-500 whitespace-nowrap">
+                  {a.submittedAt ? thaiDateLong(a.submittedAt) : "—"}
+                </span>
+              ),
+              experience: a.experience ? (
+                <p
+                  className="text-[13px] text-zinc-700 line-clamp-2"
+                  title={a.experience}
+                >
+                  {a.experience}
+                </p>
+              ) : (
+                <span className="text-zinc-300">—</span>
+              ),
+              files: <FileQuickOpen files={a.files} variant="cell" />,
+            },
+          }))}
+          emptyState={
+            <div className="rounded-2xl border-2 border-dashed border-zinc-200 bg-white p-10 text-center text-sm text-zinc-500">
+              ยังไม่มีผู้สมัครสำหรับตำแหน่งนี้
+            </div>
+          }
+        />
       </div>
     </div>
   );

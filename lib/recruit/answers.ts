@@ -165,3 +165,22 @@ export function buildBiasSafeAnswerLines(
   }
   return lines;
 }
+
+/**
+ * หา field แรกที่ label มีคำค้นคำใดคำหนึ่ง (ไม่สนตัวพิมพ์ใหญ่เล็ก) — ใช้หาคำถาม
+ * "อายุ" / "ประสบการณ์ทำงาน" แบบ fuzzy เพราะแต่ละตำแหน่งตั้งฟอร์มเอง ไม่มี field id
+ * ตายตัว (ตรรกะเดียวกับที่ใช้หา ageFieldId ใน recruit/table/page.tsx).
+ */
+export function findFieldByLabelKeyword(
+  schema: FormSchema,
+  keywords: string[],
+): Field | null {
+  for (const section of schema.sections) {
+    for (const field of section.fields) {
+      if (field.type === "file") continue;
+      const lower = field.label.toLowerCase();
+      if (keywords.some((k) => lower.includes(k))) return field;
+    }
+  }
+  return null;
+}
