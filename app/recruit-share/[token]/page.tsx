@@ -190,10 +190,7 @@ export default async function ApplicantShareListPage({
                 </span>
               ),
               experience: a.experience ? (
-                <p
-                  className="text-[13px] text-zinc-700 line-clamp-2"
-                  title={a.experience}
-                >
+                <p className="text-[13px] text-zinc-700 whitespace-pre-wrap">
                   {a.experience}
                 </p>
               ) : (
