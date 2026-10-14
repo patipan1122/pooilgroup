@@ -26,7 +26,7 @@ import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { R2_BUCKET, r2 } from "@/lib/r2/client";
 import { prisma } from "@/lib/prisma";
 import { loadDocumentById } from "./data";
-import { extractPdfText } from "./pdf-extract";
+// NOT a static import — see analyzeDocument() below for why.
 
 /* ============================================================
    Types
@@ -116,6 +116,21 @@ export async function analyzeDocument(
   // Extract text — currently PDF only (most policy/contract docs are PDF)
   let extractedText: string;
   if (doc.mimeType === "application/pdf") {
+    // Dynamic import, not static — pdf-extract.ts pulls in `pdf-parse`,
+    // which references the browser-only `DOMMatrix` global at MODULE
+    // EVALUATION time (not just when a function runs). A static top-level
+    // import here meant every importer of this file — including
+    // getCachedAnalysis(), called unconditionally by /sign/[placementId]
+    // and by GET /api/docuflow/[id]/analyze on every request — crashed
+    // with a 500 the instant Node tried to evaluate pdf-extract.ts, even
+    // though getCachedAnalysis() never calls extractPdfText() at all.
+    // Deferring the import to here means pdf-extract.ts is only ever
+    // evaluated when this function actually runs (i.e. a real analyze
+    // request), not on every page render. Same bug class as
+    // metadata-extract.ts's fetchDocumentText() (2026-10-10, found live
+    // in production) — this file never got the same fix. Bug: 2026-10-14,
+    // found live in production (every /sign/[placementId] request 500s).
+    const { extractPdfText } = await import("./pdf-extract");
     const ex = await extractPdfText(buffer);
     extractedText = ex.text;
   } else {
