@@ -46,6 +46,7 @@ import {
 } from "@/components/docuflow/document-sort-tabs";
 import { TreeBrowser } from "@/components/docuflow/tree-browser";
 import { QuickCreateDocumentGroupButton } from "@/components/docuflow/quick-create-document-group-button";
+import { DocumentGroupRefreshProvider } from "@/components/docuflow/document-group-refresh-context";
 import { DocumentSearchInput } from "@/components/docuflow/document-search-input";
 import {
   DfButton,
@@ -241,6 +242,14 @@ export default async function DocumentsListPage({
     (filterDocumentTypeId ? 1 : 0);
 
   return (
+    // DocumentGroupRefreshProvider wraps the whole page (verification
+    // follow-up, 2026-10-14) so the top-level "สร้างกลุ่มเอกสาร" button
+    // below (rendered in DfPageHeader's actions) and the tree view further
+    // down (view === "tree") share a refresh signal — they're siblings,
+    // not parent/child, so router.refresh() alone doesn't reach
+    // DocumentGroupDrillDown's own client-side fetch. See
+    // document-group-refresh-context.tsx.
+    <DocumentGroupRefreshProvider>
     <div
       style={{
         padding: "28px clamp(16px, 4vw, 40px)",
@@ -595,5 +604,6 @@ export default async function DocumentsListPage({
         </>
       )}
     </div>
+    </DocumentGroupRefreshProvider>
   );
 }

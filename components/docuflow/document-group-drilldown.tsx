@@ -15,7 +15,7 @@
 // manages the folder structure itself.
 // ────────────────────────────────────────────────────────────────────
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
@@ -34,6 +34,7 @@ import {
 } from "@/lib/docuflow/document-group-tree-actions";
 import { DOCUMENT_GROUP_ICONS, type DocumentGroupIconKey } from "@/lib/docuflow/document-group-icons";
 import { FolderIconGlyph, FolderIconPicker } from "./folder-icon-picker";
+import { useDocumentGroupRefresh } from "./document-group-refresh-context";
 
 interface Node {
   id: string;
@@ -168,6 +169,48 @@ export function DocumentGroupDrillDown({
       cancelled = true;
     };
   }, [companyId]);
+
+  // Cross-sibling refresh (verification follow-up, 2026-10-14) — see
+  // document-group-refresh-context.tsx. The top-level quick-create button
+  // on the same page bumps `refreshKey` after creating a folder; reload the
+  // CURRENT level in place (not reset to root) so an admin mid-drill-down
+  // elsewhere in the tree doesn't get yanked back to the top. Skips its
+  // first run (the mount effect above already covers the initial load) —
+  // same inline-fetch shape as that mount effect, kept as its own effect
+  // rather than calling the shared `load` function reference from inside a
+  // useEffect (react-compiler lint rule, see the mount effect's comment).
+  const { refreshKey } = useDocumentGroupRefresh();
+  const isFirstRefresh = useRef(true);
+  useEffect(() => {
+    if (isFirstRefresh.current) {
+      isFirstRefresh.current = false;
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const qs = new URLSearchParams({ companyId });
+        if (parentId) qs.set("parentGroupId", parentId);
+        const res = await fetch(`/api/docuflow/document-groups/tree?${qs}`);
+        if (!res.ok) throw new Error("โหลดโฟลเดอร์ไม่สำเร็จ");
+        const data = await res.json();
+        if (cancelled) return;
+        setChildren(data.children ?? []);
+        setBreadcrumb(data.breadcrumb ?? []);
+        setCurrentDocumentCount(data.currentDocumentCount ?? 0);
+        setCurrentDocuments(data.currentDocuments ?? []);
+      } catch {
+        if (!cancelled) toast.error("โหลดโฟลเดอร์ไม่สำเร็จ");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
 
   async function handleCreate() {
     const name = newName.trim();

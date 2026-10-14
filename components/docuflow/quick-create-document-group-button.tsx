@@ -24,6 +24,7 @@ import { FolderPlus } from "lucide-react";
 import { DfButton } from "./df-ui";
 import { QuickCreateDocGroupDialog } from "./quick-create-document-group-dialog";
 import { createDocumentGroupFolder } from "@/lib/docuflow/document-group-tree-actions";
+import { useDocumentGroupRefresh } from "./document-group-refresh-context";
 
 interface Props {
   /** The company currently selected (lib/auth/company-context.ts
@@ -37,6 +38,13 @@ interface Props {
 export function QuickCreateDocumentGroupButton({ companyId, companyName }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  // Verification follow-up (2026-10-14) — router.refresh() alone re-fetches
+  // this page's own Server Component data, but DocumentGroupDrillDown (the
+  // tree view in the "ตามบริษัท" view) fetches its own folder list
+  // client-side and never reads from this page's props, so the already-open
+  // tree didn't pick up the new folder until a manual reload. `bump()`
+  // signals it directly — see document-group-refresh-context.tsx.
+  const { bump } = useDocumentGroupRefresh();
 
   async function handleCreate(input: { name: string; icon: string | null }) {
     const res = await createDocumentGroupFolder({
@@ -53,6 +61,7 @@ export function QuickCreateDocumentGroupButton({ companyId, companyName }: Props
       `สร้างกลุ่มเอกสาร "${res.group.name}" ในบริษัท ${companyName} แล้ว — ดูได้ที่แท็บ "ตามบริษัท"`,
     );
     router.refresh();
+    bump();
   }
 
   if (!companyId) {
