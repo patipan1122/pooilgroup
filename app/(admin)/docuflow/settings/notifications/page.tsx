@@ -23,7 +23,8 @@
 // Gate: requireProgramAdminTier (see settings/page.tsx header comment).
 // ────────────────────────────────────────────────────────────────────
 
-import { ArrowLeft, Bell, Mail, MessageCircle, Smartphone, Info } from "lucide-react";
+import { ArrowLeft, Bell, Mail, MessageCircle, Send, Smartphone, Info } from "lucide-react";
+import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
 import {
   DfButton,
@@ -44,6 +45,7 @@ interface ChannelRow {
   desc: string;
   status: string;
   tone: "success" | "warn" | "outline";
+  href?: string;
 }
 
 const CHANNELS: ChannelRow[] = [
@@ -53,6 +55,14 @@ const CHANNELS: ChannelRow[] = [
     desc: "แจ้งเตือนเอกสารใกล้หมดอายุ · รอเซ็น · อัปโหลดใหม่ — ดูที่ /docuflow/notifications",
     status: "ทำงานอยู่",
     tone: "success",
+  },
+  {
+    icon: <Send size={18} />,
+    title: "Telegram",
+    desc: "แจ้งเตือนเอกสารที่ต้องเซ็นถึงผู้เซ็นโดยตรง พร้อมปุ่มดูเอกสาร — ต้องเชื่อมบัญชีก่อน",
+    status: "ทำงานอยู่ · ไปตั้งค่า",
+    tone: "success",
+    href: "/docuflow/settings/telegram",
   },
   {
     icon: <Mail size={18} />,
@@ -148,9 +158,17 @@ export default async function NotificationSettingsPage() {
                   {c.desc}
                 </div>
               </div>
-              <DfPill tone={c.tone} small>
-                {c.status}
-              </DfPill>
+              {c.href ? (
+                <Link href={c.href} style={{ textDecoration: "none" }}>
+                  <DfPill tone={c.tone} small>
+                    {c.status}
+                  </DfPill>
+                </Link>
+              ) : (
+                <DfPill tone={c.tone} small>
+                  {c.status}
+                </DfPill>
+              )}
             </div>
           ))}
         </DfCard>

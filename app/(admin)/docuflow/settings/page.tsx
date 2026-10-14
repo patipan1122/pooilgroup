@@ -38,6 +38,7 @@ import {
   Truck,
   UsersRound,
   FolderKanban,
+  Send,
 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
@@ -60,12 +61,16 @@ export default async function DocuFlowSettingsPage() {
   await requireModuleAdmin(session.user, "docuflow");
   const orgId = session.user.org_id;
 
-  const [activeCount, inactiveCount, activeGroupCount, driveConn] = await Promise.all([
-    prisma.documentType.count({ where: { orgId, isActive: true } }),
-    prisma.documentType.count({ where: { orgId, isActive: false } }),
-    prisma.documentGroup.count({ where: { orgId, isActive: true } }),
-    getDriveConnection(orgId),
-  ]);
+  const [activeCount, inactiveCount, activeGroupCount, driveConn, telegramConnectedCount] =
+    await Promise.all([
+      prisma.documentType.count({ where: { orgId, isActive: true } }),
+      prisma.documentType.count({ where: { orgId, isActive: false } }),
+      prisma.documentGroup.count({ where: { orgId, isActive: true } }),
+      getDriveConnection(orgId),
+      prisma.user.count({
+        where: { orgId, isActive: true, telegramChatId: { not: null } },
+      }),
+    ]);
 
   return (
     <div
@@ -172,6 +177,18 @@ export default async function DocuFlowSettingsPage() {
             tone="accent"
             title="การแจ้งเตือน"
             desc="ดูสถานะช่องทางแจ้งเตือนของ DocuFlow"
+          />
+          <SettingsHubCard
+            href="/docuflow/settings/telegram"
+            icon={<Send size={20} />}
+            tone="success"
+            title="Telegram"
+            desc="เชื่อมบัญชี Telegram เพื่อรับแจ้งเตือนเอกสารที่ต้องเซ็นทันที"
+            badge={
+              telegramConnectedCount > 0
+                ? `${telegramConnectedCount} คนเชื่อมแล้ว`
+                : "ยังไม่มีใครเชื่อม"
+            }
           />
           <DisabledHubCard
             icon={<Building size={20} />}

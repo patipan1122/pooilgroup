@@ -13,6 +13,7 @@
 // ────────────────────────────────────────────────────────────────────
 
 import { htmlEscape } from "@/lib/telegram/send";
+import type { InlineButton } from "@/lib/telegram/send";
 
 export interface ExpiryDocItem {
   /** ชื่อเอกสาร (เช่น "ทะเบียนรถ 70-1234") */
@@ -91,6 +92,42 @@ export function formatExpiryAlert(
 
   lines.push("━━━━━━━━━━━━━━━━━━━━");
   return lines.join("\n");
+}
+
+/* ============================================================
+   buildSignRequestMessage / signRequestKeyboard — CEO #8
+   (2026-10-14): interactive per-signer notification when a new
+   signature-type placement is created for a real signerUserId.
+   Sent by lib/docuflow/telegram-notify.ts; triggered from
+   app/api/docuflow/[id]/signatures/route.ts's POST handler.
+
+   MVP scope: "ดูเอกสาร" is a plain `url` button (deep-links into the
+   EXISTING, already-auth'd /sign/[placementId] page) — NOT a
+   callback_data button, so it needs zero changes to the webhook's
+   callback dispatcher. A one-tap "เซ็นด้วยลายเซ็นที่บันทึกไว้" button
+   was deliberately cut from this round (would need its own
+   webhook-side identity check with no browser session to lean on) —
+   see commit message / CEO report for the full reasoning.
+   ============================================================ */
+
+export function buildSignRequestMessage(m: {
+  documentName: string;
+  signerName: string;
+}): string {
+  const lines: string[] = [];
+  lines.push("━━━━━━━━━━━━━━━━━━━━");
+  lines.push("✍️ <b>มีเอกสารรอให้คุณเซ็น</b>");
+  lines.push("━━━━━━━━━━━━━━━━━━━━");
+  lines.push(`👤 ${htmlEscape(m.signerName)}`);
+  lines.push(`📄 ${htmlEscape(m.documentName)}`);
+  lines.push("");
+  lines.push("กดปุ่มด้านล่างเพื่อเปิดเอกสารแล้วเซ็นได้เลย");
+  lines.push("━━━━━━━━━━━━━━━━━━━━");
+  return lines.join("\n");
+}
+
+export function signRequestKeyboard(signUrl: string): InlineButton[][] {
+  return [[{ text: "📄 ดูเอกสาร", url: signUrl }]];
 }
 
 /* ============================================================

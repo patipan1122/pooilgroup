@@ -24,6 +24,8 @@ import { requireSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit/log";
 import { requireModuleAdmin, requireModuleView } from "@/lib/auth/module-access";
+import { getRequestBaseUrl } from "@/lib/utils/base-url";
+import { notifySignerTelegram } from "@/lib/docuflow/telegram-notify";
 
 export const dynamic = "force-dynamic";
 
@@ -172,7 +174,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
 
   const doc = await prisma.document.findFirst({
     where: { id: documentId, orgId, isActive: true },
-    select: { id: true },
+    select: { id: true, name: true },
   });
   if (!doc) {
     return NextResponse.json({ error: "ไม่พบเอกสาร" }, { status: 404 });
@@ -236,6 +238,26 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       },
     },
   });
+
+  // Telegram signer notification (CEO #8) — only for a real signature box
+  // assigned to a real linked user, never for auto-fill (date/name/text)
+  // placements or placements with no signerUserId yet (e.g. counterparty
+  // boxes later filled via inviteDocumentSigner). Non-blocking: wrapped so
+  // a Telegram outage can never fail placement creation, which has already
+  // succeeded and been audited above by this point.
+  if (created.placementType === "signature" && created.signerUserId) {
+    try {
+      await notifySignerTelegram({
+        orgId,
+        documentName: doc.name,
+        placementId: created.id,
+        signerUserId: created.signerUserId,
+        baseUrl: getRequestBaseUrl(req),
+      });
+    } catch (err) {
+      console.error("[signatures POST] telegram notify failed", err);
+    }
+  }
 
   return NextResponse.json({ placement: created });
 }
