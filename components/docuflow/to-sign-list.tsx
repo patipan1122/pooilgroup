@@ -43,20 +43,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { thaiDateLong } from "@/lib/utils/format";
+import type {
+  ToSignDocumentVm,
+  ToSignPlacementVm,
+} from "@/lib/docuflow/to-sign";
 
-export interface ToSignPlacementVm {
-  id: string;
-  pageNumber: number;
-  label: string | null;
-}
-
-export interface ToSignDocumentVm {
-  documentId: string;
-  documentName: string;
-  /** ISO timestamp */
-  uploadedAt: string;
-  placements: ToSignPlacementVm[];
-}
+// Re-exported for existing callers (app/sign/to-sign/page.tsx) that import
+// these types from this component file — canonical definition now lives in
+// lib/docuflow/to-sign.ts, shared with the Telegram Mini App API route.
+export type { ToSignDocumentVm, ToSignPlacementVm };
 
 export interface ToSignListProps {
   documents: ToSignDocumentVm[];
