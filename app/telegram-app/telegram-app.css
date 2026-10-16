@@ -1,0 +1,231 @@
+/* ============================================================
+ * DocuFlow Telegram Mini App — scoped to `.tg-root`.
+ * Colors are CSS custom properties, set at runtime from
+ * window.Telegram.WebApp.themeParams (use-telegram-webapp.ts) — the
+ * defaults below ONLY apply when previewed outside Telegram (themeParams
+ * empty) or before the SDK has run. No @media (prefers-color-scheme)
+ * needed: Telegram tells us light/dark directly via `colorScheme`.
+ * ============================================================ */
+
+.tg-root {
+  --tg-bg: #ffffff;
+  --tg-text: #0f172a;
+  --tg-hint: #6b7280;
+  --tg-link: #2563eb;
+  --tg-button: #2563eb;
+  --tg-button-text: #ffffff;
+  --tg-secondary-bg: #f1f2f4;
+
+  background: var(--tg-bg);
+  color: var(--tg-text);
+  min-height: 100dvh;
+  /* Safe-area insets — Telegram's WebView (esp. iOS) draws the system
+     status bar / home indicator / MainButton bar over page content
+     unless we reserve space. viewport-fit=cover (layout.tsx) is what
+     makes env(safe-area-inset-*) resolve to non-zero values at all. */
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+.tg-border {
+  border-color: color-mix(in srgb, var(--tg-text) 12%, transparent);
+}
+
+.tg-card {
+  background: var(--tg-bg);
+  border: 1px solid color-mix(in srgb, var(--tg-text) 9%, transparent);
+  border-radius: 1rem;
+}
+
+.tg-card-secondary {
+  background: var(--tg-secondary-bg);
+}
+
+.tg-hint {
+  color: var(--tg-hint);
+}
+
+.tg-link {
+  color: var(--tg-link);
+}
+
+.tg-accent-text {
+  color: var(--tg-button);
+}
+
+/* Bottom padding so content never sits under Telegram's MainButton bar
+   (≈58px tall) + the home-indicator safe area. */
+.tg-bottom-safe {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 84px);
+}
+
+/* ------------------------------------------------------------
+ * Staggered list-card entrance — each card fades + slides up with a
+ * per-index delay set inline via style={{ animationDelay }}. The ~60ms
+ * stagger (not a simultaneous pop-in) is the single biggest perceived-
+ * quality lever on this screen.
+ * ------------------------------------------------------------ */
+@keyframes tgCardIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.tg-card-enter {
+  animation: tgCardIn 0.46s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes tgFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.tg-fade-up {
+  animation: tgFadeUp 0.32s ease-out both;
+}
+
+@keyframes tgFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.tg-fade-in {
+  animation: tgFadeIn 0.25s ease-out both;
+}
+
+/* Shimmer skeleton loader — replaces blank-screen/spinner while the
+   initial to-sign list is loading. */
+@keyframes tgShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+.tg-skeleton {
+  background: linear-gradient(
+    100deg,
+    var(--tg-secondary-bg) 30%,
+    color-mix(in srgb, var(--tg-secondary-bg) 40%, var(--tg-bg)) 50%,
+    var(--tg-secondary-bg) 70%
+  );
+  background-size: 250% 100%;
+  animation: tgShimmer 1.3s ease-in-out infinite;
+  border-radius: 0.75rem;
+}
+
+/* Per-item checklist row status pop. */
+@keyframes tgPop {
+  0% {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.tg-pop {
+  animation: tgPop 0.38s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes tgSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.tg-spin {
+  animation: tgSpin 0.8s linear infinite;
+}
+
+/* Success checkmark — SVG stroke-dashoffset draw-in, then the circle
+   bounces in with a touch of overshoot (NOT a linear/generic ease). */
+@keyframes tgCheckCircleIn {
+  0% {
+    transform: scale(0.35);
+    opacity: 0;
+  }
+  55% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes tgCheckDraw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.tg-success-circle {
+  animation: tgCheckCircleIn 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.tg-success-check {
+  stroke-dasharray: 36;
+  stroke-dashoffset: 36;
+  animation: tgCheckDraw 0.4s 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* Error shake — failed checklist item / error banner. */
+@keyframes tgShake {
+  10%,
+  90% {
+    transform: translateX(-1px);
+  }
+  20%,
+  80% {
+    transform: translateX(2px);
+  }
+  30%,
+  50%,
+  70% {
+    transform: translateX(-4px);
+  }
+  40%,
+  60% {
+    transform: translateX(4px);
+  }
+}
+.tg-shake {
+  animation: tgShake 0.4s both;
+}
+
+.tg-pressable {
+  transition: transform 0.12s ease, opacity 0.12s ease;
+}
+.tg-pressable:active {
+  transform: scale(0.97);
+  opacity: 0.9;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tg-card-enter,
+  .tg-fade-up,
+  .tg-fade-in,
+  .tg-pop,
+  .tg-success-circle,
+  .tg-success-check,
+  .tg-shake,
+  .tg-skeleton {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
