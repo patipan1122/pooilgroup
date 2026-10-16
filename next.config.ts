@@ -85,6 +85,34 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      // DocuFlow Telegram Mini App (2026-10-16) — this ONE route must be
+      // embeddable inside Telegram's in-app WebView, which the global DENY
+      // above blocks outright. Next.js applies "last header key wins" when
+      // two matching rules set the same key for the same path — this rule
+      // runs AFTER the global one in the returned array, so for anything
+      // under /telegram-app/ its X-Frame-Options/CSP override the global
+      // DENY, while every other route keeps the strict global policy
+      // untouched. Do NOT widen the `source` below — it must stay scoped
+      // to /telegram-app/:path* only.
+      {
+        source: "/telegram-app/:path*",
+        headers: [
+          {
+            key: "X-Frame-Options",
+            // Legacy fallback only — not a real standard value. Modern
+            // browsers ignore an unrecognized X-Frame-Options value rather
+            // than blocking the frame, so this just avoids old browsers
+            // falling back to a stricter default. The CSP line below is
+            // the actual enforcement.
+            value: "ALLOWALL",
+          },
+          {
+            key: "Content-Security-Policy",
+            value:
+              "frame-ancestors 'self' https://web.telegram.org https://telegram.org;",
+          },
+        ],
+      },
     ];
   },
 };
