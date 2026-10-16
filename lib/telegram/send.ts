@@ -9,6 +9,13 @@ export interface InlineButton {
   text: string;
   callback_data?: string;
   url?: string;
+  /**
+   * Opens the given URL as a Telegram Mini App INSIDE the chat (no
+   * leaving Telegram), instead of `url`'s plain external-browser open.
+   * Mutually exclusive with `url`/`callback_data` — Telegram only reads
+   * one action per button.
+   */
+  web_app?: { url: string };
 }
 
 interface SendMessageOptions {

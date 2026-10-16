@@ -711,10 +711,12 @@ async function handlePairingStart(
 
     await sendTelegramMessage({
       chatId: msg.chat.id,
-      text: `✅ <b>เชื่อมบัญชี Telegram สำเร็จ</b>\nสวัสดี ${htmlEscape(updated.name)} 👋\n\nจากนี้จะได้รับแจ้งเตือนทาง Telegram ทันทีที่มีเอกสารให้เซ็น — กดปุ่มด้านล่างเพื่อดูเอกสารที่รอเซ็นอยู่ตอนนี้ได้เลย`,
+      text: `✅ <b>เชื่อมบัญชี Telegram สำเร็จ</b>\nสวัสดี ${htmlEscape(updated.name)} 👋\n\nจากนี้จะได้รับแจ้งเตือนทาง Telegram ทันทีที่มีเอกสารให้เซ็น — กดปุ่มด้านล่างเพื่อดูและเซ็นเอกสารที่รออยู่ได้เลย ไม่ต้องออกจาก Telegram`,
       parseMode: "HTML",
       inlineKeyboard: [
-        [{ text: "📋 ดูเอกสารที่รอเซ็นทั้งหมด", url: "https://pooilgroup.com/sign/to-sign" }],
+        // web_app (not url) — opens the Mini App (app/telegram-app) inline
+        // inside this chat instead of bouncing out to a browser tab.
+        [{ text: "📋 ดูเอกสารที่รอเซ็นทั้งหมด", web_app: { url: "https://pooilgroup.com/telegram-app" } }],
         [{ text: "⚙️ ตั้งค่าแจ้งเตือน", url: "https://pooilgroup.com/docuflow/settings/telegram" }],
       ],
     });
@@ -779,7 +781,7 @@ async function handlePendingSignaturesCommand(
     text: `📋 <b>เอกสารรอเซ็น (${activeDocs.size} ฉบับ)</b>\n\n${list}${more}`,
     parseMode: "HTML",
     inlineKeyboard: [
-      [{ text: "✍️ เปิดเซ็นทั้งหมด", url: "https://pooilgroup.com/sign/to-sign" }],
+      [{ text: "✍️ เปิดเซ็นทั้งหมด", web_app: { url: "https://pooilgroup.com/telegram-app" } }],
     ],
   });
   return NextResponse.json({ ok: true });
