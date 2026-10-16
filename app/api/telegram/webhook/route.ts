@@ -632,6 +632,10 @@ async function handleTextMessage(
       return NextResponse.json({ ok: true });
     }
 
+    if (text.startsWith("/pending") || text.startsWith("/เอกสารรอเซ็น")) {
+      return await handlePendingSignaturesCommand(msg, tgUser);
+    }
+
     if (text.startsWith("/start")) {
       await sendTelegramMessage({
         chatId: msg.chat.id,
@@ -707,14 +711,78 @@ async function handlePairingStart(
 
     await sendTelegramMessage({
       chatId: msg.chat.id,
-      text: `✅ เชื่อมบัญชี Telegram สำเร็จ สวัสดี ${htmlEscape(updated.name)} 👋\nจากนี้จะได้รับแจ้งเตือนเอกสารที่ต้องเซ็นทาง Telegram ทันที`,
+      text: `✅ <b>เชื่อมบัญชี Telegram สำเร็จ</b>\nสวัสดี ${htmlEscape(updated.name)} 👋\n\nจากนี้จะได้รับแจ้งเตือนทาง Telegram ทันทีที่มีเอกสารให้เซ็น — กดปุ่มด้านล่างเพื่อดูเอกสารที่รอเซ็นอยู่ตอนนี้ได้เลย`,
       parseMode: "HTML",
+      inlineKeyboard: [
+        [{ text: "📋 ดูเอกสารที่รอเซ็นทั้งหมด", url: "https://pooilgroup.com/sign/to-sign" }],
+        [{ text: "⚙️ ตั้งค่าแจ้งเตือน", url: "https://pooilgroup.com/docuflow/settings/telegram" }],
+      ],
     });
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("[telegram-webhook] handlePairingStart error", err);
     return NextResponse.json({ ok: true });
   }
+}
+
+/**
+ * "/pending" (or Thai "/เอกสารรอเซ็น") — lists every document the already-
+ * linked caller has an unsigned `signature`-type placement on, same query
+ * shape as app/sign/to-sign/page.tsx's bulk-sign list (kept intentionally
+ * read-only and simple here — actual signing still happens on that page,
+ * this just answers "what's waiting for me" without leaving Telegram).
+ */
+async function handlePendingSignaturesCommand(
+  msg: TgMessage,
+  tgUser: { id: string; org_id: string; name: string },
+) {
+  const admin = adminClient();
+  const { data: rows, error } = await admin
+    .from("document_signature_placements")
+    .select("document_id, documents(name, is_active)")
+    .eq("org_id", tgUser.org_id)
+    .eq("signer_user_id", tgUser.id)
+    .eq("placement_type", "signature")
+    .is("signed_at", null);
+
+  if (error) {
+    console.error("[telegram-webhook] handlePendingSignaturesCommand query failed", error);
+    await sendTelegramMessage({
+      chatId: msg.chat.id,
+      text: "ดึงรายการเอกสารไม่สำเร็จ ลองใหม่อีกครั้ง หรือเข้าเว็บโดยตรง",
+    });
+    return NextResponse.json({ ok: true });
+  }
+
+  type Row = { document_id: string; documents: { name: string; is_active: boolean } | null };
+  const activeDocs = new Map<string, string>();
+  for (const r of (rows ?? []) as unknown as Row[]) {
+    if (r.documents?.is_active) activeDocs.set(r.document_id, r.documents.name);
+  }
+
+  if (activeDocs.size === 0) {
+    await sendTelegramMessage({
+      chatId: msg.chat.id,
+      text: `✅ ไม่มีเอกสารรอเซ็นตอนนี้ สวัสดี ${htmlEscape(tgUser.name)}`,
+    });
+    return NextResponse.json({ ok: true });
+  }
+
+  const list = [...activeDocs.values()]
+    .slice(0, 15)
+    .map((name, i) => `${i + 1}. ${htmlEscape(name)}`)
+    .join("\n");
+  const more = activeDocs.size > 15 ? `\n…และอีก ${activeDocs.size - 15} ฉบับ` : "";
+
+  await sendTelegramMessage({
+    chatId: msg.chat.id,
+    text: `📋 <b>เอกสารรอเซ็น (${activeDocs.size} ฉบับ)</b>\n\n${list}${more}`,
+    parseMode: "HTML",
+    inlineKeyboard: [
+      [{ text: "✍️ เปิดเซ็นทั้งหมด", url: "https://pooilgroup.com/sign/to-sign" }],
+    ],
+  });
+  return NextResponse.json({ ok: true });
 }
 
 async function handleRegisterCallback(
